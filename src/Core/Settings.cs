@@ -18,7 +18,6 @@ namespace DeskMate.Core
         public bool ShowSeconds = false;
         public bool ShowHijri = true;
         public bool ShowNextPrayerLine = true;
-        public bool PinToDesktop = true;
         public bool AutoStart = true;
         public double PosX = -1;
         public double PosY = -1;
@@ -71,7 +70,6 @@ namespace DeskMate.Core
                 s.ShowSeconds = Json.GetBool(d, "ShowSeconds", s.ShowSeconds);
                 s.ShowHijri = Json.GetBool(d, "ShowHijri", s.ShowHijri);
                 s.ShowNextPrayerLine = Json.GetBool(d, "ShowNextPrayerLine", s.ShowNextPrayerLine);
-                s.PinToDesktop = Json.GetBool(d, "PinToDesktop", s.PinToDesktop);
                 s.AutoStart = Json.GetBool(d, "AutoStart", s.AutoStart);
                 s.PosX = Json.GetNum(d, "PosX", s.PosX);
                 s.PosY = Json.GetNum(d, "PosY", s.PosY);
@@ -115,7 +113,6 @@ namespace DeskMate.Core
                 d["ShowSeconds"] = ShowSeconds;
                 d["ShowHijri"] = ShowHijri;
                 d["ShowNextPrayerLine"] = ShowNextPrayerLine;
-                d["PinToDesktop"] = PinToDesktop;
                 d["AutoStart"] = AutoStart;
                 d["PosX"] = PosX;
                 d["PosY"] = PosY;

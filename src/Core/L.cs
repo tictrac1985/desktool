@@ -115,7 +115,6 @@ namespace DeskMate.Core
             { "st_prayer_line",  new[] { "سطر الصلاة القادمة", "Next-prayer line" } },
             { "st_features",     new[] { "الأدوات الظاهرة", "Visible tools" } },
             { "st_autostart",    new[] { "التشغيل مع بدء ويندوز", "Start with Windows" } },
-            { "st_pin",          new[] { "تثبيت خلف النوافذ (جزء من سطح المكتب)", "Pin behind windows (desktop layer)" } },
             { "st_location",     new[] { "الموقع (للطقس والصلاة)", "Location (weather & prayer)" } },
             { "st_auto_loc",     new[] { "تحديد تلقائي عبر الإنترنت", "Auto-detect via internet" } },
             { "st_city",         new[] { "المدينة", "City" } },

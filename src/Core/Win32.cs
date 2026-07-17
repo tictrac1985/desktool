@@ -28,8 +28,6 @@ namespace DeskMate.Core
         [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int nIndex);
         [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
         [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
-        [DllImport("user32.dll")] static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
-        [DllImport("user32.dll")] static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
         [DllImport("user32.dll")] static extern bool AddClipboardFormatListener(IntPtr hwnd);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
@@ -46,19 +44,6 @@ namespace DeskMate.Core
         public static void SendToBottom(IntPtr hwnd)
         {
             SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
-        }
-
-        /// <summary>Reparents the widget under Progman so it lives on the desktop layer and
-        /// survives Win+D. Returns false when unavailable (caller keeps the bottom-z hook).</summary>
-        public static bool TryParentToProgman(IntPtr hwnd)
-        {
-            try
-            {
-                IntPtr progman = FindWindow("Progman", null);
-                if (progman == IntPtr.Zero) return false;
-                return SetParent(hwnd, progman) != IntPtr.Zero;
-            }
-            catch { return false; }
         }
 
         /// <summary>WndProc helper: on WM_WINDOWPOSCHANGING, force the window to stay bottom-most.</summary>

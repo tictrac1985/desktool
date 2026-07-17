@@ -23,7 +23,6 @@ namespace DeskMate.UI
         IClockView _clock;
         WF.NotifyIcon _tray;
         IntPtr _hwnd;
-        bool _parentedToDesktop;
         bool _reallyExiting;
         bool _flashOnTop;
 
@@ -70,15 +69,13 @@ namespace DeskMate.UI
             _hwnd = src.Handle;
             Win32.MakeToolWindow(_hwnd);
             src.AddHook(WndProc);
-            if (Settings.I.PinToDesktop)
-                _parentedToDesktop = Win32.TryParentToProgman(_hwnd);
             Win32.SendToBottom(_hwnd);
             Win32.ListenClipboard(_hwnd);
         }
 
         IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            if (msg == Win32.WM_WINDOWPOSCHANGING && !_parentedToDesktop && !_flashOnTop)
+            if (msg == Win32.WM_WINDOWPOSCHANGING && !_flashOnTop)
             {
                 Win32.EnforceBottom(lParam);
             }

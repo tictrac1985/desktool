@@ -83,7 +83,6 @@ namespace DeskMate.Features
                 Win32.SetAutoStart(v);
                 Settings.I.Save();
             }));
-            stack.Children.Add(Theme.MakeCheck(L.T("st_pin"), Settings.I.PinToDesktop, v => { Settings.I.PinToDesktop = v; Settings.I.Save(); }));
 
             // ---- visible tools ----
             stack.Children.Add(Theme.SectionTitle(L.T("st_features")));
