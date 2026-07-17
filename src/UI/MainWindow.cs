@@ -24,6 +24,8 @@ namespace DeskMate.UI
         WF.NotifyIcon _tray;
         IntPtr _hwnd;
         bool _parentedToDesktop;
+        bool _reallyExiting;
+        bool _flashOnTop;
 
         public MainWindow()
         {
@@ -50,6 +52,14 @@ namespace DeskMate.UI
                 OnTick(DateTime.Now);
                 if (Settings.I.AutoStart) Win32.SetAutoStart(true);
             };
+            // Alt+F4 or any accidental close must only hide the widget — the process keeps
+            // its tray icon and a later launch (desktop icon) brings the window back.
+            Closing += (s, e) =>
+            {
+                if (_reallyExiting) return;
+                e.Cancel = true;
+                Hide();
+            };
             Closed += (s, e) => { if (_tray != null) _tray.Dispose(); };
             SetupTray();
         }
@@ -68,7 +78,7 @@ namespace DeskMate.UI
 
         IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            if (msg == Win32.WM_WINDOWPOSCHANGING && !_parentedToDesktop)
+            if (msg == Win32.WM_WINDOWPOSCHANGING && !_parentedToDesktop && !_flashOnTop)
             {
                 Win32.EnforceBottom(lParam);
             }
@@ -174,6 +184,12 @@ namespace DeskMate.UI
 
         void OnTick(DateTime now)
         {
+            // "Show desktop" (Win+D) minimizes even tool windows; restore automatically
+            if (WindowState != WindowState.Normal && IsVisible)
+            {
+                WindowState = WindowState.Normal;
+                Win32.SendToBottom(_hwnd);
+            }
             if (_clock != null && IsVisible) _clock.Tick(now);
             PrayerFeature.MinuteTick(now);
             if (Settings.I.ShowPrayer && Settings.I.ShowNextPrayerLine)
@@ -220,13 +236,27 @@ namespace DeskMate.UI
 
         public void ShowFromTray()
         {
+            WindowState = WindowState.Normal;
             Show();
-            Win32.SendToBottom(_hwnd);
             OnTick(DateTime.Now);
+            // surface above other windows for a moment so the user sees it opened,
+            // then settle back to the desktop layer
+            _flashOnTop = true;
+            Topmost = true;
+            var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+            t.Tick += (s, e) =>
+            {
+                t.Stop();
+                Topmost = false;
+                _flashOnTop = false;
+                Win32.SendToBottom(_hwnd);
+            };
+            t.Start();
         }
 
         public void ExitApp()
         {
+            _reallyExiting = true;
             try { Settings.I.Save(); } catch { }
             if (_tray != null) { _tray.Visible = false; _tray.Dispose(); _tray = null; }
             Application.Current.Shutdown();

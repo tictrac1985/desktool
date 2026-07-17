@@ -56,8 +56,12 @@ namespace DeskMate
                         _showEvent.WaitOne();
                         app.Dispatcher.BeginInvoke(new Action(() =>
                         {
-                            if (UI.MainWindow.Instance != null)
-                                UI.MainWindow.Instance.ShowFromTray();
+                            try
+                            {
+                                if (UI.MainWindow.Instance != null)
+                                    UI.MainWindow.Instance.ShowFromTray();
+                            }
+                            catch (Exception ex) { Log.Error("ShowSignal", ex); }
                         }));
                     }
                     catch { break; }
