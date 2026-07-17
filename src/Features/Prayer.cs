@@ -82,7 +82,7 @@ namespace DeskMate.Features
             if (idx < 0) return "";
             var left = at - now;
             string dur = string.Format("{0:0}:{1:00}", Math.Floor(left.TotalHours), left.Minutes);
-            return "🕌 " + L.T(NameKeys[idx]) + " " + L.T("pr_in") + " " + dur;
+            return L.T(NameKeys[idx]) + " " + L.T("pr_in") + " " + dur;
         }
 
         /// <summary>Called every second from the widget timer; fires notifications once per event.</summary>
@@ -132,7 +132,7 @@ namespace DeskMate.Features
                 FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
             };
             var row = new StackPanel { Orientation = Orientation.Horizontal };
-            var glyph = Theme.MakeText("🕌", 26, Theme.Accent, Theme.SymbolFont);
+            var glyph = Theme.MakeGlyph("", 26, Theme.Accent);
             glyph.VerticalAlignment = VerticalAlignment.Center;
             glyph.Margin = new Thickness(0, 0, 10, 0);
             row.Children.Add(glyph);

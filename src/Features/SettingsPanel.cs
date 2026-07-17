@@ -101,8 +101,10 @@ namespace DeskMate.Features
             // ---- location ----
             stack.Children.Add(Theme.SectionTitle(L.T("st_location")));
             var locStatus = Theme.MakeText(
-                WeatherFeature.HasLocation ? Settings.I.City + " (" + Settings.I.Country + ")" : "—",
+                WeatherFeature.HasLocation ? Settings.I.City + " · " + Settings.I.Country : "—",
                 12, Theme.TextDim);
+            locStatus.FlowDirection = FlowDirection.LeftToRight;
+            locStatus.HorizontalAlignment = HorizontalAlignment.Center;
             locStatus.Margin = new Thickness(0, 0, 0, 4);
             stack.Children.Add(locStatus);
 
@@ -116,7 +118,7 @@ namespace DeskMate.Features
                         if (!t.IsFaulted && t.Result != null)
                         {
                             PrayerFeature.Invalidate();
-                            locStatus.Text = Settings.I.City + " (" + Settings.I.Country + ")";
+                            locStatus.Text = Settings.I.City + " · " + Settings.I.Country;
                         }
                         else locStatus.Text = L.T("we_err");
                     }));
@@ -168,7 +170,7 @@ namespace DeskMate.Features
                                 Settings.I.Save();
                                 PrayerFeature.Invalidate();
                                 resultsHost.Children.Clear();
-                                locStatus.Text = loc.City + " (" + loc.Country + ")";
+                                locStatus.Text = loc.City + " · " + loc.Country;
                             });
                             b.HorizontalAlignment = HorizontalAlignment.Stretch;
                             resultsHost.Children.Add(b);

@@ -36,8 +36,14 @@ namespace DeskMate.Features
         {
             var stack = new StackPanel();
             var search = Theme.MakeInput();
-            var hintText = L.T("ap_search");
-            stack.Children.Add(search);
+            var searchHost = new Grid();
+            var placeholder = Theme.MakeText(L.T("ap_search"), 13, Theme.TextFaint);
+            placeholder.Margin = new Thickness(10, 0, 10, 0);
+            placeholder.VerticalAlignment = VerticalAlignment.Center;
+            placeholder.IsHitTestVisible = false;
+            searchHost.Children.Add(search);
+            searchHost.Children.Add(placeholder);
+            stack.Children.Add(searchHost);
 
             var listHost = new StackPanel();
             var scroll = new ScrollViewer
@@ -72,7 +78,11 @@ namespace DeskMate.Features
                     listHost.Children.Add(none);
                 }
             };
-            search.TextChanged += (s, e) => refill();
+            search.TextChanged += (s, e) =>
+            {
+                placeholder.Visibility = search.Text.Length > 0 ? Visibility.Collapsed : Visibility.Visible;
+                refill();
+            };
             refill();
             host.Loaded += (s, e) => search.Focus();
             return stack;
@@ -91,13 +101,13 @@ namespace DeskMate.Features
             Theme.AttachHover(row, Brushes.Transparent, Theme.HoverBg);
             var dock = new DockPanel();
 
-            var openBtn = MakeMini("", L.T("ap_open"), () =>
+            var openBtn = MakeMini("", L.T("ap_open"), () =>
             {
                 try { Process.Start(new ProcessStartInfo(app.LnkPath) { UseShellExecute = true }); }
                 catch (Exception ex) { Log.Error("app open", ex); }
                 PanelWindow.CloseCurrent();
             });
-            var addBtn = MakeMini("", L.T("ap_add"), () =>
+            var addBtn = MakeMini("", L.T("ap_add"), () =>
             {
                 try
                 {

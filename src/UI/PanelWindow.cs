@@ -15,6 +15,9 @@ namespace DeskMate.UI
         static PanelWindow _current;
         static string _currentKey;
 
+        /// <summary>Currently open panel, if any (used by tests and callers that reposition).</summary>
+        public static Window Current { get { return _current; } }
+
         readonly Grid _contentHost = new Grid();
         Window _owner;
 
