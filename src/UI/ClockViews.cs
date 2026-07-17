@@ -71,6 +71,7 @@ namespace DeskMate.UI
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
         readonly TextBlock _time;
         readonly TextBlock _ampm;
+        readonly Border _ampmHost;
         readonly TextBlock _date;
         readonly TextBlock _hijri;
 
@@ -79,11 +80,21 @@ namespace DeskMate.UI
             var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
             _time = Theme.MakeText("", 58, Theme.Text, Theme.LightFont);
             _time.FlowDirection = FlowDirection.LeftToRight;
-            _ampm = Theme.MakeText("", 17, Theme.Accent);
-            _ampm.VerticalAlignment = VerticalAlignment.Bottom;
-            _ampm.Margin = new Thickness(8, 0, 0, 12);
+            _ampm = Theme.MakeText("", 13.5, Theme.Accent);
+            _ampm.FontWeight = FontWeights.SemiBold;
+            var accentPill = new SolidColorBrush(Color.FromArgb(0x2A, Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
+            accentPill.Freeze();
+            _ampmHost = new Border
+            {
+                Background = accentPill,
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(8, 2.5, 8, 2.5),
+                Child = _ampm,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(9, 0, 0, 14),
+            };
             row.Children.Add(_time);
-            row.Children.Add(_ampm);
+            row.Children.Add(_ampmHost);
             _root.Children.Add(row);
             _date = Theme.MakeText("", 15, Theme.TextDim);
             _date.HorizontalAlignment = HorizontalAlignment.Center;
@@ -104,7 +115,7 @@ namespace DeskMate.UI
                 ? (s.ShowSeconds ? "HH:mm:ss" : "HH:mm")
                 : (s.ShowSeconds ? "h:mm:ss" : "h:mm");
             _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
-            _ampm.Visibility = s.Use24h ? Visibility.Collapsed : Visibility.Visible;
+            _ampmHost.Visibility = s.Use24h ? Visibility.Collapsed : Visibility.Visible;
             _ampm.Text = L.IsAr ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
             _date.Text = DateText.Gregorian(now);
             _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
@@ -127,9 +138,9 @@ namespace DeskMate.UI
             var dial = new Ellipse
             {
                 Width = Size, Height = Size,
-                Stroke = new SolidColorBrush(Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF)),
+                Stroke = Theme.DialStroke,
                 StrokeThickness = 2.5,
-                Fill = new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
+                Fill = Theme.DialFill,
             };
             _canvas.Children.Add(dial);
             for (int i = 0; i < 12; i++)

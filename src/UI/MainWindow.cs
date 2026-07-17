@@ -26,6 +26,10 @@ namespace DeskMate.UI
         bool _reallyExiting;
         bool _flashOnTop;
         int _lastPrayerLineMin = -1;
+        Border _card;
+        Point _gripStart;
+        double _gripStartScale;
+        bool _scaling;
 
         public MainWindow()
         {
@@ -110,6 +114,13 @@ namespace DeskMate.UI
             _prayerLine.Visibility = Visibility.Collapsed;
             _stack.Children.Add(_prayerLine);
 
+            _stack.Children.Add(new Border
+            {
+                Height = 1,
+                Background = Theme.CardBorder,
+                Margin = new Thickness(4, 12, 4, 0),
+            });
+
             _iconBar = new WrapPanel
             {
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -119,7 +130,13 @@ namespace DeskMate.UI
             BuildIconBar();
             _stack.Children.Add(_iconBar);
 
-            var card = Theme.MakeCard(_stack);
+            var content = new Grid();
+            content.Children.Add(_stack);
+            content.Children.Add(BuildScaleGrip());
+
+            var card = Theme.MakeCard(content);
+            card.LayoutTransform = new ScaleTransform(Settings.I.Scale, Settings.I.Scale);
+            _card = card;
             card.MouseLeftButtonDown += (s, e) =>
             {
                 if (e.OriginalSource is FrameworkElement) { try { DragMove(); SavePosition(); } catch { } }
@@ -146,6 +163,63 @@ namespace DeskMate.UI
         void AddIcon(string glyph, string titleKey, Action open)
         {
             _iconBar.Children.Add(Theme.MakeIconButton(glyph, L.T(titleKey), open));
+        }
+
+        /// <summary>Corner grip that resizes (scales) the whole widget by dragging.</summary>
+        Border BuildScaleGrip()
+        {
+            var lines = new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse("M 0,9 L 9,0 M 4.5,9 L 9,4.5"),
+                Stroke = Theme.TextFaint,
+                StrokeThickness = 1.6,
+                Width = 10,
+                Height = 10,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            var grip = new Border
+            {
+                Width = 22,
+                Height = 22,
+                Background = System.Windows.Media.Brushes.Transparent,
+                Child = lines,
+                Cursor = Cursors.SizeNWSE,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                // keep the grip at the VISUAL bottom-right in both flow directions
+                HorizontalAlignment = L.IsAr ? HorizontalAlignment.Left : HorizontalAlignment.Right,
+                FlowDirection = FlowDirection.LeftToRight,
+                Margin = new Thickness(-8, 0, -8, -7),
+            };
+            grip.MouseEnter += (s, e) => lines.Stroke = Theme.Accent;
+            grip.MouseLeave += (s, e) => lines.Stroke = Theme.TextFaint;
+            grip.MouseLeftButtonDown += (s, e) =>
+            {
+                e.Handled = true;
+                _scaling = true;
+                _gripStartScale = Settings.I.Scale;
+                _gripStart = PointToScreen(e.GetPosition(this));
+                grip.CaptureMouse();
+            };
+            grip.MouseMove += (s, e) =>
+            {
+                if (!_scaling) return;
+                var cur = PointToScreen(e.GetPosition(this));
+                double delta = (cur.X - _gripStart.X) + (cur.Y - _gripStart.Y);
+                double ns = Math.Max(0.6, Math.Min(1.8, _gripStartScale + delta / 280.0));
+                Settings.I.Scale = ns;
+                if (_card != null) _card.LayoutTransform = new ScaleTransform(ns, ns);
+            };
+            grip.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                if (!_scaling) return;
+                _scaling = false;
+                grip.ReleaseMouseCapture();
+                Settings.I.Save();
+            };
+            grip.LostMouseCapture += (s, e) => { _scaling = false; };
+            return grip;
         }
 
         /// <summary>Full rebuild after settings change (language, style, visibility).</summary>

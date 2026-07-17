@@ -120,6 +120,7 @@ namespace DeskMate.Core
             { "st_city",         new[] { "المدينة", "City" } },
             { "st_search",       new[] { "بحث", "Search" } },
             { "st_general",      new[] { "عام", "General" } },
+            { "st_theme",        new[] { "الثيم", "Theme" } },
 
             { "g_close",         new[] { "إغلاق", "Close" } },
             { "g_ok",            new[] { "موافق", "OK" } },

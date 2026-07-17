@@ -55,6 +55,46 @@ namespace DeskMate.Features
             langRow.Margin = new Thickness(0, 2, 0, 6);
             stack.Children.Add(langRow);
 
+            // ---- theme picker ----
+            stack.Children.Add(Theme.SectionTitle(L.T("st_theme")));
+            var themeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 8) };
+            for (int i = 0; i < Theme.Palettes.Length; i++)
+            {
+                int idx = i;
+                var pal = Theme.Palettes[i];
+                bool selected = Settings.I.ThemeIndex == i;
+                var swatch = new Border
+                {
+                    Width = 30, Height = 30,
+                    CornerRadius = new CornerRadius(15),
+                    Background = new System.Windows.Media.LinearGradientBrush(pal.CardTop, pal.CardBottom, 90),
+                    BorderBrush = selected ? Theme.Accent : Theme.CardBorder,
+                    BorderThickness = new Thickness(selected ? 2.5 : 1),
+                    Margin = new Thickness(3, 0, 3, 0),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    ToolTip = L.IsAr ? pal.KeyAr : pal.KeyEn,
+                    Child = new System.Windows.Shapes.Ellipse
+                    {
+                        Width = 12, Height = 12,
+                        Fill = new System.Windows.Media.SolidColorBrush(pal.Accent),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    },
+                };
+                swatch.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
+                swatch.MouseLeftButtonUp += (s, e) =>
+                {
+                    e.Handled = true;
+                    Settings.I.ThemeIndex = idx;
+                    Theme.Apply(idx);
+                    SaveAndReload();
+                    PanelWindow.CloseCurrent();
+                    Open(MainWindow.Instance);
+                };
+                themeRow.Children.Add(swatch);
+            }
+            stack.Children.Add(themeRow);
+
             var clockRow = new DockPanel();
             var clockCombo = Theme.MakeCombo();
             clockCombo.Items.Add(L.T("st_style_digital"));
@@ -127,7 +167,10 @@ namespace DeskMate.Features
             stack.Children.Add(autoBtn);
 
             var cityRow = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
-            var searchBtn = Theme.MakeButton(L.T("st_search"), () => { });
+            // the real action is assigned below (doSearch); routed through MakeButton because a
+            // second MouseLeftButtonUp handler would be blocked by the internal Handled flag
+            Action doSearchHolder = null;
+            var searchBtn = Theme.MakeButton(L.T("st_search"), () => { if (doSearchHolder != null) doSearchHolder(); });
             DockPanel.SetDock(searchBtn, Dock.Right);
             var cityBox = Theme.MakeInput(Settings.I.City);
             cityRow.Children.Add(searchBtn);
@@ -177,8 +220,7 @@ namespace DeskMate.Features
                     }));
                 });
             };
-            // MakeButton was created with a null action; wire the real one now
-            searchBtn.MouseLeftButtonUp += (s, e) => doSearch();
+            doSearchHolder = doSearch;
             cityBox.KeyDown += (s, e) => { if (e.Key == System.Windows.Input.Key.Enter) doSearch(); };
 
             return scroll;

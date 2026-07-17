@@ -46,11 +46,22 @@ namespace DeskMate.UI
                 Cursor = Cursors.Hand,
             };
             Theme.AttachHover(close, Theme.ButtonBg, Theme.HoverBg);
-            close.MouseLeftButtonUp += (s, e) => Close();
+            // handle Down too — otherwise the window's DragMove swallows the click before Up fires
+            close.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
+            close.MouseLeftButtonUp += (s, e) => { e.Handled = true; Close(); };
             DockPanel.SetDock(close, Dock.Right);
             header.Children.Add(close);
             header.Children.Add(titleText);
             stack.Children.Add(header);
+            stack.Children.Add(new Border
+            {
+                Height = 2.5,
+                Width = 32,
+                CornerRadius = new CornerRadius(1.25),
+                Background = Theme.Accent,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, -4, 0, 10),
+            });
             _contentHost.Children.Add(content);
             stack.Children.Add(_contentHost);
 

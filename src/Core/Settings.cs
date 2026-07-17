@@ -21,6 +21,8 @@ namespace DeskMate.Core
         public bool AutoStart = true;
         public double PosX = -1;
         public double PosY = -1;
+        public int ThemeIndex = 0;
+        public double Scale = 1.0;
 
         // feature icon visibility
         public bool ShowCleaner = true;
@@ -73,6 +75,9 @@ namespace DeskMate.Core
                 s.AutoStart = Json.GetBool(d, "AutoStart", s.AutoStart);
                 s.PosX = Json.GetNum(d, "PosX", s.PosX);
                 s.PosY = Json.GetNum(d, "PosY", s.PosY);
+                s.ThemeIndex = Json.GetInt(d, "ThemeIndex", s.ThemeIndex);
+                s.Scale = Json.GetNum(d, "Scale", s.Scale);
+                if (s.Scale < 0.6 || s.Scale > 1.8) s.Scale = 1.0;
                 s.ShowCleaner = Json.GetBool(d, "ShowCleaner", s.ShowCleaner);
                 s.ShowCalc = Json.GetBool(d, "ShowCalc", s.ShowCalc);
                 s.ShowWallpaper = Json.GetBool(d, "ShowWallpaper", s.ShowWallpaper);
@@ -116,6 +121,8 @@ namespace DeskMate.Core
                 d["AutoStart"] = AutoStart;
                 d["PosX"] = PosX;
                 d["PosY"] = PosY;
+                d["ThemeIndex"] = (double)ThemeIndex;
+                d["Scale"] = Scale;
                 d["ShowCleaner"] = ShowCleaner;
                 d["ShowCalc"] = ShowCalc;
                 d["ShowWallpaper"] = ShowWallpaper;

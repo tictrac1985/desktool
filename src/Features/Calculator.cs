@@ -110,16 +110,18 @@ namespace DeskMate.Features
             stack.Children.Add(proGrid);
             stack.Children.Add(grid);
 
-            var toggle = Theme.MakeButton(_pro ? L.T("calc_simple") : L.T("calc_pro"), () => { }, false);
-            ((TextBlock)toggle.Child).Foreground = Theme.Accent;
-            toggle.HorizontalAlignment = HorizontalAlignment.Center;
-            toggle.Margin = new Thickness(0, 6, 0, 0);
-            toggle.MouseLeftButtonUp += (s, e) =>
+            // NOTE: the action must go through MakeButton — a second MouseLeftButtonUp handler
+            // would never fire because the internal handler marks the event as handled.
+            Border toggle = null;
+            toggle = Theme.MakeButton(_pro ? L.T("calc_simple") : L.T("calc_pro"), () =>
             {
                 _pro = !_pro;
                 proGrid.Visibility = _pro ? Visibility.Visible : Visibility.Collapsed;
                 ((TextBlock)toggle.Child).Text = _pro ? L.T("calc_simple") : L.T("calc_pro");
-            };
+            }, false);
+            ((TextBlock)toggle.Child).Foreground = Theme.Accent;
+            toggle.HorizontalAlignment = HorizontalAlignment.Center;
+            toggle.Margin = new Thickness(0, 6, 0, 0);
             stack.Children.Add(toggle);
 
             display.KeyDown += (s, e) => { if (e.Key == Key.Enter) { equals(); e.Handled = true; } };
