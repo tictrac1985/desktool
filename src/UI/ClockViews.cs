@@ -16,6 +16,22 @@ namespace DeskMate.UI
 
     static class DateText
     {
+        // formatting + Hijri conversion are relatively costly — cache per day/language
+        static string _cacheKey;
+        static string _cachedGregorian = "", _cachedHijri = "";
+
+        static void EnsureCache(DateTime now)
+        {
+            string key = now.ToString("yyyyMMdd") + Settings.I.Lang;
+            if (key == _cacheKey) return;
+            _cacheKey = key;
+            _cachedGregorian = FormatGregorian(now);
+            _cachedHijri = FormatHijri(now);
+        }
+
+        public static string Gregorian(DateTime now) { EnsureCache(now); return _cachedGregorian; }
+        public static string Hijri(DateTime now) { EnsureCache(now); return _cachedHijri; }
+
         static readonly string[] HijriMonthsAr =
         {
             "محرم", "صفر", "ربيع الأول", "ربيع الآخر", "جمادى الأولى", "جمادى الآخرة",
@@ -27,7 +43,7 @@ namespace DeskMate.UI
             "Rajab", "Sha'ban", "Ramadan", "Shawwal", "Dhu al-Qi'dah", "Dhu al-Hijjah"
         };
 
-        public static string Gregorian(DateTime now)
+        static string FormatGregorian(DateTime now)
         {
             var ci = L.IsAr ? new CultureInfo("ar-EG") : new CultureInfo("en-US");
             string s = now.ToString("dddd، d MMMM yyyy", ci);
@@ -35,7 +51,7 @@ namespace DeskMate.UI
             return s;
         }
 
-        public static string Hijri(DateTime now)
+        static string FormatHijri(DateTime now)
         {
             try
             {
@@ -174,7 +190,8 @@ namespace DeskMate.UI
         {
             var s = Settings.I;
             SetAngle(_hour, (now.Hour % 12 + now.Minute / 60.0) * 30, C * 0.48);
-            SetAngle(_min, (now.Minute + now.Second / 60.0) * 6, C * 0.70);
+            // sweep the minute hand only when the second hand is shown; otherwise step per minute
+            SetAngle(_min, (now.Minute + (s.ShowSeconds ? now.Second / 60.0 : 0)) * 6, C * 0.70);
             _sec.Visibility = s.ShowSeconds ? Visibility.Visible : Visibility.Collapsed;
             if (s.ShowSeconds) SetAngle(_sec, now.Second * 6, C * 0.78);
             _date.Text = DateText.Gregorian(now);

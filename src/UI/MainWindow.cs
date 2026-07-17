@@ -25,6 +25,7 @@ namespace DeskMate.UI
         IntPtr _hwnd;
         bool _reallyExiting;
         bool _flashOnTop;
+        int _lastPrayerLineMin = -1;
 
         public MainWindow()
         {
@@ -150,6 +151,7 @@ namespace DeskMate.UI
         /// <summary>Full rebuild after settings change (language, style, visibility).</summary>
         public void Reload()
         {
+            _lastPrayerLineMin = -1;
             BuildUI();
             SetupTray();
             OnTick(DateTime.Now);
@@ -189,13 +191,18 @@ namespace DeskMate.UI
             }
             if (_clock != null && IsVisible) _clock.Tick(now);
             PrayerFeature.MinuteTick(now);
-            if (Settings.I.ShowPrayer && Settings.I.ShowNextPrayerLine)
+            // the countdown only changes once a minute — skip the recompute otherwise
+            if (now.Minute != _lastPrayerLineMin)
             {
-                string line = PrayerFeature.NextLine(now);
-                _prayerLine.Text = line;
-                _prayerLine.Visibility = string.IsNullOrEmpty(line) ? Visibility.Collapsed : Visibility.Visible;
+                _lastPrayerLineMin = now.Minute;
+                if (Settings.I.ShowPrayer && Settings.I.ShowNextPrayerLine)
+                {
+                    string line = PrayerFeature.NextLine(now);
+                    _prayerLine.Text = line;
+                    _prayerLine.Visibility = string.IsNullOrEmpty(line) ? Visibility.Collapsed : Visibility.Visible;
+                }
+                else _prayerLine.Visibility = Visibility.Collapsed;
             }
-            else _prayerLine.Visibility = Visibility.Collapsed;
         }
 
         // ---------------- tray ----------------
