@@ -95,15 +95,19 @@ namespace DeskMate.Core
         }
 
         /// <summary>Creates a .lnk via WScript.Shell (late-bound COM, no extra references).</summary>
-        public static void CreateShortcut(string lnkPath, string targetPath, string iconPath = null)
+        public static void CreateShortcut(string lnkPath, string targetPath, string arguments = null, string iconPath = null)
         {
             var t = Type.GetTypeFromProgID("WScript.Shell");
             object shell = Activator.CreateInstance(t);
             object sc = t.InvokeMember("CreateShortcut", System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { lnkPath });
             Type st = sc.GetType();
             st.InvokeMember("TargetPath", System.Reflection.BindingFlags.SetProperty, null, sc, new object[] { targetPath });
-            st.InvokeMember("WorkingDirectory", System.Reflection.BindingFlags.SetProperty, null, sc,
-                new object[] { System.IO.Path.GetDirectoryName(targetPath) });
+            if (!string.IsNullOrEmpty(arguments))
+                st.InvokeMember("Arguments", System.Reflection.BindingFlags.SetProperty, null, sc, new object[] { arguments });
+            string dir = null;
+            try { dir = System.IO.Path.GetDirectoryName(targetPath); } catch { }
+            if (!string.IsNullOrEmpty(dir))
+                st.InvokeMember("WorkingDirectory", System.Reflection.BindingFlags.SetProperty, null, sc, new object[] { dir });
             if (!string.IsNullOrEmpty(iconPath))
                 st.InvokeMember("IconLocation", System.Reflection.BindingFlags.SetProperty, null, sc, new object[] { iconPath });
             st.InvokeMember("Save", System.Reflection.BindingFlags.InvokeMethod, null, sc, null);

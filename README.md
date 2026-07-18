@@ -27,9 +27,10 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 | ⏻ | ضبط وقت دخول السكون (شاحن / بطارية) | Sleep timeout presets (AC / battery) |
 | 📋 | حافظة نصوص مؤقتة مع تثبيت وحذف | Clipboard text keeper with pin/delete |
 | ☀ | الطقس الحالي + 3 أيام (تحديد موقع تلقائي أو مدينة يدوية) | Current weather + 3-day forecast (auto or manual location) |
-| 📂 | قائمة برامج ويندوز: فتح أو **إضافة لسطح المكتب** بنقرة | Installed apps list: open or **add to desktop** in one click |
+| 📂 | قائمة برامج ويندوز (تشمل تطبيقات المتجر): فتح أو **إضافة لسطح المكتب** بنقرة | Installed apps incl. Store apps: open or **add to desktop** in one click |
 | 🌙 | مواقيت الصلاة (حساب فلكي محلي، 5 طرق حساب) مع تنبيه عند الوقت وتنبيه مسبق | Prayer times (offline astronomical calc, 5 methods) with at-time & pre-alerts |
 | ⚙ | إعدادات: اللغة، شكل الساعة، إظهار/إخفاء كل أداة، التشغيل مع ويندوز | Settings: language, clock style, show/hide any tool, autostart |
+| 🎨 | 5 ثيمات (كهرماني، أزرق، زمردي، وردي، فاتح) + شفافية قابلة للضبط + تكبير/تصغير بمقبض الزاوية | 5 themes + adjustable transparency + corner-grip resizing |
 
 ## سلوك الأداة · Behavior
 

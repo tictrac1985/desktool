@@ -21,10 +21,22 @@ namespace DeskMate.Features
         {
             if (_cache == null || (DateTime.Now - _cacheTime).TotalMinutes > 5)
             {
-                _cache = AppScanner.Scan();
+                _cache = AppScanner.ScanAll();
                 _cacheTime = DateTime.Now;
             }
             return _cache;
+        }
+
+        static void Launch(AppEntry app)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(app.LnkPath))
+                    Process.Start(new ProcessStartInfo(app.LnkPath) { UseShellExecute = true });
+                else
+                    Process.Start(new ProcessStartInfo("explorer.exe", "shell:AppsFolder\\" + app.AppsFolderPath) { UseShellExecute = true });
+            }
+            catch (Exception ex) { Log.Error("app open", ex); }
         }
 
         public static void Open(Window owner)
@@ -103,8 +115,7 @@ namespace DeskMate.Features
 
             var openBtn = MakeMini("", L.T("ap_open"), () =>
             {
-                try { Process.Start(new ProcessStartInfo(app.LnkPath) { UseShellExecute = true }); }
-                catch (Exception ex) { Log.Error("app open", ex); }
+                Launch(app);
                 PanelWindow.CloseCurrent();
             });
             var addBtn = MakeMini("", L.T("ap_add"), () =>
@@ -112,11 +123,25 @@ namespace DeskMate.Features
                 try
                 {
                     string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-                    string dest = Path.Combine(desktop, Path.GetFileName(app.LnkPath));
-                    int n = 2;
-                    while (File.Exists(dest))
-                        dest = Path.Combine(desktop, Path.GetFileNameWithoutExtension(app.LnkPath) + " (" + n++ + ").lnk");
-                    File.Copy(app.LnkPath, dest);
+                    if (!string.IsNullOrEmpty(app.LnkPath))
+                    {
+                        string dest = Path.Combine(desktop, Path.GetFileName(app.LnkPath));
+                        int n = 2;
+                        while (File.Exists(dest))
+                            dest = Path.Combine(desktop, Path.GetFileNameWithoutExtension(app.LnkPath) + " (" + n++ + ").lnk");
+                        File.Copy(app.LnkPath, dest);
+                    }
+                    else
+                    {
+                        // Store app: shortcut that launches it through the shell apps folder
+                        string safe = string.Join("", app.Name.Split(Path.GetInvalidFileNameChars()));
+                        string dest = Path.Combine(desktop, safe + ".lnk");
+                        int n = 2;
+                        while (File.Exists(dest)) dest = Path.Combine(desktop, safe + " (" + n++ + ").lnk");
+                        Win32.CreateShortcut(dest,
+                            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
+                            "shell:AppsFolder\\" + app.AppsFolderPath);
+                    }
                     feedback.Text = L.T("ap_added");
                 }
                 catch (Exception ex) { Log.Error("app add", ex); }
@@ -138,8 +163,7 @@ namespace DeskMate.Features
             {
                 if (e.ClickCount >= 2)
                 {
-                    try { Process.Start(new ProcessStartInfo(app.LnkPath) { UseShellExecute = true }); }
-                    catch { }
+                    Launch(app);
                     PanelWindow.CloseCurrent();
                 }
             };

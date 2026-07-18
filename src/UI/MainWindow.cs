@@ -137,6 +137,7 @@ namespace DeskMate.UI
             var card = Theme.MakeCard(content);
             card.LayoutTransform = new ScaleTransform(Settings.I.Scale, Settings.I.Scale);
             _card = card;
+            ApplyCardOpacity();
             card.MouseLeftButtonDown += (s, e) =>
             {
                 if (e.OriginalSource is FrameworkElement) { try { DragMove(); SavePosition(); } catch { } }
@@ -163,6 +164,16 @@ namespace DeskMate.UI
         void AddIcon(string glyph, string titleKey, Action open)
         {
             _iconBar.Children.Add(Theme.MakeIconButton(glyph, L.T(titleKey), open));
+        }
+
+        /// <summary>Applies the user's background transparency to the card (text stays opaque).</summary>
+        public void ApplyCardOpacity()
+        {
+            if (_card == null) return;
+            var b = Theme.CardBg.Clone();
+            b.Opacity = Settings.I.BgOpacity;
+            if (b.CanFreeze) b.Freeze();
+            _card.Background = b;
         }
 
         /// <summary>Corner grip that resizes (scales) the whole widget by dragging.</summary>

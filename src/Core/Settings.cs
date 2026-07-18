@@ -23,6 +23,7 @@ namespace DeskMate.Core
         public double PosY = -1;
         public int ThemeIndex = 0;
         public double Scale = 1.0;
+        public double BgOpacity = 1.0;   // 0.3 .. 1.0 — widget card background only
 
         // feature icon visibility
         public bool ShowCleaner = true;
@@ -78,6 +79,8 @@ namespace DeskMate.Core
                 s.ThemeIndex = Json.GetInt(d, "ThemeIndex", s.ThemeIndex);
                 s.Scale = Json.GetNum(d, "Scale", s.Scale);
                 if (s.Scale < 0.6 || s.Scale > 1.8) s.Scale = 1.0;
+                s.BgOpacity = Json.GetNum(d, "BgOpacity", s.BgOpacity);
+                if (s.BgOpacity < 0.3 || s.BgOpacity > 1.0) s.BgOpacity = 1.0;
                 s.ShowCleaner = Json.GetBool(d, "ShowCleaner", s.ShowCleaner);
                 s.ShowCalc = Json.GetBool(d, "ShowCalc", s.ShowCalc);
                 s.ShowWallpaper = Json.GetBool(d, "ShowWallpaper", s.ShowWallpaper);
@@ -123,6 +126,7 @@ namespace DeskMate.Core
                 d["PosY"] = PosY;
                 d["ThemeIndex"] = (double)ThemeIndex;
                 d["Scale"] = Scale;
+                d["BgOpacity"] = BgOpacity;
                 d["ShowCleaner"] = ShowCleaner;
                 d["ShowCalc"] = ShowCalc;
                 d["ShowWallpaper"] = ShowWallpaper;

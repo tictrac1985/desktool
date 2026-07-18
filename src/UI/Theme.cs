@@ -86,6 +86,7 @@ namespace DeskMate.UI
 
             var grad = new LinearGradientBrush(p.CardTop, p.CardBottom, 90);
             CardBg = Freeze(grad);
+            ControlStyles.Invalidate();
         }
 
         static Brush Freeze(Brush b) { if (b.CanFreeze) b.Freeze(); return b; }
@@ -193,7 +194,7 @@ namespace DeskMate.UI
 
         public static TextBox MakeInput(string initial = "")
         {
-            return new TextBox
+            var t = new TextBox
             {
                 Text = initial,
                 Background = InputBg,
@@ -206,6 +207,9 @@ namespace DeskMate.UI
                 FontFamily = UiFont,
                 VerticalContentAlignment = VerticalAlignment.Center,
             };
+            t.GotKeyboardFocus += (s, e) => t.BorderBrush = Accent;
+            t.LostKeyboardFocus += (s, e) => t.BorderBrush = CardBorder;
+            return t;
         }
 
         public static ComboBox MakeCombo()
@@ -216,6 +220,7 @@ namespace DeskMate.UI
                 FontFamily = UiFont,
                 MinWidth = 140,
                 VerticalContentAlignment = VerticalAlignment.Center,
+                Style = ControlStyles.Combo(),
             };
         }
 
@@ -227,10 +232,25 @@ namespace DeskMate.UI
                 IsChecked = isChecked,
                 Margin = new Thickness(0, 4, 0, 4),
                 VerticalContentAlignment = VerticalAlignment.Center,
+                Style = ControlStyles.Check(),
             };
             cb.Checked += (s, e) => onChange(true);
             cb.Unchecked += (s, e) => onChange(false);
             return cb;
+        }
+
+        public static Slider MakeSlider(double min, double max, double value, Action<double> onChange)
+        {
+            var s = new Slider
+            {
+                Minimum = min,
+                Maximum = max,
+                Value = value,
+                Style = ControlStyles.Slider(),
+                IsMoveToPointEnabled = true,
+            };
+            s.ValueChanged += (o, e) => onChange(e.NewValue);
+            return s;
         }
 
         public static TextBlock SectionTitle(string text)

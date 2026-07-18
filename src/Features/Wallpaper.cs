@@ -25,16 +25,26 @@ namespace DeskMate.Features
 
             var pickBtn = Theme.MakeButton(L.T("wp_pick"), () =>
             {
-                var dlg = new WF.OpenFileDialog
+                var dlg = new Microsoft.Win32.OpenFileDialog
                 {
                     Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp",
                     CheckFileExists = true,
                 };
-                if (dlg.ShowDialog() == WF.DialogResult.OK)
+                // keep the panel alive while the modal dialog steals activation
+                host.SuppressAutoClose = true;
+                try
                 {
-                    selectedPath = dlg.FileName;
-                    fileLabel.Text = System.IO.Path.GetFileName(selectedPath);
-                    fileLabel.Foreground = Theme.Text;
+                    if (dlg.ShowDialog(host) == true)
+                    {
+                        selectedPath = dlg.FileName;
+                        fileLabel.Text = System.IO.Path.GetFileName(selectedPath);
+                        fileLabel.Foreground = Theme.Text;
+                    }
+                }
+                finally
+                {
+                    host.SuppressAutoClose = false;
+                    try { host.Activate(); } catch { }
                 }
             });
             pickBtn.HorizontalAlignment = HorizontalAlignment.Stretch;

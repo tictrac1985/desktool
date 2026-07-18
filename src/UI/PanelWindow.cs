@@ -21,6 +21,10 @@ namespace DeskMate.UI
         readonly Grid _contentHost = new Grid();
         Window _owner;
 
+        /// <summary>Set while a modal dialog owned by this panel is open, so losing
+        /// activation to the dialog does not auto-close the panel (and kill the dialog).</summary>
+        public bool SuppressAutoClose;
+
         PanelWindow(string title, FrameworkElement content, double width)
         {
             WindowStyle = WindowStyle.None;
@@ -32,6 +36,8 @@ namespace DeskMate.UI
             SizeToContent = SizeToContent.WidthAndHeight;
             ShowActivated = true;
             FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+            // implicit theme-matched scrollbars for everything inside the panel
+            Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), ControlStyles.Scroll());
 
             var stack = new StackPanel { Width = width };
             var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
@@ -67,7 +73,7 @@ namespace DeskMate.UI
 
             Content = Theme.MakeCard(stack, 18);
             MouseLeftButtonDown += (s, e) => { try { DragMove(); } catch { } };
-            Deactivated += (s, e) => { try { Close(); } catch { } };
+            Deactivated += (s, e) => { if (!SuppressAutoClose) { try { Close(); } catch { } } };
             Closed += (s, e) => { if (_current == this) { _current = null; _currentKey = null; } };
             SourceInitialized += (s, e) =>
             {

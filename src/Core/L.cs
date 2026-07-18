@@ -121,6 +121,7 @@ namespace DeskMate.Core
             { "st_search",       new[] { "بحث", "Search" } },
             { "st_general",      new[] { "عام", "General" } },
             { "st_theme",        new[] { "الثيم", "Theme" } },
+            { "st_opacity",      new[] { "شفافية الخلفية", "Background transparency" } },
 
             { "g_close",         new[] { "إغلاق", "Close" } },
             { "g_ok",            new[] { "موافق", "OK" } },

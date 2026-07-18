@@ -95,6 +95,17 @@ namespace DeskMate.Features
             }
             stack.Children.Add(themeRow);
 
+            // ---- background transparency ----
+            stack.Children.Add(Theme.SectionTitle(L.T("st_opacity")));
+            var opSlider = Theme.MakeSlider(30, 100, Settings.I.BgOpacity * 100, v =>
+            {
+                Settings.I.BgOpacity = Math.Max(0.3, Math.Min(1.0, v / 100.0));
+                if (MainWindow.Instance != null) MainWindow.Instance.ApplyCardOpacity();
+            });
+            opSlider.Margin = new Thickness(2, 0, 2, 6);
+            opSlider.LostMouseCapture += (s, e) => Settings.I.Save();
+            stack.Children.Add(opSlider);
+
             var clockRow = new DockPanel();
             var clockCombo = Theme.MakeCombo();
             clockCombo.Items.Add(L.T("st_style_digital"));
