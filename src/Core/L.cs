@@ -126,6 +126,9 @@ namespace DeskMate.Core
             { "ly_classic",      new[] { "كلاسيكي", "Classic" } },
             { "ly_connected",    new[] { "متصل", "Linked" } },
             { "ly_triple",       new[] { "ثلاثي اللوحات", "Tri-panel" } },
+            { "ly_orbit",        new[] { "مداري", "Orbit" } },
+            { "ly_sidebar",      new[] { "قائمة جانبية", "Sidebar" } },
+            { "ly_dock",         new[] { "شريط أفقي", "Dock" } },
 
             { "g_close",         new[] { "إغلاق", "Close" } },
             { "g_ok",            new[] { "موافق", "OK" } },

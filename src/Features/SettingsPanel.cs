@@ -61,7 +61,10 @@ namespace DeskMate.Features
             layoutCombo.Items.Add(L.T("ly_classic"));
             layoutCombo.Items.Add(L.T("ly_connected"));
             layoutCombo.Items.Add(L.T("ly_triple"));
-            layoutCombo.SelectedIndex = Math.Max(0, Math.Min(2, Settings.I.LayoutIndex));
+            layoutCombo.Items.Add(L.T("ly_orbit"));
+            layoutCombo.Items.Add(L.T("ly_sidebar"));
+            layoutCombo.Items.Add(L.T("ly_dock"));
+            layoutCombo.SelectedIndex = Math.Max(0, Math.Min(5, Settings.I.LayoutIndex));
             layoutCombo.SelectionChanged += (s, e) =>
             {
                 Settings.I.LayoutIndex = layoutCombo.SelectedIndex;

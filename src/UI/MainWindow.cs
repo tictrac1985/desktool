@@ -15,6 +15,20 @@ using WF = System.Windows.Forms;
 
 namespace DeskMate.UI
 {
+    /// <summary>MDL2 glyph codes as escapes (literal PUA chars are fragile in source files).</summary>
+    static class Glyphs
+    {
+        public const string Cleaner = "";
+        public const string Calc = "";
+        public const string Wallpaper = "";
+        public const string Power = "";
+        public const string Clipboard = "";
+        public const string Weather = "";
+        public const string Apps = "";
+        public const string Prayer = "";
+        public const string SettingsGear = "";
+    }
+
     public class MainWindow : Window
     {
         public static MainWindow Instance;
@@ -125,6 +139,9 @@ namespace DeskMate.UI
             {
                 case 1: _rootEl = BuildConnected(); break;
                 case 2: _rootEl = BuildTriple(); break;
+                case 3: _rootEl = BuildOrbit(); break;
+                case 4: _rootEl = BuildSidebar(); break;
+                case 5: _rootEl = BuildDock(); break;
                 default: _rootEl = BuildClassic(); break;
             }
             _rootEl.LayoutTransform = new ScaleTransform(Settings.I.Scale, Settings.I.Scale);
@@ -270,6 +287,198 @@ namespace DeskMate.UI
             card.Margin = new Thickness(4, 12, 4, 6);
             card.VerticalAlignment = VerticalAlignment.Center;
             return card;
+        }
+
+        /// <summary>Layout 3 — circular clock card with icons orbiting around it.</summary>
+        FrameworkElement BuildOrbit()
+        {
+            _clock = MakeClock(false);
+            var inner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            inner.Children.Add(_clock.Root);
+            inner.Children.Add(_prayerLine);
+            var card = MakeCardTracked(inner);
+            card.Margin = new Thickness(0);
+            card.Padding = new Thickness(26);
+
+            // measure, then size the circle so the content rectangle is fully inscribed
+            // (diameter = diagonal of the measured content)
+            card.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double mw = card.DesiredSize.Width, mh = card.DesiredSize.Height;
+            double size = Math.Sqrt(mw * mw + mh * mh);
+            card.Width = size;
+            card.Height = size;
+            card.CornerRadius = new CornerRadius(size / 2);
+            card.FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+
+            var icons = BuildIcons(true);
+            double ringR = size / 2 + 40;
+            double pad = 44; // room for icon cells + labels outside the ring
+            double canvasSize = 2 * (ringR + pad);
+            var canvas = new Canvas
+            {
+                Width = canvasSize,
+                Height = canvasSize,
+                Background = Brushes.Transparent,
+                FlowDirection = FlowDirection.LeftToRight,
+                Margin = new Thickness(4),
+            };
+            double c = canvasSize / 2;
+
+            var ringStroke = new SolidColorBrush(Color.FromArgb(0x34,
+                Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
+            ringStroke.Freeze();
+            var ring = new Ellipse
+            {
+                Width = 2 * ringR,
+                Height = 2 * ringR,
+                Stroke = ringStroke,
+                StrokeThickness = 1.2,
+                StrokeDashArray = new DoubleCollection { 3, 4 },
+            };
+            Canvas.SetLeft(ring, c - ringR);
+            Canvas.SetTop(ring, c - ringR);
+            canvas.Children.Add(ring);
+
+            Canvas.SetLeft(card, c - size / 2);
+            Canvas.SetTop(card, c - size / 2);
+            canvas.Children.Add(card);
+
+            for (int i = 0; i < icons.Count; i++)
+            {
+                double a = (-90 + i * 360.0 / icons.Count) * Math.PI / 180.0;
+                double ix = c + ringR * Math.Cos(a);
+                double iy = c + ringR * Math.Sin(a);
+                // icon circle center sits at (22, 21) inside the 44x58 cell
+                Canvas.SetLeft(icons[i], ix - 22);
+                Canvas.SetTop(icons[i], iy - 21);
+                canvas.Children.Add(icons[i]);
+            }
+            return canvas;
+        }
+
+        /// <summary>Layout 4 — vertical sidebar: compact clock on top, menu-style rows
+        /// with always-visible names beneath.</summary>
+        FrameworkElement BuildSidebar()
+        {
+            _clock = new MinimalClock();
+            var stack = new StackPanel { MinWidth = 168 };
+            stack.Children.Add(_clock.Root);
+            stack.Children.Add(_prayerLine);
+            stack.Children.Add(new Border
+            {
+                Height = 1,
+                Background = Theme.CardBorder,
+                Margin = new Thickness(2, 10, 2, 6),
+            });
+            foreach (var def in IconDefs())
+                stack.Children.Add(MakeSidebarRow(def.Item1, def.Item2, def.Item3));
+            return MakeCardTracked(stack, 22);
+        }
+
+        FrameworkElement MakeSidebarRow(string glyph, string titleKey, Action onClick)
+        {
+            var row = new Border
+            {
+                Background = Brushes.Transparent,
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(7, 4, 7, 4),
+                Margin = new Thickness(0, 1, 0, 1),
+                Cursor = Cursors.Hand,
+                RenderTransform = new TranslateTransform(0, 0),
+            };
+            var content = new StackPanel { Orientation = Orientation.Horizontal };
+            var circle = new Border
+            {
+                Width = 28,
+                Height = 28,
+                CornerRadius = new CornerRadius(14),
+                Background = Theme.ButtonBg,
+                BorderBrush = Theme.CardBorder,
+                BorderThickness = new Thickness(1),
+                Child = Theme.MakeGlyph(glyph, 12),
+            };
+            content.Children.Add(circle);
+            var name = Theme.MakeText(L.T(titleKey), 12.5, Theme.TextDim);
+            name.VerticalAlignment = VerticalAlignment.Center;
+            name.Margin = new Thickness(9, 0, 4, 0);
+            content.Children.Add(name);
+            row.Child = content;
+
+            var slide = (TranslateTransform)row.RenderTransform;
+            row.MouseEnter += (s, e) =>
+            {
+                row.Background = Theme.HoverBg;
+                circle.BorderBrush = Theme.Accent;
+                name.Foreground = Theme.Text;
+                slide.BeginAnimation(TranslateTransform.XProperty,
+                    new DoubleAnimation(L.IsAr ? -4 : 4, TimeSpan.FromMilliseconds(130)));
+            };
+            row.MouseLeave += (s, e) =>
+            {
+                row.Background = Brushes.Transparent;
+                circle.BorderBrush = Theme.CardBorder;
+                name.Foreground = Theme.TextDim;
+                slide.BeginAnimation(TranslateTransform.XProperty,
+                    new DoubleAnimation(0, TimeSpan.FromMilliseconds(130)));
+            };
+            row.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
+            row.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                try { onClick(); } catch (Exception ex) { Log.Error("sidebar", ex); }
+            };
+            return row;
+        }
+
+        /// <summary>Layout 5 — slim horizontal dock pill: time + date on one side,
+        /// zooming icons inline.</summary>
+        FrameworkElement BuildDock()
+        {
+            _clock = new MinimalClock();
+            var clockCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            clockCol.Children.Add(_clock.Root);
+            clockCol.Children.Add(_prayerLine);
+            clockCol.Margin = new Thickness(6, 0, 6, 0);
+
+            var rowStack = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            rowStack.Children.Add(clockCol);
+            rowStack.Children.Add(new Border
+            {
+                Width = 1,
+                Height = 44,
+                Background = Theme.CardBorder,
+                Margin = new Thickness(8, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            foreach (var ic in BuildIcons(false))
+            {
+                ((FrameworkElement)ic).VerticalAlignment = VerticalAlignment.Center;
+                rowStack.Children.Add(ic);
+            }
+
+            var pill = MakeCardTracked(rowStack, 40);
+            pill.Padding = new Thickness(18, 8, 18, 6);
+            return pill;
+        }
+
+        List<Tuple<string, string, Action>> IconDefs()
+        {
+            var s = Settings.I;
+            var list = new List<Tuple<string, string, Action>>();
+            if (s.ShowCleaner) list.Add(Tuple.Create(Glyphs.Cleaner, "f_cleaner", (Action)(() => CleanerFeature.Open(this))));
+            if (s.ShowCalc) list.Add(Tuple.Create(Glyphs.Calc, "f_calc", (Action)(() => CalculatorFeature.Open(this))));
+            if (s.ShowWallpaper) list.Add(Tuple.Create(Glyphs.Wallpaper, "f_wallpaper", (Action)(() => WallpaperFeature.Open(this))));
+            if (s.ShowPower) list.Add(Tuple.Create(Glyphs.Power, "f_power", (Action)(() => PowerFeature.Open(this))));
+            if (s.ShowClipboard) list.Add(Tuple.Create(Glyphs.Clipboard, "f_clipboard", (Action)(() => ClipboardKeeper.Open(this))));
+            if (s.ShowWeather) list.Add(Tuple.Create(Glyphs.Weather, "f_weather", (Action)(() => WeatherFeature.Open(this))));
+            if (s.ShowApps) list.Add(Tuple.Create(Glyphs.Apps, "f_apps", (Action)(() => AppsFeature.Open(this))));
+            if (s.ShowPrayer) list.Add(Tuple.Create(Glyphs.Prayer, "f_prayer", (Action)(() => PrayerFeature.Open(this))));
+            list.Add(Tuple.Create(Glyphs.SettingsGear, "f_settings", (Action)(() => SettingsFeature.Open(this))));
+            return list;
         }
 
         // ---------------- icons ----------------
