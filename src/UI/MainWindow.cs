@@ -14,6 +14,8 @@ namespace DeskMate.UI
     public class MainWindow : Window
     {
         public static MainWindow Instance;
+        /// <summary>Set when Windows is shutting down/logging off so Closing doesn't cancel.</summary>
+        public static bool OsSessionEnding;
 
         readonly DispatcherTimer _timer = new DispatcherTimer();
         StackPanel _stack;
@@ -60,7 +62,7 @@ namespace DeskMate.UI
             // its tray icon and a later launch (desktop icon) brings the window back.
             Closing += (s, e) =>
             {
-                if (_reallyExiting) return;
+                if (_reallyExiting || OsSessionEnding) return;
                 e.Cancel = true;
                 Hide();
             };
@@ -229,7 +231,10 @@ namespace DeskMate.UI
                 grip.ReleaseMouseCapture();
                 Settings.I.Save();
             };
-            grip.LostMouseCapture += (s, e) => { _scaling = false; };
+            grip.LostMouseCapture += (s, e) =>
+            {
+                if (_scaling) { _scaling = false; Settings.I.Save(); }
+            };
             return grip;
         }
 

@@ -60,12 +60,47 @@ namespace DeskMate.Core
 
         public static void Load()
         {
+            string p = PathToUse;
+            // boot-time reads can hit a transient lock (AV scan / indexer) — retry, then
+            // fall back to the .bak written by every successful Save
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    if (!File.Exists(p)) { I = new Settings(); return; }
+                    var d = Json.Parse(File.ReadAllText(p)) as Dictionary<string, object>;
+                    if (d == null) throw new FormatException("settings root is not an object");
+                    I = FromDict(d);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("Settings.Load attempt " + attempt, ex);
+                    System.Threading.Thread.Sleep(150);
+                }
+            }
             try
             {
-                string p = PathToUse;
-                if (!File.Exists(p)) { I = new Settings(); return; }
-                var d = Json.Parse(File.ReadAllText(p)) as Dictionary<string, object>;
-                if (d == null) { I = new Settings(); return; }
+                string bak = p + ".bak";
+                if (File.Exists(bak))
+                {
+                    var d = Json.Parse(File.ReadAllText(bak)) as Dictionary<string, object>;
+                    if (d != null)
+                    {
+                        I = FromDict(d);
+                        Log.Write("Settings restored from backup");
+                        I.Save(); // heal the primary file
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex) { Log.Error("Settings.Load backup", ex); }
+            I = new Settings();
+        }
+
+        static Settings FromDict(Dictionary<string, object> d)
+        {
+            {
                 var s = new Settings();
                 s.Lang = Json.GetStr(d, "Lang", s.Lang);
                 s.ClockStyle = Json.GetInt(d, "ClockStyle", s.ClockStyle);
@@ -101,12 +136,7 @@ namespace DeskMate.Core
                 s.PinnedClips = new List<string>();
                 foreach (var o in Json.GetList(d, "PinnedClips"))
                     if (o is string) s.PinnedClips.Add((string)o);
-                I = s;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Settings.Load", ex);
-                I = new Settings();
+                return s;
             }
         }
 
@@ -147,7 +177,22 @@ namespace DeskMate.Core
                 d["PinnedClips"] = PinnedClips;
                 string p = PathToUse;
                 Directory.CreateDirectory(Path.GetDirectoryName(p));
-                File.WriteAllText(p, Json.Write(d));
+                // atomic write: never leave a truncated settings file, keep a .bak of the
+                // previous good version (used by Load as a fallback)
+                string tmp = p + ".tmp";
+                string json = Json.Write(d);
+                for (int attempt = 0; attempt < 2; attempt++)
+                {
+                    try
+                    {
+                        File.WriteAllText(tmp, json);
+                        if (File.Exists(p)) File.Replace(tmp, p, p + ".bak");
+                        else File.Move(tmp, p);
+                        return;
+                    }
+                    catch (IOException) { System.Threading.Thread.Sleep(120); }
+                }
+                File.WriteAllText(p, json); // last resort
             }
             catch (Exception ex)
             {
