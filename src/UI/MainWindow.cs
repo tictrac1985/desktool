@@ -1,9 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using DeskMate.Core;
 using DeskMate.Features;
@@ -18,17 +22,22 @@ namespace DeskMate.UI
         public static bool OsSessionEnding;
 
         readonly DispatcherTimer _timer = new DispatcherTimer();
-        StackPanel _stack;
-        ContentControl _clockHost;
-        TextBlock _prayerLine;
-        WrapPanel _iconBar;
         IClockView _clock;
+        TextBlock _prayerLine;
         WF.NotifyIcon _tray;
         IntPtr _hwnd;
         bool _reallyExiting;
         bool _flashOnTop;
         int _lastPrayerLineMin = -1;
-        Border _card;
+
+        FrameworkElement _rootEl;                       // scaled content root
+        readonly List<Border> _cards = new List<Border>();
+        Border _clockCard;                              // for connector lines
+        Canvas _connectors;
+        readonly List<FrameworkElement> _floatIcons = new List<FrameworkElement>();
+        TextBlock _gregText, _hijriText;                // tri-panel side cards
+        string _dateKey;
+
         Point _gripStart;
         double _gripStartScale;
         bool _scaling;
@@ -58,6 +67,7 @@ namespace DeskMate.UI
                 OnTick(DateTime.Now);
                 if (Settings.I.AutoStart) Win32.SetAutoStart(true);
             };
+            SizeChanged += (s, e) => ScheduleConnectorDraw();
             // Alt+F4 or any accidental close must only hide the widget — the process keeps
             // its tray icon and a later launch (desktop icon) brings the window back.
             Closing += (s, e) =>
@@ -98,87 +108,331 @@ namespace DeskMate.UI
         public void BuildUI()
         {
             FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
-            _stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-
-            _clockHost = new ContentControl { HorizontalAlignment = HorizontalAlignment.Center, Focusable = false };
-            switch (Settings.I.ClockStyle)
-            {
-                case 1: _clock = new AnalogClock(); break;
-                case 2: _clock = new MinimalClock(); break;
-                default: _clock = new DigitalClock(); break;
-            }
-            _clockHost.Content = _clock.Root;
-            _stack.Children.Add(_clockHost);
+            _cards.Clear();
+            _floatIcons.Clear();
+            _clockCard = null;
+            _connectors = null;
+            _gregText = null;
+            _hijriText = null;
+            _dateKey = null;
 
             _prayerLine = Theme.MakeText("", 12.5, Theme.Accent);
             _prayerLine.HorizontalAlignment = HorizontalAlignment.Center;
             _prayerLine.Margin = new Thickness(0, 5, 0, 0);
             _prayerLine.Visibility = Visibility.Collapsed;
-            _stack.Children.Add(_prayerLine);
 
-            _stack.Children.Add(new Border
+            switch (Settings.I.LayoutIndex)
+            {
+                case 1: _rootEl = BuildConnected(); break;
+                case 2: _rootEl = BuildTriple(); break;
+                default: _rootEl = BuildClassic(); break;
+            }
+            _rootEl.LayoutTransform = new ScaleTransform(Settings.I.Scale, Settings.I.Scale);
+
+            var host = new Grid();
+            host.Children.Add(_rootEl);
+            host.Children.Add(BuildScaleGrip());
+            host.MouseLeftButtonDown += (s, e) =>
+            {
+                if (e.OriginalSource is FrameworkElement) { try { DragMove(); SavePosition(); } catch { } }
+            };
+            Content = host;
+
+            ApplyCardOpacity();
+            if (_clock != null) _clock.Tick(DateTime.Now);
+            ScheduleConnectorDraw();
+        }
+
+        IClockView MakeClock(bool timeOnly)
+        {
+            if (timeOnly) return new TimeOnlyClock();
+            switch (Settings.I.ClockStyle)
+            {
+                case 1: return new AnalogClock();
+                case 2: return new MinimalClock();
+                default: return new DigitalClock();
+            }
+        }
+
+        Border MakeCardTracked(UIElement content, double radius = 24)
+        {
+            var c = Theme.MakeCard(content, radius);
+            _cards.Add(c);
+            return c;
+        }
+
+        /// <summary>Layout 0 — everything in one card (the original look).</summary>
+        FrameworkElement BuildClassic()
+        {
+            _clock = MakeClock(false);
+            var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            stack.Children.Add(_clock.Root);
+            stack.Children.Add(_prayerLine);
+            stack.Children.Add(new Border
             {
                 Height = 1,
                 Background = Theme.CardBorder,
                 Margin = new Thickness(4, 12, 4, 0),
             });
-
-            _iconBar = new WrapPanel
+            var iconBar = new WrapPanel
             {
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 10, 0, 0),
-                MaxWidth = 392,
+                Margin = new Thickness(0, 6, 0, 0),
+                MaxWidth = 430,
             };
-            BuildIconBar();
-            _stack.Children.Add(_iconBar);
+            foreach (var ic in BuildIcons(false)) iconBar.Children.Add(ic);
+            stack.Children.Add(iconBar);
+            return MakeCardTracked(stack);
+        }
 
-            var content = new Grid();
-            content.Children.Add(_stack);
-            content.Children.Add(BuildScaleGrip());
+        /// <summary>Layout 1 — clock card with rays connecting to free-floating icons.</summary>
+        FrameworkElement BuildConnected()
+        {
+            _clock = MakeClock(false);
+            var inner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            inner.Children.Add(_clock.Root);
+            inner.Children.Add(_prayerLine);
+            _clockCard = MakeCardTracked(inner);
+            _clockCard.Margin = new Thickness(12, 12, 12, 2);
 
-            var card = Theme.MakeCard(content);
-            card.LayoutTransform = new ScaleTransform(Settings.I.Scale, Settings.I.Scale);
-            _card = card;
-            ApplyCardOpacity();
-            card.MouseLeftButtonDown += (s, e) =>
+            _connectors = new Canvas { Height = 26, IsHitTestVisible = false, ClipToBounds = false };
+
+            var iconsRow = new StackPanel
             {
-                if (e.OriginalSource is FrameworkElement) { try { DragMove(); SavePosition(); } catch { } }
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(14, 0, 14, 12),
             };
-            Content = card;
-            if (_clock != null) _clock.Tick(DateTime.Now);
+            foreach (var ic in BuildIcons(true)) { iconsRow.Children.Add(ic); _floatIcons.Add(ic); }
+
+            var root = new StackPanel();
+            root.Children.Add(_clockCard);
+            root.Children.Add(_connectors);
+            root.Children.Add(iconsRow);
+            return root;
         }
 
-        void BuildIconBar()
+        /// <summary>Layout 2 — big time in the middle, Hijri card on one side and
+        /// Gregorian on the other, icon pill underneath.</summary>
+        FrameworkElement BuildTriple()
         {
-            _iconBar.Children.Clear();
+            _clock = MakeClock(true);
+            var centerInner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            centerInner.Children.Add(_clock.Root);
+            centerInner.Children.Add(_prayerLine);
+            var centerCard = MakeCardTracked(centerInner, 26);
+            centerCard.Margin = new Thickness(4, 12, 4, 6);
+
+            var hijriCard = MakeDateCard("", out _hijriText);   // crescent
+            var gregCard = MakeDateCard("", out _gregText);     // calendar
+            if (!Settings.I.ShowHijri) hijriCard.Visibility = Visibility.Collapsed;
+
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            };
+            // added first = starts at the visual right in RTL → Hijri right, Gregorian left
+            row.Children.Add(hijriCard);
+            row.Children.Add(centerCard);
+            row.Children.Add(gregCard);
+
+            var pillContent = new WrapPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                MaxWidth = 470,
+            };
+            foreach (var ic in BuildIcons(false)) pillContent.Children.Add(ic);
+            var pill = MakeCardTracked(pillContent, 30);
+            pill.Padding = new Thickness(12, 4, 12, 4);
+            pill.Margin = new Thickness(12, 0, 12, 12);
+            pill.HorizontalAlignment = HorizontalAlignment.Center;
+
+            var root = new StackPanel();
+            root.Children.Add(row);
+            root.Children.Add(pill);
+            return root;
+        }
+
+        Border MakeDateCard(string glyph, out TextBlock text)
+        {
+            var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            var g = Theme.MakeGlyph(glyph, 16, Theme.Accent);
+            g.Margin = new Thickness(0, 0, 0, 5);
+            stack.Children.Add(g);
+            text = Theme.MakeText("", 12, Theme.TextDim);
+            text.TextWrapping = TextWrapping.Wrap;
+            text.TextAlignment = TextAlignment.Center;
+            text.MaxWidth = 96;
+            stack.Children.Add(text);
+            var card = MakeCardTracked(stack, 18);
+            card.Padding = new Thickness(12, 10, 12, 10);
+            card.Margin = new Thickness(4, 12, 4, 6);
+            card.VerticalAlignment = VerticalAlignment.Center;
+            return card;
+        }
+
+        // ---------------- icons ----------------
+
+        List<FrameworkElement> BuildIcons(bool floating)
+        {
             var s = Settings.I;
-            if (s.ShowCleaner) AddIcon("", "f_cleaner", () => CleanerFeature.Open(this));
-            if (s.ShowCalc) AddIcon("", "f_calc", () => CalculatorFeature.Open(this));
-            if (s.ShowWallpaper) AddIcon("", "f_wallpaper", () => WallpaperFeature.Open(this));
-            if (s.ShowPower) AddIcon("", "f_power", () => PowerFeature.Open(this));
-            if (s.ShowClipboard) AddIcon("", "f_clipboard", () => ClipboardKeeper.Open(this));
-            if (s.ShowWeather) AddIcon("", "f_weather", () => WeatherFeature.Open(this));
-            if (s.ShowApps) AddIcon("", "f_apps", () => AppsFeature.Open(this));
-            if (s.ShowPrayer) AddIcon("", "f_prayer", () => PrayerFeature.Open(this));
-            AddIcon("", "f_settings", () => SettingsFeature.Open(this));
+            var list = new List<FrameworkElement>();
+            if (s.ShowCleaner) list.Add(MakeAnimatedIcon("", "f_cleaner", () => CleanerFeature.Open(this), floating));
+            if (s.ShowCalc) list.Add(MakeAnimatedIcon("", "f_calc", () => CalculatorFeature.Open(this), floating));
+            if (s.ShowWallpaper) list.Add(MakeAnimatedIcon("", "f_wallpaper", () => WallpaperFeature.Open(this), floating));
+            if (s.ShowPower) list.Add(MakeAnimatedIcon("", "f_power", () => PowerFeature.Open(this), floating));
+            if (s.ShowClipboard) list.Add(MakeAnimatedIcon("", "f_clipboard", () => ClipboardKeeper.Open(this), floating));
+            if (s.ShowWeather) list.Add(MakeAnimatedIcon("", "f_weather", () => WeatherFeature.Open(this), floating));
+            if (s.ShowApps) list.Add(MakeAnimatedIcon("", "f_apps", () => AppsFeature.Open(this), floating));
+            if (s.ShowPrayer) list.Add(MakeAnimatedIcon("", "f_prayer", () => PrayerFeature.Open(this), floating));
+            list.Add(MakeAnimatedIcon("", "f_settings", () => SettingsFeature.Open(this), floating));
+            return list;
         }
 
-        void AddIcon(string glyph, string titleKey, Action open)
+        /// <summary>Circular icon that zooms on hover and reveals its name underneath.</summary>
+        FrameworkElement MakeAnimatedIcon(string glyph, string titleKey, Action onClick, bool floating)
         {
-            _iconBar.Children.Add(Theme.MakeIconButton(glyph, L.T(titleKey), open));
+            var circle = new Border
+            {
+                Width = 36,
+                Height = 36,
+                CornerRadius = new CornerRadius(18),
+                Background = floating ? Theme.CardBg : Theme.ButtonBg,
+                BorderBrush = Theme.CardBorder,
+                BorderThickness = new Thickness(1),
+                Child = Theme.MakeGlyph(glyph, 15),
+                VerticalAlignment = VerticalAlignment.Top,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 3, 0, 0),
+                RenderTransformOrigin = new Point(0.5, 0.5),
+            };
+            var scale = new ScaleTransform(1, 1);
+            circle.RenderTransform = scale;
+            if (floating)
+            {
+                circle.Effect = new DropShadowEffect
+                {
+                    Color = Colors.Black, BlurRadius = 10, ShadowDepth = 2,
+                    Opacity = Theme.IsLight ? 0.25 : 0.45, Direction = 270,
+                };
+            }
+
+            var label = new TextBlock
+            {
+                Text = L.T(titleKey),
+                FontSize = 10,
+                FontFamily = Theme.UiFont,
+                Foreground = Theme.TextDim,
+                Opacity = 0,
+                Width = 84,
+                TextAlignment = TextAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(-20, 0, -20, 0),
+                IsHitTestVisible = false,
+            };
+
+            var cell = new Grid
+            {
+                Width = 44,
+                Height = 58,
+                Margin = new Thickness(1, 0, 1, 0),
+                Cursor = Cursors.Hand,
+                Background = Brushes.Transparent,
+            };
+            cell.Children.Add(circle);
+            cell.Children.Add(label);
+            Panel.SetZIndex(label, 5);
+
+            var easeIn = new QuadraticEase { EasingMode = EasingMode.EaseOut };
+            cell.MouseEnter += (s, e) =>
+            {
+                circle.BorderBrush = Theme.Accent;
+                var a = new DoubleAnimation(1.2, TimeSpan.FromMilliseconds(140)) { EasingFunction = easeIn };
+                scale.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, a);
+                label.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(160)));
+            };
+            cell.MouseLeave += (s, e) =>
+            {
+                circle.BorderBrush = Theme.CardBorder;
+                var a = new DoubleAnimation(1.0, TimeSpan.FromMilliseconds(140)) { EasingFunction = easeIn };
+                scale.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+                scale.BeginAnimation(ScaleTransform.ScaleYProperty, a);
+                label.BeginAnimation(OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(140)));
+            };
+            cell.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
+            cell.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                try { onClick(); } catch (Exception ex) { Log.Error("icon", ex); }
+            };
+            return cell;
         }
 
-        /// <summary>Applies the user's background transparency to the card (text stays opaque).</summary>
+        // ---------------- connector rays (layout 1) ----------------
+
+        void ScheduleConnectorDraw()
+        {
+            if (_connectors == null) return;
+            Dispatcher.BeginInvoke(new Action(DrawConnectors), DispatcherPriority.Loaded);
+        }
+
+        void DrawConnectors()
+        {
+            if (_connectors == null || _clockCard == null) return;
+            try
+            {
+                _connectors.Children.Clear();
+                double h = _connectors.Height;
+                Point from = _clockCard.TranslatePoint(
+                    new Point(_clockCard.ActualWidth / 2, _clockCard.ActualHeight - 12), _connectors);
+                var stroke = new SolidColorBrush(Color.FromArgb(0x58,
+                    Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
+                stroke.Freeze();
+                foreach (var ic in _floatIcons)
+                {
+                    Point to = ic.TranslatePoint(new Point(ic.ActualWidth / 2, 4), _connectors);
+                    _connectors.Children.Add(new Line
+                    {
+                        X1 = from.X, Y1 = Math.Max(0, from.Y),
+                        X2 = to.X, Y2 = Math.Min(h + 6, to.Y),
+                        Stroke = stroke,
+                        StrokeThickness = 1.2,
+                    });
+                    var dot = new Ellipse { Width = 4, Height = 4, Fill = Theme.Accent };
+                    Canvas.SetLeft(dot, to.X - 2);
+                    Canvas.SetTop(dot, Math.Min(h + 4, to.Y) - 2);
+                    _connectors.Children.Add(dot);
+                }
+            }
+            catch (Exception ex) { Log.Error("connectors", ex); }
+        }
+
+        /// <summary>Full rebuild after settings change (language, style, layout, visibility).</summary>
+        public void Reload()
+        {
+            _lastPrayerLineMin = -1;
+            BuildUI();
+            SetupTray();
+            OnTick(DateTime.Now);
+        }
+
+        /// <summary>Applies the user's background transparency to all cards (text stays opaque).</summary>
         public void ApplyCardOpacity()
         {
-            if (_card == null) return;
-            var b = Theme.CardBg.Clone();
-            b.Opacity = Settings.I.BgOpacity;
-            if (b.CanFreeze) b.Freeze();
-            _card.Background = b;
+            foreach (var card in _cards)
+            {
+                var b = Theme.CardBg.Clone();
+                b.Opacity = Settings.I.BgOpacity;
+                if (b.CanFreeze) b.Freeze();
+                card.Background = b;
+            }
         }
 
-        /// <summary>Corner grip that resizes (scales) the whole widget by dragging.</summary>
+        // ---------------- scale grip ----------------
+
         Border BuildScaleGrip()
         {
             var lines = new System.Windows.Shapes.Path
@@ -195,14 +449,14 @@ namespace DeskMate.UI
             {
                 Width = 22,
                 Height = 22,
-                Background = System.Windows.Media.Brushes.Transparent,
+                Background = Brushes.Transparent,
                 Child = lines,
                 Cursor = Cursors.SizeNWSE,
                 VerticalAlignment = VerticalAlignment.Bottom,
                 // keep the grip at the VISUAL bottom-right in both flow directions
                 HorizontalAlignment = L.IsAr ? HorizontalAlignment.Left : HorizontalAlignment.Right,
                 FlowDirection = FlowDirection.LeftToRight,
-                Margin = new Thickness(-8, 0, -8, -7),
+                Margin = new Thickness(2),
             };
             grip.MouseEnter += (s, e) => lines.Stroke = Theme.Accent;
             grip.MouseLeave += (s, e) => lines.Stroke = Theme.TextFaint;
@@ -221,7 +475,7 @@ namespace DeskMate.UI
                 double delta = (cur.X - _gripStart.X) + (cur.Y - _gripStart.Y);
                 double ns = Math.Max(0.6, Math.Min(1.8, _gripStartScale + delta / 280.0));
                 Settings.I.Scale = ns;
-                if (_card != null) _card.LayoutTransform = new ScaleTransform(ns, ns);
+                if (_rootEl != null) _rootEl.LayoutTransform = new ScaleTransform(ns, ns);
             };
             grip.MouseLeftButtonUp += (s, e) =>
             {
@@ -236,15 +490,6 @@ namespace DeskMate.UI
                 if (_scaling) { _scaling = false; Settings.I.Save(); }
             };
             return grip;
-        }
-
-        /// <summary>Full rebuild after settings change (language, style, visibility).</summary>
-        public void Reload()
-        {
-            _lastPrayerLineMin = -1;
-            BuildUI();
-            SetupTray();
-            OnTick(DateTime.Now);
         }
 
         // ---------------- position ----------------
@@ -280,6 +525,19 @@ namespace DeskMate.UI
                 Win32.SendToBottom(_hwnd);
             }
             if (_clock != null && IsVisible) _clock.Tick(now);
+
+            // tri-panel side dates — refresh when the day or language changes
+            if (_gregText != null)
+            {
+                string key = now.ToString("yyyyMMdd") + Settings.I.Lang;
+                if (key != _dateKey)
+                {
+                    _dateKey = key;
+                    _gregText.Text = DateText.Gregorian(now);
+                    if (_hijriText != null) _hijriText.Text = DateText.Hijri(now);
+                }
+            }
+
             PrayerFeature.MinuteTick(now);
             // the countdown only changes once a minute — skip the recompute otherwise
             if (now.Minute != _lastPrayerLineMin)

@@ -55,6 +55,25 @@ namespace DeskMate.Features
             langRow.Margin = new Thickness(0, 2, 0, 6);
             stack.Children.Add(langRow);
 
+            // ---- layout picker ----
+            var layoutRow = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+            var layoutCombo = Theme.MakeCombo();
+            layoutCombo.Items.Add(L.T("ly_classic"));
+            layoutCombo.Items.Add(L.T("ly_connected"));
+            layoutCombo.Items.Add(L.T("ly_triple"));
+            layoutCombo.SelectedIndex = Math.Max(0, Math.Min(2, Settings.I.LayoutIndex));
+            layoutCombo.SelectionChanged += (s, e) =>
+            {
+                Settings.I.LayoutIndex = layoutCombo.SelectedIndex;
+                SaveAndReload();
+            };
+            DockPanel.SetDock(layoutCombo, Dock.Right);
+            layoutRow.Children.Add(layoutCombo);
+            var layoutLbl = Theme.MakeText(L.T("st_layout"), 13, Theme.TextDim);
+            layoutLbl.VerticalAlignment = VerticalAlignment.Center;
+            layoutRow.Children.Add(layoutLbl);
+            stack.Children.Add(layoutRow);
+
             // ---- theme picker ----
             stack.Children.Add(Theme.SectionTitle(L.T("st_theme")));
             var themeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 8) };

@@ -16,7 +16,7 @@ namespace DeskMate.Setup
     static class SetupProgram
     {
         const string AppName = "DeskMate";
-        const string Version = "1.0.0";
+        const string Version = "1.1.0";
         static bool _ar = true;
 
         static string T(string ar, string en) { return _ar ? ar : en; }

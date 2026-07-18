@@ -122,6 +122,10 @@ namespace DeskMate.Core
             { "st_general",      new[] { "عام", "General" } },
             { "st_theme",        new[] { "الثيم", "Theme" } },
             { "st_opacity",      new[] { "شفافية الخلفية", "Background transparency" } },
+            { "st_layout",       new[] { "شكل الأداة", "Widget layout" } },
+            { "ly_classic",      new[] { "كلاسيكي", "Classic" } },
+            { "ly_connected",    new[] { "متصل", "Linked" } },
+            { "ly_triple",       new[] { "ثلاثي اللوحات", "Tri-panel" } },
 
             { "g_close",         new[] { "إغلاق", "Close" } },
             { "g_ok",            new[] { "موافق", "OK" } },

@@ -22,6 +22,7 @@ namespace DeskMate.Core
         public double PosX = -1;
         public double PosY = -1;
         public int ThemeIndex = 0;
+        public int LayoutIndex = 0;      // 0 classic, 1 connected, 2 tri-panel
         public double Scale = 1.0;
         public double BgOpacity = 1.0;   // 0.3 .. 1.0 — widget card background only
 
@@ -112,6 +113,8 @@ namespace DeskMate.Core
                 s.PosX = Json.GetNum(d, "PosX", s.PosX);
                 s.PosY = Json.GetNum(d, "PosY", s.PosY);
                 s.ThemeIndex = Json.GetInt(d, "ThemeIndex", s.ThemeIndex);
+                s.LayoutIndex = Json.GetInt(d, "LayoutIndex", s.LayoutIndex);
+                if (s.LayoutIndex < 0 || s.LayoutIndex > 2) s.LayoutIndex = 0;
                 s.Scale = Json.GetNum(d, "Scale", s.Scale);
                 if (s.Scale < 0.6 || s.Scale > 1.8) s.Scale = 1.0;
                 s.BgOpacity = Json.GetNum(d, "BgOpacity", s.BgOpacity);
@@ -155,6 +158,7 @@ namespace DeskMate.Core
                 d["PosX"] = PosX;
                 d["PosY"] = PosY;
                 d["ThemeIndex"] = (double)ThemeIndex;
+                d["LayoutIndex"] = (double)LayoutIndex;
                 d["Scale"] = Scale;
                 d["BgOpacity"] = BgOpacity;
                 d["ShowCleaner"] = ShowCleaner;

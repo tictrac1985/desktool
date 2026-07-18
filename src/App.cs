@@ -37,6 +37,12 @@ namespace DeskMate
                     Log.Error("Unhandled", e.Exception);
                     e.Handled = true;
                 };
+                app.SessionEnding += (s, e) =>
+                {
+                    // OS shutdown/logoff: let windows close and flush settings one last time
+                    UI.MainWindow.OsSessionEnding = true;
+                    try { Settings.I.Save(); } catch { }
+                };
                 // Windows shutdown/logoff: flush settings and let windows close freely
                 app.SessionEnding += (s, e) =>
                 {

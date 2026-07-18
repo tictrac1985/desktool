@@ -211,6 +211,51 @@ namespace DeskMate.UI
         }
     }
 
+    /// <summary>Time only (used by the tri-panel layout where dates live in side cards).</summary>
+    public class TimeOnlyClock : IClockView
+    {
+        readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        readonly TextBlock _time;
+        readonly TextBlock _ampm;
+        readonly Border _ampmHost;
+
+        public TimeOnlyClock()
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            _time = Theme.MakeText("", 52, Theme.Text, Theme.LightFont);
+            _time.FlowDirection = FlowDirection.LeftToRight;
+            _ampm = Theme.MakeText("", 12.5, Theme.Accent);
+            _ampm.FontWeight = FontWeights.SemiBold;
+            var pill = new SolidColorBrush(Color.FromArgb(0x2A, Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
+            pill.Freeze();
+            _ampmHost = new Border
+            {
+                Background = pill,
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(7, 2, 7, 2),
+                Child = _ampm,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(8, 0, 0, 12),
+            };
+            row.Children.Add(_time);
+            row.Children.Add(_ampmHost);
+            _root.Children.Add(row);
+        }
+
+        public FrameworkElement Root { get { return _root; } }
+
+        public void Tick(DateTime now)
+        {
+            var s = Settings.I;
+            string fmt = s.Use24h
+                ? (s.ShowSeconds ? "HH:mm:ss" : "HH:mm")
+                : (s.ShowSeconds ? "h:mm:ss" : "h:mm");
+            _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
+            _ampmHost.Visibility = s.Use24h ? Visibility.Collapsed : Visibility.Visible;
+            _ampm.Text = L.IsAr ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
+        }
+    }
+
     /// <summary>Compact single-line time + date.</summary>
     public class MinimalClock : IClockView
     {
