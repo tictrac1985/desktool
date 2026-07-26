@@ -201,8 +201,9 @@ namespace DeskMate.UI
         // ---------------- tool cell: icon + permanent label ----------------
 
         /// <summary>The widget's signature button: a 40px circle with its name always
-        /// visible underneath. Hover lifts the circle and lights glyph + label in the accent.</summary>
-        public static FrameworkElement MakeToolCell(string glyph, string label, Action onClick, bool floating)
+        /// visible underneath. Hover lifts the circle and lights glyph + label in the accent.
+        /// cellWidth shrinks the cell for dense single-row layouts (label scales with it).</summary>
+        public static FrameworkElement MakeToolCell(string glyph, string label, Action onClick, bool floating, double cellWidth = 58)
         {
             var glyphText = MakeGlyph(glyph, 16);
             var circle = new Border
@@ -235,19 +236,19 @@ namespace DeskMate.UI
             var name = new TextBlock
             {
                 Text = label,
-                FontSize = 10.5,
+                FontSize = cellWidth < 52 ? 9.5 : 10.5,
                 FontFamily = UiFont,
                 Foreground = TextDim,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 TextAlignment = TextAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis,
-                MaxWidth = 78,
+                MaxWidth = cellWidth + 20,
                 Margin = new Thickness(-10, 4, -10, 0),
             };
 
             var cell = new StackPanel
             {
-                Width = 58,
+                Width = cellWidth,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Background = Brushes.Transparent,
                 Cursor = Cursors.Hand,

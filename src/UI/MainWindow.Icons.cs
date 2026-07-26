@@ -38,11 +38,11 @@ namespace DeskMate.UI
         }
 
         /// <summary>Tool cells with permanently visible names under each icon.</summary>
-        List<FrameworkElement> BuildIcons(bool floating)
+        List<FrameworkElement> BuildIcons(bool floating, double cellWidth = 58)
         {
             var list = new List<FrameworkElement>();
             foreach (var def in IconDefs())
-                list.Add(Theme.MakeToolCell(def.Item1, L.T(def.Item2), def.Item3, floating));
+                list.Add(Theme.MakeToolCell(def.Item1, L.T(def.Item2), def.Item3, floating, cellWidth));
             return list;
         }
 

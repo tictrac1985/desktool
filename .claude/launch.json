@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vieditor-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "D:\\openprojects\\vedit", "run", "dev"],
+      "port": 1420
+    }
+  ]
+}

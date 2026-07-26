@@ -75,10 +75,10 @@ namespace DeskMate.UI
         readonly TextBlock _date;
         readonly TextBlock _hijri;
 
-        public DigitalClock()
+        public DigitalClock(double timeSize = 58)
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-            _time = Theme.MakeText("", 58, Theme.Text, Theme.LightFont);
+            _time = Theme.MakeText("", timeSize, Theme.Text, Theme.LightFont);
             _time.FlowDirection = FlowDirection.LeftToRight;
             _ampm = Theme.MakeText("", 13.5, Theme.Accent);
             _ampm.FontWeight = FontWeights.SemiBold;
@@ -91,7 +91,7 @@ namespace DeskMate.UI
                 Padding = new Thickness(8, 2.5, 8, 2.5),
                 Child = _ampm,
                 VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(9, 0, 0, 14),
+                Margin = new Thickness(9, 0, 0, timeSize * 0.24),
             };
             row.Children.Add(_time);
             row.Children.Add(_ampmHost);
