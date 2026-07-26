@@ -117,19 +117,56 @@ namespace DeskMate.UI
                 (byte)Math.Min(255, c.R + dr), (byte)Math.Min(255, c.G + dg), (byte)Math.Min(255, c.B + db));
         }
 
+        // ---------------- 3D depth ----------------
+
+        /// <summary>Raised-surface bevel overlay: light rolls in from the top edge and
+        /// shade pools at the bottom. Lay it over any filled surface to lift it.</summary>
+        public static Border Bevel(double radius)
+        {
+            byte hi = IsLight ? (byte)0x55 : (byte)0x1F;
+            byte lo = IsLight ? (byte)0x14 : (byte)0x30;
+            var br = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            br.GradientStops.Add(new GradientStop(Color.FromArgb(hi, 255, 255, 255), 0));
+            br.GradientStops.Add(new GradientStop(Color.FromArgb(0, 255, 255, 255), 0.42));
+            br.GradientStops.Add(new GradientStop(Color.FromArgb(0, 0, 0, 0), 0.62));
+            br.GradientStops.Add(new GradientStop(Color.FromArgb(lo, 0, 0, 0), 1));
+            return new Border
+            {
+                CornerRadius = new CornerRadius(radius),
+                IsHitTestVisible = false,
+                Background = br,
+            };
+        }
+
+        /// <summary>Carved-in bevel overlay: shade sinks in from the top edge with a faint
+        /// light line at the bottom — for recessed wells (calculator display, inputs).</summary>
+        public static Border InsetBevel(double radius)
+        {
+            byte hi = IsLight ? (byte)0x18 : (byte)0x38;
+            byte lo = IsLight ? (byte)0x40 : (byte)0x14;
+            var br = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            br.GradientStops.Add(new GradientStop(Color.FromArgb(hi, 0, 0, 0), 0));
+            br.GradientStops.Add(new GradientStop(Color.FromArgb(0, 0, 0, 0), 0.30));
+            br.GradientStops.Add(new GradientStop(Color.FromArgb(0, 255, 255, 255), 0.80));
+            br.GradientStops.Add(new GradientStop(Color.FromArgb(lo, 255, 255, 255), 1));
+            return new Border
+            {
+                CornerRadius = new CornerRadius(radius),
+                IsHitTestVisible = false,
+                Background = br,
+            };
+        }
+
         // ---------------- cards & chrome ----------------
 
-        /// <summary>Glass card: gradient body + 1px edge + inner top light + soft shadow.</summary>
+        /// <summary>Glass card: gradient body + 1px edge + 3D bevel (top light, bottom
+        /// shade) + deep soft shadow so the card floats above the desktop.</summary>
         public static Border MakeCard(UIElement content, double radius = 24)
         {
             var layers = new Grid();
-            layers.Children.Add(new Border
-            {
-                CornerRadius = new CornerRadius(Math.Max(1, radius - 1)),
-                Background = GlassTop,
-                IsHitTestVisible = false,
-                Margin = new Thickness(1),
-            });
+            var bevel = Bevel(Math.Max(1, radius - 1));
+            bevel.Margin = new Thickness(1);
+            layers.Children.Add(bevel);
             layers.Children.Add(content);
             return new Border
             {
@@ -141,8 +178,8 @@ namespace DeskMate.UI
                 Child = layers,
                 Effect = new DropShadowEffect
                 {
-                    Color = Colors.Black, BlurRadius = 24, ShadowDepth = 3,
-                    Opacity = IsLight ? 0.24 : 0.46, Direction = 270,
+                    Color = Colors.Black, BlurRadius = 30, ShadowDepth = 7,
+                    Opacity = IsLight ? 0.30 : 0.55, Direction = 270,
                 },
                 Margin = new Thickness(12), // room for the shadow inside the transparent window
             };
@@ -206,6 +243,9 @@ namespace DeskMate.UI
         public static FrameworkElement MakeToolCell(string glyph, string label, Action onClick, bool floating, double cellWidth = 58)
         {
             var glyphText = MakeGlyph(glyph, 16);
+            var circleLayers = new Grid();
+            circleLayers.Children.Add(Bevel(19));
+            circleLayers.Children.Add(glyphText);
             var circle = new Border
             {
                 Width = 40,
@@ -214,7 +254,7 @@ namespace DeskMate.UI
                 Background = floating ? CardBg : ButtonBg,
                 BorderBrush = ButtonBorder,
                 BorderThickness = new Thickness(1),
-                Child = glyphText,
+                Child = circleLayers,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 RenderTransformOrigin = new Point(0.5, 0.5),
             };
@@ -330,14 +370,16 @@ namespace DeskMate.UI
             Brush accentBg = Accent;
             if (accent)
                 accentBg = Freeze(new LinearGradientBrush(Lift(AccentColor, 26, 22, 20), AccentColor, 90));
+            var btnLayers = new Grid();
+            btnLayers.Children.Add(Bevel(9));
+            btnLayers.Children.Add(new Border { Padding = new Thickness(14, 7, 14, 7), Child = tb });
             var b = new Border
             {
                 Background = accent ? accentBg : ButtonBg,
                 BorderBrush = accent ? null : ButtonBorder,
                 BorderThickness = accent ? new Thickness(0) : new Thickness(1),
                 CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(14, 7, 14, 7),
-                Child = tb,
+                Child = btnLayers,
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(3),
             };

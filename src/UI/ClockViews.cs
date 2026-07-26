@@ -143,6 +143,23 @@ namespace DeskMate.UI
                 Fill = Theme.DialFill,
             };
             _canvas.Children.Add(dial);
+            // convex glass dome over the dial face: radial light from the top-left
+            var dome = new RadialGradientBrush
+            {
+                GradientOrigin = new Point(0.32, 0.28),
+                Center = new Point(0.5, 0.5),
+                RadiusX = 0.72,
+                RadiusY = 0.72,
+            };
+            byte dHi = Theme.IsLight ? (byte)0x35 : (byte)0x20;
+            byte dLo = Theme.IsLight ? (byte)0x10 : (byte)0x26;
+            dome.GradientStops.Add(new GradientStop(Color.FromArgb(dHi, 255, 255, 255), 0));
+            dome.GradientStops.Add(new GradientStop(Color.FromArgb(0, 255, 255, 255), 0.55));
+            dome.GradientStops.Add(new GradientStop(Color.FromArgb(dLo, 0, 0, 0), 1));
+            var domeEl = new Ellipse { Width = Size - 5, Height = Size - 5, Fill = dome, IsHitTestVisible = false };
+            Canvas.SetLeft(domeEl, 2.5);
+            Canvas.SetTop(domeEl, 2.5);
+            _canvas.Children.Add(domeEl);
             for (int i = 0; i < 12; i++)
             {
                 double a = i * 30 * Math.PI / 180;
