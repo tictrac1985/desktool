@@ -22,6 +22,7 @@ namespace DeskMate.Core
         public double PosX = -1;
         public double PosY = -1;
         public int ThemeIndex = 0;
+        public bool AutoTheme = false;        // day (06–18) → light palette, night → chosen palette
         public int LayoutIndex = 0;      // 0 classic, 1 connected, 2 tri-panel, 3 orbit, 4 sidebar, 5 dock
         public double Scale = 1.0;
         public double BgOpacity = 1.0;   // 0.3 .. 1.0 — widget card background only
@@ -35,6 +36,11 @@ namespace DeskMate.Core
         public bool ShowWeather = true;
         public bool ShowApps = true;
         public bool ShowPrayer = true;
+        public bool ShowFocus = true;
+        public bool ShowOccasions = true;
+        public bool ShowNote = false;
+        public bool ShowSysMon = false;
+        public bool ShowWorldClock = false;
 
         // location
         public bool AutoLocation = true;
@@ -51,6 +57,23 @@ namespace DeskMate.Core
         // clipboard
         public int ClipboardMax = 25;
         public List<string> PinnedClips = new List<string>();
+
+        // focus timer (pomodoro)
+        public string FocusDoneDate = "";     // yyyyMMdd of the last counted session
+        public int FocusDoneCount = 0;
+
+        // prayer alert sound: 0 = system, 1 = soft chime, 2 = custom wav file
+        public int AdhanSound = 0;
+        public string AdhanPath = "";
+
+        // sticky note
+        public string StickyNote = "";
+
+        // custom occasion date (yyyy-MM-dd, Gregorian); empty = none
+        public string OccasionCustom = "";
+
+        // world clocks: Windows timezone ids chosen by the user
+        public List<string> WorldClocks = new List<string>();
 
         public static string DefaultPath
         {
@@ -113,6 +136,7 @@ namespace DeskMate.Core
                 s.PosX = Json.GetNum(d, "PosX", s.PosX);
                 s.PosY = Json.GetNum(d, "PosY", s.PosY);
                 s.ThemeIndex = Json.GetInt(d, "ThemeIndex", s.ThemeIndex);
+                s.AutoTheme = Json.GetBool(d, "AutoTheme", s.AutoTheme);
                 s.LayoutIndex = Json.GetInt(d, "LayoutIndex", s.LayoutIndex);
                 if (s.LayoutIndex < 0 || s.LayoutIndex > 5) s.LayoutIndex = 0;
                 s.Scale = Json.GetNum(d, "Scale", s.Scale);
@@ -127,6 +151,11 @@ namespace DeskMate.Core
                 s.ShowWeather = Json.GetBool(d, "ShowWeather", s.ShowWeather);
                 s.ShowApps = Json.GetBool(d, "ShowApps", s.ShowApps);
                 s.ShowPrayer = Json.GetBool(d, "ShowPrayer", s.ShowPrayer);
+                s.ShowFocus = Json.GetBool(d, "ShowFocus", s.ShowFocus);
+                s.ShowOccasions = Json.GetBool(d, "ShowOccasions", s.ShowOccasions);
+                s.ShowNote = Json.GetBool(d, "ShowNote", s.ShowNote);
+                s.ShowSysMon = Json.GetBool(d, "ShowSysMon", s.ShowSysMon);
+                s.ShowWorldClock = Json.GetBool(d, "ShowWorldClock", s.ShowWorldClock);
                 s.AutoLocation = Json.GetBool(d, "AutoLocation", s.AutoLocation);
                 s.Lat = Json.GetNum(d, "Lat", s.Lat);
                 s.Lon = Json.GetNum(d, "Lon", s.Lon);
@@ -139,6 +168,16 @@ namespace DeskMate.Core
                 s.PinnedClips = new List<string>();
                 foreach (var o in Json.GetList(d, "PinnedClips"))
                     if (o is string) s.PinnedClips.Add((string)o);
+                s.FocusDoneDate = Json.GetStr(d, "FocusDoneDate", s.FocusDoneDate);
+                s.FocusDoneCount = Json.GetInt(d, "FocusDoneCount", s.FocusDoneCount);
+                s.AdhanSound = Json.GetInt(d, "AdhanSound", s.AdhanSound);
+                if (s.AdhanSound < 0 || s.AdhanSound > 2) s.AdhanSound = 0;
+                s.AdhanPath = Json.GetStr(d, "AdhanPath", s.AdhanPath);
+                s.StickyNote = Json.GetStr(d, "StickyNote", s.StickyNote);
+                s.OccasionCustom = Json.GetStr(d, "OccasionCustom", s.OccasionCustom);
+                s.WorldClocks = new List<string>();
+                foreach (var o in Json.GetList(d, "WorldClocks"))
+                    if (o is string) s.WorldClocks.Add((string)o);
                 return s;
             }
         }
@@ -158,6 +197,7 @@ namespace DeskMate.Core
                 d["PosX"] = PosX;
                 d["PosY"] = PosY;
                 d["ThemeIndex"] = (double)ThemeIndex;
+                d["AutoTheme"] = AutoTheme;
                 d["LayoutIndex"] = (double)LayoutIndex;
                 d["Scale"] = Scale;
                 d["BgOpacity"] = BgOpacity;
@@ -169,6 +209,11 @@ namespace DeskMate.Core
                 d["ShowWeather"] = ShowWeather;
                 d["ShowApps"] = ShowApps;
                 d["ShowPrayer"] = ShowPrayer;
+                d["ShowFocus"] = ShowFocus;
+                d["ShowOccasions"] = ShowOccasions;
+                d["ShowNote"] = ShowNote;
+                d["ShowSysMon"] = ShowSysMon;
+                d["ShowWorldClock"] = ShowWorldClock;
                 d["AutoLocation"] = AutoLocation;
                 d["Lat"] = Lat;
                 d["Lon"] = Lon;
@@ -179,6 +224,13 @@ namespace DeskMate.Core
                 d["PrayerPreAlertMin"] = (double)PrayerPreAlertMin;
                 d["ClipboardMax"] = (double)ClipboardMax;
                 d["PinnedClips"] = PinnedClips;
+                d["FocusDoneDate"] = FocusDoneDate;
+                d["FocusDoneCount"] = (double)FocusDoneCount;
+                d["AdhanSound"] = (double)AdhanSound;
+                d["AdhanPath"] = AdhanPath;
+                d["StickyNote"] = StickyNote;
+                d["OccasionCustom"] = OccasionCustom;
+                d["WorldClocks"] = WorldClocks;
                 string p = PathToUse;
                 Directory.CreateDirectory(Path.GetDirectoryName(p));
                 // atomic write: never leave a truncated settings file, keep a .bak of the

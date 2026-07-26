@@ -1,7 +1,8 @@
 # DeskMate build script — compiles with VS BuildTools Roslyn csc against .NET Framework 4.8 GAC assemblies.
 param(
     [switch]$SkipTests,
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    [switch]$UiSmoke
 )
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
@@ -132,4 +133,15 @@ if ((-not $SkipInstaller) -and (Test-Path $setupSrc)) {
     Invoke-Csc $setupExe "winexe" @($setupSrc) $refsSetup @("/win32icon:$ico", "/resource:$appExe,DeskMate.Payload")
     Write-Host "OK -> $setupExe" -ForegroundColor Green
 }
+# ---------------- UI smoke screenshots (optional) ----------------
+$uiSmokeSrc = Join-Path $root "tests\UiSmoke.cs"
+if ($UiSmoke -and (Test-Path $uiSmokeSrc)) {
+    Write-Host "Building UiSmoke ..."
+    $smokeExe = Join-Path $obj "UiSmoke.exe"
+    Invoke-Csc $smokeExe "winexe" ($appSources + @($uiSmokeSrc)) $refsApp @("/main:UiSmoke", "/win32icon:$ico")
+    $shots = Join-Path $obj "uishots"
+    Write-Host "Capturing UI screenshots -> $shots"
+    & $smokeExe $shots | Out-Host
+}
+
 Write-Host "Build complete." -ForegroundColor Green

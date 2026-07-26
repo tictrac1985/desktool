@@ -38,7 +38,7 @@ namespace DeskMate.UI
         {
             var accent = Hex(Theme.AccentColor);
             var accentSel = Hex(Color.FromArgb(0x36, Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
-            var pal = Theme.Palettes[Math.Max(0, Math.Min(Theme.Palettes.Length - 1, DeskMate.Core.Settings.I.ThemeIndex))];
+            var pal = Theme.Palettes[Math.Max(0, Math.Min(Theme.Palettes.Length - 1, Theme.AppliedIndex))];
             var popupC = pal.Light ? pal.CardTop : pal.CardBottom;
             var popupBg = Hex(Color.FromArgb(0xF6, popupC.R, popupC.G, popupC.B));
             string onAccent = Theme.IsLight ? "#FFFFFFFF" : "#FF000000";

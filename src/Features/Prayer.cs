@@ -114,45 +114,55 @@ namespace DeskMate.Features
             string msg = minutesBefore == 0
                 ? string.Format(L.T("pr_now"), name)
                 : string.Format(L.T("pr_pre"), name, minutesBefore);
-            try { SystemSounds.Exclamation.Play(); } catch { }
-            ShowToast(msg);
+            AlertSound.Play();
+            Toast.Show(msg, Glyphs.Prayer);
         }
 
-        static void ShowToast(string message)
+        static void PlaySoundRow(PanelWindow host, StackPanel stack)
         {
-            var w = new Window
+            stack.Children.Add(Theme.SectionTitle(L.T("pr_sound")));
+            var row = new DockPanel { Margin = new Thickness(0, 2, 0, 0) };
+            var testBtn = Theme.MakeButton(L.T("pr_snd_test"), () => AlertSound.Play());
+            testBtn.Padding = new Thickness(10, 5, 10, 5);
+            DockPanel.SetDock(testBtn, Dock.Right);
+            row.Children.Add(testBtn);
+
+            var combo = Theme.MakeCombo();
+            combo.Items.Add(L.T("pr_snd_system"));
+            combo.Items.Add(L.T("pr_snd_chime"));
+            combo.Items.Add(L.T("pr_snd_custom"));
+            combo.SelectedIndex = Settings.I.AdhanSound;
+            combo.HorizontalAlignment = HorizontalAlignment.Stretch;
+            combo.SelectionChanged += (s, e) =>
             {
-                WindowStyle = WindowStyle.None,
-                AllowsTransparency = true,
-                Background = Brushes.Transparent,
-                ShowInTaskbar = false,
-                Topmost = true,
-                SizeToContent = SizeToContent.WidthAndHeight,
-                ShowActivated = false,
-                FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+                if (combo.SelectedIndex == 2)
+                {
+                    var dlg = new Microsoft.Win32.OpenFileDialog
+                    {
+                        Filter = "WAV|*.wav",
+                        CheckFileExists = true,
+                    };
+                    host.SuppressAutoClose = true;
+                    try
+                    {
+                        if (dlg.ShowDialog(host) == true)
+                        {
+                            Settings.I.AdhanSound = 2;
+                            Settings.I.AdhanPath = dlg.FileName;
+                        }
+                        else combo.SelectedIndex = Settings.I.AdhanSound; // cancelled → revert
+                    }
+                    finally
+                    {
+                        host.SuppressAutoClose = false;
+                        try { host.Activate(); } catch { }
+                    }
+                }
+                else Settings.I.AdhanSound = combo.SelectedIndex;
+                Settings.I.Save();
             };
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            var glyph = Theme.MakeGlyph("", 26, Theme.Accent);
-            glyph.VerticalAlignment = VerticalAlignment.Center;
-            glyph.Margin = new Thickness(0, 0, 10, 0);
-            row.Children.Add(glyph);
-            var text = Theme.MakeText(message, 15, Theme.Text);
-            text.VerticalAlignment = VerticalAlignment.Center;
-            text.MaxWidth = 320;
-            text.TextWrapping = TextWrapping.Wrap;
-            row.Children.Add(text);
-            w.Content = Theme.MakeCard(row, 16);
-            w.MouseLeftButtonDown += (s, e) => w.Close();
-            w.Loaded += (s, e) =>
-            {
-                var wa = SystemParameters.WorkArea;
-                w.Left = L.IsAr ? wa.Left + 16 : wa.Right - w.ActualWidth - 16;
-                w.Top = wa.Bottom - w.ActualHeight - 16;
-            };
-            w.Show();
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(25) };
-            timer.Tick += (s, e) => { timer.Stop(); try { w.Close(); } catch { } };
-            timer.Start();
+            row.Children.Add(combo);
+            stack.Children.Add(row);
         }
 
         public static void Open(Window owner)
@@ -286,6 +296,8 @@ namespace DeskMate.Features
             preLbl.VerticalAlignment = VerticalAlignment.Center;
             preRow.Children.Add(preLbl);
             stack.Children.Add(preRow);
+
+            PlaySoundRow(host, stack);
 
             return stack;
         }

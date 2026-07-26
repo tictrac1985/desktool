@@ -33,6 +33,54 @@ namespace DeskMate.Core
         static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
         static extern int SHEmptyRecycleBin(IntPtr hwnd, string pszRootPath, uint dwFlags);
+        [DllImport("kernel32.dll")]
+        static extern bool GetSystemTimes(out long idleTime, out long kernelTime, out long userTime);
+        [DllImport("kernel32.dll")]
+        static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX buffer);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MEMORYSTATUSEX
+        {
+            public uint Length;
+            public uint MemoryLoad;          // 0..100 used
+            public ulong TotalPhys;
+            public ulong AvailPhys;
+            public ulong TotalPageFile;
+            public ulong AvailPageFile;
+            public ulong TotalVirtual;
+            public ulong AvailVirtual;
+            public ulong AvailExtendedVirtual;
+            public static MEMORYSTATUSEX Create()
+            {
+                var m = new MEMORYSTATUSEX();
+                m.Length = (uint)Marshal.SizeOf(typeof(MEMORYSTATUSEX));
+                return m;
+            }
+        }
+
+        /// <summary>Raw system time counters (100-ns ticks). Kernel includes idle.</summary>
+        public static bool SampleSystemTimes(out long idle, out long kernel, out long user)
+        {
+            idle = kernel = user = 0;
+            try { return GetSystemTimes(out idle, out kernel, out user); }
+            catch { return false; }
+        }
+
+        /// <summary>Physical memory: used percent 0..100 and free bytes. False on failure.</summary>
+        public static bool MemoryStatus(out double usedPercent, out ulong freeBytes, out ulong totalBytes)
+        {
+            usedPercent = 0; freeBytes = totalBytes = 0;
+            try
+            {
+                var m = MEMORYSTATUSEX.Create();
+                if (!GlobalMemoryStatusEx(ref m)) return false;
+                usedPercent = m.MemoryLoad;
+                freeBytes = m.AvailPhys;
+                totalBytes = m.TotalPhys;
+                return true;
+            }
+            catch { return false; }
+        }
 
         /// <summary>Removes the window from taskbar and Alt-Tab.</summary>
         public static void MakeToolWindow(IntPtr hwnd)

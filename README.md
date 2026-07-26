@@ -28,9 +28,16 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 | 📋 | حافظة نصوص مؤقتة مع تثبيت وحذف | Clipboard text keeper with pin/delete |
 | ☀ | الطقس الحالي + 3 أيام (تحديد موقع تلقائي أو مدينة يدوية) | Current weather + 3-day forecast (auto or manual location) |
 | 📂 | قائمة برامج ويندوز (تشمل تطبيقات المتجر): فتح أو **إضافة لسطح المكتب** بنقرة | Installed apps incl. Store apps: open or **add to desktop** in one click |
-| 🌙 | مواقيت الصلاة (حساب فلكي محلي، 5 طرق حساب) مع تنبيه عند الوقت وتنبيه مسبق | Prayer times (offline astronomical calc, 5 methods) with at-time & pre-alerts |
+| 🌙 | مواقيت الصلاة (حساب فلكي محلي، 5 طرق حساب) مع تنبيه عند الوقت وتنبيه مسبق وصوت تنبيه قابل للاختيار (نظام / ناعم / ملف مخصص) | Prayer times (offline astronomical calc, 5 methods) with at-time & pre-alerts and a choice of alert sound (system / soft chime / custom file) |
+| ⏱ | مؤقت تركيز (بومودورو) بحلقة تقدم وجلسات يومية واستراحة تلقائية | Focus timer (pomodoro) with progress ring, daily session count and auto break |
+| ★ | عدّ تنازلي للمناسبات الهجرية (رمضان والعيدان) + تاريخ مخصص | Hijri occasions countdown (Ramadan, both Eids) + a custom date |
+| ✎ | ملاحظة لاصقة تُحفظ تلقائياً أثناء الكتابة | Sticky note, auto-saved as you type |
+| ⊞ | مراقب موارد: معالج وذاكرة وبطارية بأشرطة حية | System monitor: live CPU / memory / battery bars |
+| ◎ | ساعات عالمية لمدن تختارها مع فرق اليوم | World clocks for your cities, with day-offset badges |
 | ⚙ | إعدادات: اللغة، شكل الساعة، إظهار/إخفاء كل أداة، التشغيل مع ويندوز | Settings: language, clock style, show/hide any tool, autostart |
-| 🎨 | 5 ثيمات (كهرماني، أزرق، زمردي، وردي، فاتح) + شفافية قابلة للضبط + تكبير/تصغير بمقبض الزاوية | 5 themes + adjustable transparency + corner-grip resizing |
+| 🎨 | 5 ثيمات + ثيم تلقائي اختياري (فاتح نهاراً والمختار ليلاً) + شفافية قابلة للضبط + تكبير/تصغير بمقبض الزاوية | 5 themes + optional auto theme (light by day) + adjustable transparency + corner-grip resizing |
+
+كل أيقونة يظهر اسم أداتها تحتها دائماً — لا حاجة للتخمين. · Every icon shows its tool's name beneath it — no guessing.
 
 ## سلوك الأداة · Behavior
 
@@ -46,9 +53,14 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل 77 اختباراً ذاتياً للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
+يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل 125 اختباراً ذاتياً للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
 
-Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs 77 logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
+Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs 125 logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
+
+```powershell
+# لقطات معاينة لكل التخطيطات واللوحات في obj\uishots · render every layout & panel to obj\uishots
+powershell -ExecutionPolicy Bypass -File build.ps1 -UiSmoke
+```
 
 ### خيارات المُثبّت · Installer switches
 

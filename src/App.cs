@@ -29,7 +29,7 @@ namespace DeskMate
 
                 _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "DeskMate.ShowSignal");
                 Settings.Load();
-                UI.Theme.Apply(Settings.I.ThemeIndex);
+                UI.Theme.Apply(Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.AutoTheme, DateTime.Now.Hour));
 
                 var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
                 app.DispatcherUnhandledException += (s, e) =>
@@ -40,12 +40,6 @@ namespace DeskMate
                 app.SessionEnding += (s, e) =>
                 {
                     // OS shutdown/logoff: let windows close and flush settings one last time
-                    UI.MainWindow.OsSessionEnding = true;
-                    try { Settings.I.Save(); } catch { }
-                };
-                // Windows shutdown/logoff: flush settings and let windows close freely
-                app.SessionEnding += (s, e) =>
-                {
                     UI.MainWindow.OsSessionEnding = true;
                     try { Settings.I.Save(); } catch { }
                 };

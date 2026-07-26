@@ -108,7 +108,7 @@ namespace DeskMate.Features
                 {
                     e.Handled = true;
                     Settings.I.ThemeIndex = idx;
-                    Theme.Apply(idx);
+                    Theme.Apply(Logic.AutoThemeCore.EffectiveIndex(idx, Settings.I.AutoTheme, DateTime.Now.Hour));
                     SaveAndReload();
                     PanelWindow.CloseCurrent();
                     Open(MainWindow.Instance);
@@ -116,6 +116,14 @@ namespace DeskMate.Features
                 themeRow.Children.Add(swatch);
             }
             stack.Children.Add(themeRow);
+            stack.Children.Add(Theme.MakeCheck(L.T("st_auto_theme"), Settings.I.AutoTheme, v =>
+            {
+                Settings.I.AutoTheme = v;
+                Theme.Apply(Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, v, DateTime.Now.Hour));
+                SaveAndReload();
+                PanelWindow.CloseCurrent();
+                Open(MainWindow.Instance);
+            }));
 
             // ---- background transparency ----
             stack.Children.Add(Theme.SectionTitle(L.T("st_opacity")));
@@ -168,6 +176,11 @@ namespace DeskMate.Features
             AddFeatureCheck(grid, "f_weather", Settings.I.ShowWeather, v => Settings.I.ShowWeather = v);
             AddFeatureCheck(grid, "f_apps", Settings.I.ShowApps, v => Settings.I.ShowApps = v);
             AddFeatureCheck(grid, "f_prayer", Settings.I.ShowPrayer, v => Settings.I.ShowPrayer = v);
+            AddFeatureCheck(grid, "f_focus", Settings.I.ShowFocus, v => Settings.I.ShowFocus = v);
+            AddFeatureCheck(grid, "f_occasions", Settings.I.ShowOccasions, v => Settings.I.ShowOccasions = v);
+            AddFeatureCheck(grid, "f_note", Settings.I.ShowNote, v => Settings.I.ShowNote = v);
+            AddFeatureCheck(grid, "f_sysmon", Settings.I.ShowSysMon, v => Settings.I.ShowSysMon = v);
+            AddFeatureCheck(grid, "f_worldclock", Settings.I.ShowWorldClock, v => Settings.I.ShowWorldClock = v);
             stack.Children.Add(grid);
 
             // ---- location ----

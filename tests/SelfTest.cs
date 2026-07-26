@@ -37,6 +37,12 @@ static class SelfTest
         TestCleaner();
         TestAppScanner();
         TestWeather();
+        TestAutoTheme();
+        TestFocus();
+        TestOccasions();
+        TestWorldClocks();
+        TestChime();
+        TestCpuSampler();
         Console.WriteLine();
         Console.WriteLine("Passed: " + _pass + "   Failed: " + _fail);
         return _fail == 0 ? 0 : 1;
@@ -212,5 +218,111 @@ static class SelfTest
 
         var geo = WeatherCore.ParseGeocode("{\"results\":[{\"latitude\":30,\"longitude\":31,\"name\":\"القاهرة\",\"country_code\":\"EG\",\"admin1\":\"القاهرة\"}]}");
         Check(geo.Count == 1 && geo[0].Country == "EG" && geo[0].City == "القاهرة", "geocode parse");
+    }
+
+    // ---------------- v1.3 additions ----------------
+
+    static void TestAutoTheme()
+    {
+        Check(AutoThemeCore.EffectiveIndex(2, false, 10) == 2, "auto theme off keeps chosen");
+        Check(AutoThemeCore.EffectiveIndex(2, true, 10) == 4, "auto theme day → light");
+        Check(AutoThemeCore.EffectiveIndex(2, true, 22) == 2, "auto theme night → chosen");
+        Check(AutoThemeCore.EffectiveIndex(1, true, 6) == 4, "auto theme boundary 06:00");
+        Check(AutoThemeCore.EffectiveIndex(1, true, 17) == 4, "auto theme boundary 17:59");
+        Check(AutoThemeCore.EffectiveIndex(1, true, 18) == 1, "auto theme boundary 18:00");
+    }
+
+    static void TestFocus()
+    {
+        var f = new FocusCore { WorkMin = 25, BreakMin = 5 };
+        var t0 = new DateTime(2026, 7, 26, 10, 0, 0);
+        f.Start(FocusCore.Phase.Work, t0);
+        Check(f.State == FocusCore.Phase.Work && !f.Paused, "focus starts running");
+        CheckNear(f.Remaining(t0).TotalMinutes, 25, 0.01, "focus initial remaining");
+        CheckNear(f.Remaining(t0.AddMinutes(10)).TotalMinutes, 15, 0.01, "focus remaining after 10m");
+        CheckNear(f.Progress(t0.AddMinutes(10)), 0.4, 0.01, "focus progress 40%");
+
+        f.TogglePause(t0.AddMinutes(10));
+        Check(f.Paused, "focus pauses");
+        CheckNear(f.Remaining(t0.AddMinutes(15)).TotalMinutes, 15, 0.01, "focus frozen while paused");
+        f.TogglePause(t0.AddMinutes(20));
+        Check(!f.Paused, "focus resumes");
+        CheckNear(f.Remaining(t0.AddMinutes(22)).TotalMinutes, 13, 0.01, "focus remaining after resume");
+
+        // paused 10 min between t0+10 and t0+20 → work ends at t0+35
+        Check(!f.Tick(t0.AddMinutes(30)), "focus no early completion");
+        Check(f.Tick(t0.AddMinutes(40)), "focus completes at end");
+        Check(!f.Tick(t0.AddMinutes(41)), "focus completion fires once");
+
+        f.Start(FocusCore.Phase.Break, t0.AddMinutes(50));
+        Check(f.State == FocusCore.Phase.Break, "focus switches to break");
+        CheckNear(f.Remaining(t0.AddMinutes(50)).TotalMinutes, 5, 0.01, "break length");
+        f.Reset();
+        Check(f.State == FocusCore.Phase.Idle && f.Remaining(t0) == TimeSpan.Zero, "focus reset");
+
+        Check(FocusCore.Format(TimeSpan.FromSeconds(61)) == "01:01", "focus format 61s");
+        Check(FocusCore.Format(TimeSpan.FromMinutes(25)) == "25:00", "focus format 25m");
+        Check(FocusCore.Format(TimeSpan.Zero) == "00:00", "focus format zero");
+    }
+
+    static void TestOccasions()
+    {
+        var today = new DateTime(2026, 7, 26);
+        // Ramadan 1447 ≈ Feb/Mar 2026 → next is Ramadan 1448 ≈ Feb 2027 (± a few days by calendar rules)
+        var ram = OccasionCore.NextHijri(9, 1, today);
+        Check(ram != null && ram.Value > today, "ramadan is in the future");
+        Check(ram != null && ram.Value.Year >= 2027 && ram.Value.Year <= 2028, "ramadan rolls to next hijri year");
+        // roundtrip: the returned gregorian date maps back to 1 Ramadan
+        var cal = new System.Globalization.UmAlQuraCalendar();
+        Check(cal.GetMonth(ram.Value) == 9 && cal.GetDayOfMonth(ram.Value) == 1, "ramadan roundtrip");
+        // days-left math
+        Check(OccasionCore.DaysLeft(today, today) == 0, "days left today");
+        Check(OccasionCore.DaysLeft(today, today.AddDays(5)) == 5, "days left +5");
+        Check(OccasionCore.DaysLeft(today, today.AddDays(-3)) == 0, "days left clamps past");
+        // gregorian custom date rolls over
+        var ny = OccasionCore.NextGregorian(1, 1, today);
+        Check(ny != null && ny.Value == new DateTime(2027, 1, 1), "gregorian rolls to next year");
+        var same = OccasionCore.NextGregorian(7, 26, today);
+        Check(same != null && same.Value == today, "gregorian same day stays");
+    }
+
+    static void TestWorldClocks()
+    {
+        var utc = new DateTime(2026, 7, 26, 12, 0, 0);
+        var makkah = WorldClockCore.TimeIn("Arab Standard Time", utc); // UTC+3, no DST
+        Check(makkah != null && makkah.Value.Hour == 15, "makkah = utc+3");
+        var tokyo = WorldClockCore.TimeIn("Tokyo Standard Time", utc); // UTC+9, no DST
+        Check(tokyo != null && tokyo.Value.Hour == 21, "tokyo = utc+9");
+        Check(WorldClockCore.TimeIn("No Such Zone", utc) == null, "unknown zone → null");
+        Check(WorldClockCore.Find("Tokyo Standard Time") != null, "city lookup");
+        Check(WorldClockCore.Find("nope") == null, "city lookup miss");
+        // day offset: local machine = UTC+3 at 05:30 (02:30 UTC) → Tokyo 11:30 same day,
+        // Pacific 19:30 the previous day
+        var local = new DateTime(2026, 7, 26, 5, 30, 0);
+        var utc2 = new DateTime(2026, 7, 26, 2, 30, 0);
+        Check(WorldClockCore.DayDiff("Tokyo Standard Time", utc2, local) == 0, "tokyo same day");
+        Check(WorldClockCore.DayDiff("Pacific Standard Time", utc2, local) == -1, "pacific still yesterday");
+        Check(WorldClockCore.DayDiff("Arab Standard Time", utc2, local) == 0, "same-day zone");
+    }
+
+    static void TestChime()
+    {
+        var wav = ChimeWave.GenerateSoftChime();
+        Check(wav.Length > 44 + 22050 * 2, "chime has >1s of audio");
+        Check(wav[0] == 'R' && wav[1] == 'I' && wav[2] == 'F' && wav[3] == 'F', "chime RIFF header");
+        Check(wav[8] == 'W' && wav[9] == 'A' && wav[10] == 'V' && wav[11] == 'E', "chime WAVE header");
+        bool audible = false;
+        for (int i = 44; i + 1 < wav.Length; i += 2)
+            if (wav[i] != 0 || wav[i + 1] != 0) { audible = true; break; }
+        Check(audible, "chime is not silent");
+    }
+
+    static void TestCpuSampler()
+    {
+        CheckNear(CpuSampler.Fraction(100, 60, 40), 0, 1e-9, "cpu all idle");
+        CheckNear(CpuSampler.Fraction(0, 60, 40), 1, 1e-9, "cpu fully busy");
+        CheckNear(CpuSampler.Fraction(50, 60, 40), 0.5, 1e-9, "cpu half busy");
+        CheckNear(CpuSampler.Fraction(0, 0, 0), 0, 1e-9, "cpu zero delta safe");
+        CheckNear(CpuSampler.Percent(25, 60, 40), 75, 0.2, "cpu percent");
     }
 }
