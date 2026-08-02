@@ -75,6 +75,185 @@ namespace DeskMate.Core
         // world clocks: Windows timezone ids chosen by the user
         public List<string> WorldClocks = new List<string>();
 
+        // ---------------- persistence table ----------------
+
+        /// <summary>One entry per persisted field. The read side, the write side and the
+        /// default all come from this single declaration, so adding a setting is one line here
+        /// plus the field itself — they can no longer drift apart. Order here is the order in
+        /// the JSON file, so keeping it stable keeps settings.json diffs readable.</summary>
+        abstract class Field
+        {
+            public string Name;
+            public abstract void Read(Settings s, Dictionary<string, object> d);
+            public abstract void Write(Settings s, Dictionary<string, object> d);
+        }
+
+        class StrField : Field
+        {
+            public Func<Settings, string> Get;
+            public Action<Settings, string> Set;
+            /// <summary>Optional at-rest transform, used to DPAPI-protect personal text.</summary>
+            public Func<string, string> Decode, Encode;
+            public override void Read(Settings s, Dictionary<string, object> d)
+            {
+                string v = Json.GetStr(d, Name, Get(s));
+                Set(s, Decode == null ? v : Decode(v));
+            }
+            public override void Write(Settings s, Dictionary<string, object> d)
+            {
+                string v = Get(s);
+                d[Name] = Encode == null ? v : Encode(v);
+            }
+        }
+
+        class BoolField : Field
+        {
+            public Func<Settings, bool> Get;
+            public Action<Settings, bool> Set;
+            public override void Read(Settings s, Dictionary<string, object> d) { Set(s, Json.GetBool(d, Name, Get(s))); }
+            public override void Write(Settings s, Dictionary<string, object> d) { d[Name] = Get(s); }
+        }
+
+        class IntField : Field
+        {
+            public Func<Settings, int> Get;
+            public Action<Settings, int> Set;
+            public override void Read(Settings s, Dictionary<string, object> d) { Set(s, Json.GetInt(d, Name, Get(s))); }
+            public override void Write(Settings s, Dictionary<string, object> d) { d[Name] = (double)Get(s); }
+        }
+
+        class NumField : Field
+        {
+            public Func<Settings, double> Get;
+            public Action<Settings, double> Set;
+            public override void Read(Settings s, Dictionary<string, object> d) { Set(s, Json.GetNum(d, Name, Get(s))); }
+            public override void Write(Settings s, Dictionary<string, object> d) { d[Name] = Get(s); }
+        }
+
+        class StrListField : Field
+        {
+            public Func<Settings, List<string>> Get;
+            public Func<string, string> Decode, Encode;
+            public override void Read(Settings s, Dictionary<string, object> d)
+            {
+                var list = Get(s);
+                list.Clear();
+                foreach (var o in Json.GetList(d, Name))
+                {
+                    var item = o as string;
+                    if (item == null) continue;
+                    if (Decode != null) item = Decode(item);
+                    if (!string.IsNullOrEmpty(item)) list.Add(item);
+                }
+            }
+            public override void Write(Settings s, Dictionary<string, object> d)
+            {
+                var outList = new List<string>();
+                foreach (string item in Get(s)) outList.Add(Encode == null ? item : Encode(item));
+                d[Name] = outList;
+            }
+        }
+
+        static Field Str(string n, Func<Settings, string> g, Action<Settings, string> s)
+        {
+            return new StrField { Name = n, Get = g, Set = s };
+        }
+        /// <summary>A string field whose value is DPAPI-encrypted in settings.json.</summary>
+        static Field Sec(string n, Func<Settings, string> g, Action<Settings, string> s)
+        {
+            return new StrField { Name = n, Get = g, Set = s, Decode = Secret.Unprotect, Encode = Secret.Protect };
+        }
+        static Field Bit(string n, Func<Settings, bool> g, Action<Settings, bool> s)
+        {
+            return new BoolField { Name = n, Get = g, Set = s };
+        }
+        static Field Int(string n, Func<Settings, int> g, Action<Settings, int> s)
+        {
+            return new IntField { Name = n, Get = g, Set = s };
+        }
+        static Field Num(string n, Func<Settings, double> g, Action<Settings, double> s)
+        {
+            return new NumField { Name = n, Get = g, Set = s };
+        }
+        static Field List(string n, Func<Settings, List<string>> g)
+        {
+            return new StrListField { Name = n, Get = g };
+        }
+        static Field SecList(string n, Func<Settings, List<string>> g)
+        {
+            return new StrListField { Name = n, Get = g, Decode = Secret.Unprotect, Encode = Secret.Protect };
+        }
+
+        static readonly Field[] Schema =
+        {
+            Str("Lang",               s => s.Lang,               (s, v) => s.Lang = v),
+            Int("ClockStyle",         s => s.ClockStyle,         (s, v) => s.ClockStyle = v),
+            Bit("Use24h",             s => s.Use24h,             (s, v) => s.Use24h = v),
+            Bit("ShowSeconds",        s => s.ShowSeconds,        (s, v) => s.ShowSeconds = v),
+            Bit("ShowHijri",          s => s.ShowHijri,          (s, v) => s.ShowHijri = v),
+            Bit("ShowNextPrayerLine", s => s.ShowNextPrayerLine, (s, v) => s.ShowNextPrayerLine = v),
+            Bit("AutoStart",          s => s.AutoStart,          (s, v) => s.AutoStart = v),
+            Num("PosX",               s => s.PosX,               (s, v) => s.PosX = v),
+            Num("PosY",               s => s.PosY,               (s, v) => s.PosY = v),
+            Int("ThemeIndex",         s => s.ThemeIndex,         (s, v) => s.ThemeIndex = v),
+            Bit("AutoTheme",          s => s.AutoTheme,          (s, v) => s.AutoTheme = v),
+            Int("LayoutIndex",        s => s.LayoutIndex,        (s, v) => s.LayoutIndex = v),
+            Num("Scale",              s => s.Scale,              (s, v) => s.Scale = v),
+            Num("BgOpacity",          s => s.BgOpacity,          (s, v) => s.BgOpacity = v),
+
+            Bit("ShowCleaner",        s => s.ShowCleaner,        (s, v) => s.ShowCleaner = v),
+            Bit("ShowCalc",           s => s.ShowCalc,           (s, v) => s.ShowCalc = v),
+            Bit("ShowWallpaper",      s => s.ShowWallpaper,      (s, v) => s.ShowWallpaper = v),
+            Bit("ShowPower",          s => s.ShowPower,          (s, v) => s.ShowPower = v),
+            Bit("ShowClipboard",      s => s.ShowClipboard,      (s, v) => s.ShowClipboard = v),
+            Bit("ShowWeather",        s => s.ShowWeather,        (s, v) => s.ShowWeather = v),
+            Bit("ShowApps",           s => s.ShowApps,           (s, v) => s.ShowApps = v),
+            Bit("ShowPrayer",         s => s.ShowPrayer,         (s, v) => s.ShowPrayer = v),
+            Bit("ShowFocus",          s => s.ShowFocus,          (s, v) => s.ShowFocus = v),
+            Bit("ShowOccasions",      s => s.ShowOccasions,      (s, v) => s.ShowOccasions = v),
+            Bit("ShowNote",           s => s.ShowNote,           (s, v) => s.ShowNote = v),
+            Bit("ShowSysMon",         s => s.ShowSysMon,         (s, v) => s.ShowSysMon = v),
+            Bit("ShowWorldClock",     s => s.ShowWorldClock,     (s, v) => s.ShowWorldClock = v),
+
+            Bit("AutoLocation",       s => s.AutoLocation,       (s, v) => s.AutoLocation = v),
+            Num("Lat",                s => s.Lat,                (s, v) => s.Lat = v),
+            Num("Lon",                s => s.Lon,                (s, v) => s.Lon = v),
+            Str("City",               s => s.City,               (s, v) => s.City = v),
+            Str("Country",            s => s.Country,            (s, v) => s.Country = v),
+
+            Int("PrayerMethod",       s => s.PrayerMethod,       (s, v) => s.PrayerMethod = v),
+            Bit("PrayerNotify",       s => s.PrayerNotify,       (s, v) => s.PrayerNotify = v),
+            Int("PrayerPreAlertMin",  s => s.PrayerPreAlertMin,  (s, v) => s.PrayerPreAlertMin = v),
+
+            Int("ClipboardMax",       s => s.ClipboardMax,       (s, v) => s.ClipboardMax = v),
+            SecList("PinnedClips",    s => s.PinnedClips),
+
+            Str("FocusDoneDate",      s => s.FocusDoneDate,      (s, v) => s.FocusDoneDate = v),
+            Int("FocusDoneCount",     s => s.FocusDoneCount,     (s, v) => s.FocusDoneCount = v),
+
+            Int("AdhanSound",         s => s.AdhanSound,         (s, v) => s.AdhanSound = v),
+            Str("AdhanPath",          s => s.AdhanPath,          (s, v) => s.AdhanPath = v),
+
+            Sec("StickyNote",         s => s.StickyNote,         (s, v) => s.StickyNote = v),
+            Str("OccasionCustom",     s => s.OccasionCustom,     (s, v) => s.OccasionCustom = v),
+            List("WorldClocks",       s => s.WorldClocks),
+        };
+
+        /// <summary>Forces values from a hand-edited or corrupted file back into usable ranges.
+        /// Applied after every load; never trust the file to be sane.</summary>
+        void Normalize()
+        {
+            if (LayoutIndex < 0 || LayoutIndex > 5) LayoutIndex = 0;
+            if (Scale < 0.6 || Scale > 1.8) Scale = 1.0;
+            if (BgOpacity < 0.3 || BgOpacity > 1.0) BgOpacity = 1.0;
+            if (AdhanSound < 0 || AdhanSound > 2) AdhanSound = 0;
+            // keep in sync with UI.Theme.Palettes.Length — an out-of-range value used to
+            // loop Theme.Apply → Reload → tick → Apply until StackOverflow killed the process
+            if (ThemeIndex < 0 || ThemeIndex > 4) ThemeIndex = 0;
+        }
+
+        // ---------------- load / save ----------------
+
         public static string DefaultPath
         {
             get { return Path.Combine(Log.Dir, "settings.json"); }
@@ -124,131 +303,58 @@ namespace DeskMate.Core
 
         static Settings FromDict(Dictionary<string, object> d)
         {
+            var s = new Settings();
+            foreach (var f in Schema) f.Read(s, d);
+            s.Normalize();
+            return s;
+        }
+
+        /// <summary>Save runs from the UI thread and from background tasks (AutoLocate), so it
+        /// must not interleave: two writers sharing one .tmp path corrupt each other.</summary>
+        static readonly object SaveGate = new object();
+
+        public void Save()
+        {
+            lock (SaveGate)
             {
-                var s = new Settings();
-                s.Lang = Json.GetStr(d, "Lang", s.Lang);
-                s.ClockStyle = Json.GetInt(d, "ClockStyle", s.ClockStyle);
-                s.Use24h = Json.GetBool(d, "Use24h", s.Use24h);
-                s.ShowSeconds = Json.GetBool(d, "ShowSeconds", s.ShowSeconds);
-                s.ShowHijri = Json.GetBool(d, "ShowHijri", s.ShowHijri);
-                s.ShowNextPrayerLine = Json.GetBool(d, "ShowNextPrayerLine", s.ShowNextPrayerLine);
-                s.AutoStart = Json.GetBool(d, "AutoStart", s.AutoStart);
-                s.PosX = Json.GetNum(d, "PosX", s.PosX);
-                s.PosY = Json.GetNum(d, "PosY", s.PosY);
-                s.ThemeIndex = Json.GetInt(d, "ThemeIndex", s.ThemeIndex);
-                s.AutoTheme = Json.GetBool(d, "AutoTheme", s.AutoTheme);
-                s.LayoutIndex = Json.GetInt(d, "LayoutIndex", s.LayoutIndex);
-                if (s.LayoutIndex < 0 || s.LayoutIndex > 5) s.LayoutIndex = 0;
-                s.Scale = Json.GetNum(d, "Scale", s.Scale);
-                if (s.Scale < 0.6 || s.Scale > 1.8) s.Scale = 1.0;
-                s.BgOpacity = Json.GetNum(d, "BgOpacity", s.BgOpacity);
-                if (s.BgOpacity < 0.3 || s.BgOpacity > 1.0) s.BgOpacity = 1.0;
-                s.ShowCleaner = Json.GetBool(d, "ShowCleaner", s.ShowCleaner);
-                s.ShowCalc = Json.GetBool(d, "ShowCalc", s.ShowCalc);
-                s.ShowWallpaper = Json.GetBool(d, "ShowWallpaper", s.ShowWallpaper);
-                s.ShowPower = Json.GetBool(d, "ShowPower", s.ShowPower);
-                s.ShowClipboard = Json.GetBool(d, "ShowClipboard", s.ShowClipboard);
-                s.ShowWeather = Json.GetBool(d, "ShowWeather", s.ShowWeather);
-                s.ShowApps = Json.GetBool(d, "ShowApps", s.ShowApps);
-                s.ShowPrayer = Json.GetBool(d, "ShowPrayer", s.ShowPrayer);
-                s.ShowFocus = Json.GetBool(d, "ShowFocus", s.ShowFocus);
-                s.ShowOccasions = Json.GetBool(d, "ShowOccasions", s.ShowOccasions);
-                s.ShowNote = Json.GetBool(d, "ShowNote", s.ShowNote);
-                s.ShowSysMon = Json.GetBool(d, "ShowSysMon", s.ShowSysMon);
-                s.ShowWorldClock = Json.GetBool(d, "ShowWorldClock", s.ShowWorldClock);
-                s.AutoLocation = Json.GetBool(d, "AutoLocation", s.AutoLocation);
-                s.Lat = Json.GetNum(d, "Lat", s.Lat);
-                s.Lon = Json.GetNum(d, "Lon", s.Lon);
-                s.City = Json.GetStr(d, "City", s.City);
-                s.Country = Json.GetStr(d, "Country", s.Country);
-                s.PrayerMethod = Json.GetInt(d, "PrayerMethod", s.PrayerMethod);
-                s.PrayerNotify = Json.GetBool(d, "PrayerNotify", s.PrayerNotify);
-                s.PrayerPreAlertMin = Json.GetInt(d, "PrayerPreAlertMin", s.PrayerPreAlertMin);
-                s.ClipboardMax = Json.GetInt(d, "ClipboardMax", s.ClipboardMax);
-                s.PinnedClips = new List<string>();
-                foreach (var o in Json.GetList(d, "PinnedClips"))
-                    if (o is string) s.PinnedClips.Add((string)o);
-                s.FocusDoneDate = Json.GetStr(d, "FocusDoneDate", s.FocusDoneDate);
-                s.FocusDoneCount = Json.GetInt(d, "FocusDoneCount", s.FocusDoneCount);
-                s.AdhanSound = Json.GetInt(d, "AdhanSound", s.AdhanSound);
-                if (s.AdhanSound < 0 || s.AdhanSound > 2) s.AdhanSound = 0;
-                s.AdhanPath = Json.GetStr(d, "AdhanPath", s.AdhanPath);
-                s.StickyNote = Json.GetStr(d, "StickyNote", s.StickyNote);
-                s.OccasionCustom = Json.GetStr(d, "OccasionCustom", s.OccasionCustom);
-                s.WorldClocks = new List<string>();
-                foreach (var o in Json.GetList(d, "WorldClocks"))
-                    if (o is string) s.WorldClocks.Add((string)o);
-                return s;
+                SaveLocked();
             }
         }
 
-        public void Save()
+        void SaveLocked()
         {
             try
             {
                 var d = new Dictionary<string, object>();
-                d["Lang"] = Lang;
-                d["ClockStyle"] = (double)ClockStyle;
-                d["Use24h"] = Use24h;
-                d["ShowSeconds"] = ShowSeconds;
-                d["ShowHijri"] = ShowHijri;
-                d["ShowNextPrayerLine"] = ShowNextPrayerLine;
-                d["AutoStart"] = AutoStart;
-                d["PosX"] = PosX;
-                d["PosY"] = PosY;
-                d["ThemeIndex"] = (double)ThemeIndex;
-                d["AutoTheme"] = AutoTheme;
-                d["LayoutIndex"] = (double)LayoutIndex;
-                d["Scale"] = Scale;
-                d["BgOpacity"] = BgOpacity;
-                d["ShowCleaner"] = ShowCleaner;
-                d["ShowCalc"] = ShowCalc;
-                d["ShowWallpaper"] = ShowWallpaper;
-                d["ShowPower"] = ShowPower;
-                d["ShowClipboard"] = ShowClipboard;
-                d["ShowWeather"] = ShowWeather;
-                d["ShowApps"] = ShowApps;
-                d["ShowPrayer"] = ShowPrayer;
-                d["ShowFocus"] = ShowFocus;
-                d["ShowOccasions"] = ShowOccasions;
-                d["ShowNote"] = ShowNote;
-                d["ShowSysMon"] = ShowSysMon;
-                d["ShowWorldClock"] = ShowWorldClock;
-                d["AutoLocation"] = AutoLocation;
-                d["Lat"] = Lat;
-                d["Lon"] = Lon;
-                d["City"] = City;
-                d["Country"] = Country;
-                d["PrayerMethod"] = (double)PrayerMethod;
-                d["PrayerNotify"] = PrayerNotify;
-                d["PrayerPreAlertMin"] = (double)PrayerPreAlertMin;
-                d["ClipboardMax"] = (double)ClipboardMax;
-                d["PinnedClips"] = PinnedClips;
-                d["FocusDoneDate"] = FocusDoneDate;
-                d["FocusDoneCount"] = (double)FocusDoneCount;
-                d["AdhanSound"] = (double)AdhanSound;
-                d["AdhanPath"] = AdhanPath;
-                d["StickyNote"] = StickyNote;
-                d["OccasionCustom"] = OccasionCustom;
-                d["WorldClocks"] = WorldClocks;
+                foreach (var f in Schema) f.Write(this, d);
+
                 string p = PathToUse;
                 Directory.CreateDirectory(Path.GetDirectoryName(p));
                 // atomic write: never leave a truncated settings file, keep a .bak of the
-                // previous good version (used by Load as a fallback)
-                string tmp = p + ".tmp";
+                // previous good version (used by Load as a fallback).
+                // unique temp name: a leftover .tmp from a killed process must not be reused
+                string tmp = p + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 string json = Json.Write(d);
-                for (int attempt = 0; attempt < 2; attempt++)
+                try
                 {
-                    try
+                    for (int attempt = 0; attempt < 2; attempt++)
                     {
-                        File.WriteAllText(tmp, json);
-                        if (File.Exists(p)) File.Replace(tmp, p, p + ".bak");
-                        else File.Move(tmp, p);
-                        return;
+                        try
+                        {
+                            File.WriteAllText(tmp, json);
+                            if (File.Exists(p)) File.Replace(tmp, p, p + ".bak");
+                            else File.Move(tmp, p);
+                            return;
+                        }
+                        catch (IOException) { System.Threading.Thread.Sleep(120); }
                     }
-                    catch (IOException) { System.Threading.Thread.Sleep(120); }
+                    File.WriteAllText(p, json); // last resort
                 }
-                File.WriteAllText(p, json); // last resort
+                finally
+                {
+                    // the unique name means a failed attempt would otherwise litter the folder
+                    try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+                }
             }
             catch (Exception ex)
             {

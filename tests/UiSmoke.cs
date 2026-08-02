@@ -19,12 +19,20 @@ static class UiSmoke
     static int _index = -1;
     static DispatcherTimer _timer;
     static Application _app;
+    /// <summary>Every swallowed problem lands here; a non-empty list fails the run.
+    /// Silent passes once hid a crashing panel behind its stale screenshot.</summary>
+    static readonly List<string> _failures = new List<string>();
 
     [STAThread]
     static int Main(string[] args)
     {
         _outDir = args.Length > 0 ? args[0] : Environment.CurrentDirectory;
         Directory.CreateDirectory(_outDir);
+        // wipe stale screenshots first — an old PNG must never mask a step that died this run
+        foreach (var old in Directory.GetFiles(_outDir, "*.png"))
+        {
+            try { File.Delete(old); } catch { }
+        }
         Settings.Load();
         Theme.Apply(DeskMate.Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.AutoTheme, DateTime.Now.Hour));
         _app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -62,7 +70,7 @@ static class UiSmoke
         _timer.Tick += NextStep;
         _timer.Start();
         _app.Run();
-        return 0;
+        return _failures.Count == 0 ? 0 : 1;
     }
 
     static void SetLayout(int idx)
@@ -85,12 +93,22 @@ static class UiSmoke
                 if (prev.StartsWith("layout")) CaptureWidget(prev);
                 else CapturePanel(prev);
             }
-            catch (Exception ex) { Console.WriteLine("capture " + prev + ": " + ex.Message); }
+            catch (Exception ex)
+            {
+                _failures.Add("capture " + prev + ": " + ex.Message);
+                Console.WriteLine("FAIL capture " + prev + ": " + ex.Message);
+            }
         }
         _index++;
         if (_index >= _steps.Count)
         {
             PanelWindow.CloseCurrent();
+            if (_failures.Count > 0)
+            {
+                Console.WriteLine("UI SMOKE FAILED (" + _failures.Count + "):");
+                foreach (var f in _failures) Console.WriteLine("  - " + f);
+            }
+            else Console.WriteLine("UI SMOKE OK");
             _app.Shutdown();
             return;
         }
@@ -101,7 +119,11 @@ static class UiSmoke
             var p = PanelWindow.Current;
             if (p != null) { p.Left = -4000; p.Top = 100; }
         }
-        catch (Exception ex) { Console.WriteLine("open " + step.Item1 + ": " + ex.Message); }
+        catch (Exception ex)
+        {
+            _failures.Add("open " + step.Item1 + ": " + ex.Message);
+            Console.WriteLine("FAIL open " + step.Item1 + ": " + ex.Message);
+        }
         _timer.Interval = TimeSpan.FromMilliseconds(step.Item3);
         _timer.Start();
     }
@@ -120,7 +142,12 @@ static class UiSmoke
         root.UpdateLayout();
         int w = (int)Math.Ceiling(root.ActualWidth);
         int h = (int)Math.Ceiling(root.ActualHeight);
-        if (w <= 0 || h <= 0) { Console.WriteLine("zero size for " + path); return; }
+        if (w <= 0 || h <= 0)
+        {
+            _failures.Add("zero size for " + Path.GetFileName(path));
+            Console.WriteLine("FAIL zero size for " + path);
+            return;
+        }
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
         {
@@ -146,9 +173,21 @@ static class UiSmoke
     static void CapturePanel(string name)
     {
         var p = PanelWindow.Current;
-        if (p == null) { Console.WriteLine("no panel for " + name); return; }
+        // a panel that failed to build (e.g. an internal cast crash) leaves nothing open —
+        // that is a FAILURE of this run, not a skip
+        if (p == null)
+        {
+            _failures.Add("no panel for " + name);
+            Console.WriteLine("FAIL no panel for " + name);
+            return;
+        }
         var root = p.Content as FrameworkElement;
-        if (root == null) return;
+        if (root == null)
+        {
+            _failures.Add("empty panel for " + name);
+            Console.WriteLine("FAIL empty panel for " + name);
+            return;
+        }
         RenderWithBackdrop(root, Path.Combine(_outDir, "panel_" + name + ".png"));
     }
 }

@@ -143,13 +143,28 @@ namespace DeskMate.UI
         {
             var wa = SystemParameters.WorkArea;
             double x = Settings.I.PosX, y = Settings.I.PosY;
-            if (x < 0 || y < 0 || x > wa.Right - 60 || y > wa.Bottom - 60)
-            {
-                WindowStartupLocation = WindowStartupLocation.Manual;
-                Left = wa.Left + (wa.Width - 380) / 2;
-                Top = wa.Top + wa.Height * 0.12;
-            }
-            else { Left = x; Top = y; }
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            if (IsOnAnyScreen(x, y)) { Left = x; Top = y; return; }
+            Left = wa.Left + (wa.Width - 380) / 2;
+            Top = wa.Top + wa.Height * 0.12;
+        }
+
+        /// <summary>Validates a saved position against the whole virtual desktop, not just the
+        /// primary monitor's work area — otherwise a widget parked on a second screen (where
+        /// coordinates are legitimately negative or beyond the primary bounds) was treated as
+        /// off-screen and recentred on every start.</summary>
+        static bool IsOnAnyScreen(double x, double y)
+        {
+            if (double.IsNaN(x) || double.IsNaN(y)) return false;
+            if (x == -1 && y == -1) return false;   // the "never positioned" default
+            // VirtualScreen* are device-independent units covering every monitor, including
+            // screens left of or above the primary where coordinates are legitimately negative.
+            double left = SystemParameters.VirtualScreenLeft;
+            double top = SystemParameters.VirtualScreenTop;
+            double right = left + SystemParameters.VirtualScreenWidth;
+            double bottom = top + SystemParameters.VirtualScreenHeight;
+            // keep enough of the widget on-screen to stay grabbable
+            return x >= left - 40 && x <= right - 80 && y >= top - 10 && y <= bottom - 60;
         }
 
         void SavePosition()
@@ -193,6 +208,7 @@ namespace DeskMate.UI
             }
 
             PrayerFeature.MinuteTick(now);
+            FocusFeature.BackgroundTick(now);
             // the countdown only changes once a minute — skip the recompute otherwise
             if (now.Minute != _lastPrayerLineMin)
             {
@@ -224,6 +240,9 @@ namespace DeskMate.UI
                 _tray.DoubleClick += (s, e) => ToggleVisible();
             }
             _tray.Text = L.T("app_name");
+            // Reload() runs on every settings change and on each auto-theme flip; without
+            // disposing the previous menu each rebuild leaked its native handles.
+            var old = _tray.ContextMenuStrip;
             var menu = new WF.ContextMenuStrip();
             menu.Items.Add(L.T(IsVisible ? "tray_hide" : "tray_show"), null, (s, e) => ToggleVisible());
             menu.Items.Add(L.T("tray_settings"), null, (s, e) => Dispatcher.BeginInvoke(new Action(() => SettingsFeature.Open(this))));
@@ -232,6 +251,7 @@ namespace DeskMate.UI
             menu.RightToLeft = L.IsAr ? WF.RightToLeft.Yes : WF.RightToLeft.No;
             menu.Opening += (s, e) => { menu.Items[0].Text = L.T(IsVisible ? "tray_hide" : "tray_show"); };
             _tray.ContextMenuStrip = menu;
+            if (old != null) { try { old.Dispose(); } catch { } }
         }
 
         public void ToggleVisible()

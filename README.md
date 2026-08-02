@@ -1,4 +1,4 @@
-# DeskMate — ديسك ميت
+﻿# DeskMate — ديسك ميت
 
 أداة سطح مكتب لويندوز: ساعة وتاريخ في منتصف الشاشة مع أدوات سريعة أسفلها — تظهر كجزء من سطح المكتب (خلف كل النوافذ دائماً)، بالعربية والإنجليزية.
 
@@ -10,7 +10,7 @@ A Windows desktop widget: a beautiful clock & date with quick tools beneath it �
 
 | File | What it is |
 |---|---|
-| `dist/DeskMate.exe` | **نسخة محمولة** — شغّلها من أي مكان، بلا تثبيت (~110 KB) · Portable — run from anywhere, no install |
+| `dist/DeskMate.exe` | **نسخة محمولة** — شغّلها من أي مكان، بلا تثبيت (~200 KB) · Portable — run from anywhere, no install |
 | `dist/DeskMateSetup.exe` | **المُثبّت** — تثبيت دائم بأيقونة سطح مكتب وقائمة ابدأ وتشغيل تلقائي · Installer — permanent install with desktop icon, Start Menu and autostart |
 
 لا يحتاج أي متطلبات — يعمل على ويندوز 10/11 مباشرة (.NET Framework 4.8 مدمج في النظام).
@@ -53,9 +53,9 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل 125 اختباراً ذاتياً للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
+يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل 169 اختباراً ذاتياً للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
 
-Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs 125 logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
+Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs 169 logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
 
 ```powershell
 # لقطات معاينة لكل التخطيطات واللوحات في obj\uishots · render every layout & panel to obj\uishots

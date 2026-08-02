@@ -56,8 +56,7 @@ namespace DeskMate.Features
                     Settings.I.Save();
                     rebuild();
                 }
-            });
-            addBtn.Padding = new Thickness(12, 4, 12, 4);
+            }, padding: new Thickness(12, 4, 12, 4));
             var addRow = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
             DockPanel.SetDock(addBtn, Dock.Right);
             addRow.Children.Add(addBtn);

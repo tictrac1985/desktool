@@ -31,10 +31,13 @@ static class SelfTest
     static int Main()
     {
         TestJson();
+        TestSecret();
         TestSettings();
+        TestSettingsAllFields();
         TestEvaluator();
         TestPrayer();
         TestCleaner();
+        TestCleanerJunctionSafety();
         TestAppScanner();
         TestWeather();
         TestAutoTheme();
@@ -68,6 +71,40 @@ static class SelfTest
         bool threw = false;
         try { Json.Parse("{\"a\":}"); } catch { threw = true; }
         Check(threw, "json invalid throws");
+
+        // Regression: unbounded recursion raised StackOverflowException, which .NET cannot
+        // catch — the process died. Reachable from settings.json and from remote responses.
+        threw = false;
+        try { Json.Parse(new string('[', 50000) + new string(']', 50000)); }
+        catch (FormatException) { threw = true; }
+        Check(threw, "json deep nesting rejected, not fatal");
+
+        // the limit must not reject legitimately shaped data
+        int ok = Json.MaxDepth - 2;
+        object shallow = null;
+        bool parsed = true;
+        try { shallow = Json.Parse(new string('[', ok) + new string(']', ok)); }
+        catch { parsed = false; }
+        Check(parsed && shallow != null, "json accepts depth below the limit");
+
+        threw = false;
+        try { Json.Parse("{"); } catch (FormatException) { threw = true; }
+        Check(threw, "json truncated object throws FormatException");
+    }
+
+    /// <summary>DPAPI round-trip for the settings values that can hold personal text.</summary>
+    static void TestSecret()
+    {
+        string plain = "كلمة سر: hunter2 \n line2";
+        string sealed_ = Secret.Protect(plain);
+        Check(sealed_ != plain, "secret is transformed");
+        Check(!sealed_.Contains("hunter2"), "secret does not leak plaintext");
+        Check(Secret.Unprotect(sealed_) == plain, "secret round-trips");
+        // legacy plaintext (written by earlier versions) must survive untouched
+        Check(Secret.Unprotect("just plain text") == "just plain text", "secret passes through legacy plaintext");
+        Check(Secret.Protect("") == "", "secret ignores empty");
+        Check(Secret.Unprotect(null) == null, "secret ignores null");
+        Check(Secret.Unprotect("enc:v1:not-base64!!") == "", "secret drops corrupt blob");
     }
 
     static void TestSettings()
@@ -81,20 +118,118 @@ static class SelfTest
             Settings.I.ClockStyle = 1;
             Settings.I.Lat = 30.05;
             Settings.I.PinnedClips.Add("نص مثبت");
+            Settings.I.StickyNote = "my-secret-note";
             Settings.I.Save();
+
+            // sensitive fields must not be readable in the file itself
+            string onDisk = File.ReadAllText(tmp);
+            Check(!onDisk.Contains("my-secret-note"), "sticky note encrypted on disk");
+            Check(!onDisk.Contains("نص مثبت"), "pinned clip encrypted on disk");
+            Check(onDisk.Contains("\"Lang\":\"en\""), "non-sensitive fields stay readable");
+            Check(!Directory.EnumerateFiles(Path.GetDirectoryName(tmp),
+                      Path.GetFileName(tmp) + ".*.tmp").Any(), "no temp file left behind");
+
             Settings.I = new Settings();
             Settings.Load();
             Check(Settings.I.Lang == "en", "settings lang persisted");
             Check(Settings.I.ClockStyle == 1, "settings clock persisted");
             Check(Math.Abs(Settings.I.Lat - 30.05) < 1e-9, "settings lat persisted");
             Check(Settings.I.PinnedClips.Count == 1 && Settings.I.PinnedClips[0] == "نص مثبت", "settings pinned persisted");
+            Check(Settings.I.StickyNote == "my-secret-note", "settings note round-trips");
             Check(Settings.I.ShowCleaner && Settings.I.PrayerNotify, "settings defaults kept");
+
+            // a settings file written by an older, unencrypted build must still load
+            File.WriteAllText(tmp, "{\"Lang\":\"ar\",\"StickyNote\":\"legacy plain\",\"PinnedClips\":[\"old clip\"]}");
+            Settings.I = new Settings();
+            Settings.Load();
+            Check(Settings.I.StickyNote == "legacy plain", "legacy plaintext note loads");
+            Check(Settings.I.PinnedClips.Count == 1 && Settings.I.PinnedClips[0] == "old clip", "legacy pinned clip loads");
         }
         finally
         {
             Settings.OverridePath = null;
             Settings.I = new Settings();
             try { File.Delete(tmp); } catch { }
+        }
+    }
+
+    /// <summary>Every persisted field, set to a non-default value and read back. This is the
+    /// safety net for any change to how settings are serialised: a field dropped from either
+    /// the read or the write side shows up here instead of silently resetting for users.</summary>
+    static void TestSettingsAllFields()
+    {
+        string tmp = Path.Combine(Path.GetTempPath(), "deskmate_all_" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            Settings.OverridePath = tmp;
+            var s = new Settings
+            {
+                Lang = "en", ClockStyle = 2, Use24h = true, ShowSeconds = true, ShowHijri = false,
+                ShowNextPrayerLine = false, AutoStart = false, PosX = 123.5, PosY = 456.25,
+                ThemeIndex = 3, AutoTheme = true, LayoutIndex = 5, Scale = 1.25, BgOpacity = 0.55,
+                ShowCleaner = false, ShowCalc = false, ShowWallpaper = false, ShowPower = false,
+                ShowClipboard = false, ShowWeather = false, ShowApps = false, ShowPrayer = false,
+                ShowFocus = false, ShowOccasions = false, ShowNote = true, ShowSysMon = true,
+                ShowWorldClock = true,
+                AutoLocation = false, Lat = -33.8688, Lon = 151.2093, City = "سيدني", Country = "AU",
+                PrayerMethod = 3, PrayerNotify = false, PrayerPreAlertMin = 30,
+                ClipboardMax = 40,
+                FocusDoneDate = "20260801", FocusDoneCount = 7,
+                AdhanSound = 2, AdhanPath = @"C:\sounds\adhan.wav",
+                StickyNote = "ملاحظة\nسطران", OccasionCustom = "2026-12-31",
+            };
+            s.PinnedClips.Add("clip one");
+            s.PinnedClips.Add("مقطع اثنان");
+            s.WorldClocks.Add("Egypt Standard Time");
+            s.WorldClocks.Add("Tokyo Standard Time");
+            Settings.I = s;
+            Settings.I.Save();
+
+            Settings.I = new Settings();
+            Settings.Load();
+            var r = Settings.I;
+
+            Check(r.Lang == "en" && r.ClockStyle == 2 && r.Use24h && r.ShowSeconds, "all: general block");
+            Check(!r.ShowHijri && !r.ShowNextPrayerLine && !r.AutoStart, "all: general toggles");
+            Check(Math.Abs(r.PosX - 123.5) < 1e-9 && Math.Abs(r.PosY - 456.25) < 1e-9, "all: position");
+            Check(r.ThemeIndex == 3 && r.AutoTheme && r.LayoutIndex == 5, "all: theme + layout");
+            Check(Math.Abs(r.Scale - 1.25) < 1e-9 && Math.Abs(r.BgOpacity - 0.55) < 1e-9, "all: scale + opacity");
+            Check(!r.ShowCleaner && !r.ShowCalc && !r.ShowWallpaper && !r.ShowPower &&
+                  !r.ShowClipboard && !r.ShowWeather && !r.ShowApps && !r.ShowPrayer &&
+                  !r.ShowFocus && !r.ShowOccasions, "all: tool visibility off");
+            Check(r.ShowNote && r.ShowSysMon && r.ShowWorldClock, "all: tool visibility on");
+            Check(!r.AutoLocation && Math.Abs(r.Lat + 33.8688) < 1e-9 &&
+                  Math.Abs(r.Lon - 151.2093) < 1e-9 && r.City == "سيدني" && r.Country == "AU", "all: location");
+            Check(r.PrayerMethod == 3 && !r.PrayerNotify && r.PrayerPreAlertMin == 30, "all: prayer");
+            Check(r.ClipboardMax == 40 && r.PinnedClips.Count == 2 &&
+                  r.PinnedClips[0] == "clip one" && r.PinnedClips[1] == "مقطع اثنان", "all: clipboard");
+            Check(r.FocusDoneDate == "20260801" && r.FocusDoneCount == 7, "all: focus");
+            Check(r.AdhanSound == 2 && r.AdhanPath == @"C:\sounds\adhan.wav", "all: sound");
+            Check(r.StickyNote == "ملاحظة\nسطران" && r.OccasionCustom == "2026-12-31", "all: note + occasion");
+            Check(r.WorldClocks.Count == 2 && r.WorldClocks[0] == "Egypt Standard Time" &&
+                  r.WorldClocks[1] == "Tokyo Standard Time", "all: world clocks");
+
+            // out-of-range values in a hand-edited or corrupted file fall back to defaults
+            File.WriteAllText(tmp, "{\"LayoutIndex\":99,\"Scale\":50,\"BgOpacity\":-3,\"AdhanSound\":7}");
+            Settings.I = new Settings();
+            Settings.Load();
+            Check(Settings.I.LayoutIndex == 0, "clamp: layout index");
+            Check(Math.Abs(Settings.I.Scale - 1.0) < 1e-9, "clamp: scale");
+            Check(Math.Abs(Settings.I.BgOpacity - 1.0) < 1e-9, "clamp: opacity");
+            Check(Settings.I.AdhanSound == 0, "clamp: adhan sound");
+
+            // a corrupt file must not throw and must not lose the user's data silently
+            File.WriteAllText(tmp, "{not json at all");
+            Settings.I = new Settings();
+            Settings.Load();
+            Check(Settings.I.Lang == "ar", "corrupt file falls back to defaults");
+        }
+        finally
+        {
+            Settings.OverridePath = null;
+            Settings.I = new Settings();
+            try { File.Delete(tmp); } catch { }
+            try { File.Delete(tmp + ".bak"); } catch { }
         }
     }
 
@@ -173,6 +308,52 @@ static class SelfTest
         finally { try { Directory.Delete(sandbox, true); } catch { } }
     }
 
+    /// <summary>Regression: a junction planted inside a cleaned folder must never be followed.
+    /// Windows\Temp is writable by every user, so this was a way to have the cleaner delete
+    /// arbitrary data (Documents, a network share) on the victim's behalf.</summary>
+    static void TestCleanerJunctionSafety()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "deskmate_junc_" + Guid.NewGuid().ToString("N"));
+        string cleanMe = Path.Combine(root, "temp");
+        string victim = Path.Combine(root, "victim");
+        Directory.CreateDirectory(cleanMe);
+        Directory.CreateDirectory(victim);
+        try
+        {
+            File.WriteAllBytes(Path.Combine(victim, "important.dat"), new byte[512]);
+            File.WriteAllBytes(Path.Combine(cleanMe, "junk.tmp"), new byte[64]);
+
+            string link = Path.Combine(cleanMe, "link");
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+                Arguments = "/c mklink /J \"" + link + "\" \"" + victim + "\"",
+                CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true,
+            };
+            using (var p = System.Diagnostics.Process.Start(psi)) { p.StandardOutput.ReadToEnd(); p.WaitForExit(5000); }
+            if (!Directory.Exists(link)) { Console.WriteLine("SKIP: junction test (mklink unavailable)"); return; }
+
+            Check(CleanEngine.IsReparsePoint(link), "junction detected as reparse point");
+            Check(!CleanEngine.IsReparsePoint(cleanMe), "plain directory is not a reparse point");
+
+            long freed = CleanEngine.Clean(new[] { cleanMe });
+            Check(File.Exists(Path.Combine(victim, "important.dat")), "junction target NOT deleted");
+            Check(!Directory.Exists(link), "junction link itself removed");
+            Check(freed == 64, "only real junk counted (got " + freed + ")");
+
+            // and the whole tree is refused when the cleaned root is itself a link
+            string rootLink = Path.Combine(root, "rootlink");
+            psi.Arguments = "/c mklink /J \"" + rootLink + "\" \"" + victim + "\"";
+            using (var p = System.Diagnostics.Process.Start(psi)) { p.StandardOutput.ReadToEnd(); p.WaitForExit(5000); }
+            if (Directory.Exists(rootLink))
+            {
+                CleanEngine.Clean(new[] { rootLink });
+                Check(File.Exists(Path.Combine(victim, "important.dat")), "linked root refused");
+            }
+        }
+        finally { try { Directory.Delete(root, true); } catch { } }
+    }
+
     static void TestAppScanner()
     {
         string sandbox = Path.Combine(Path.GetTempPath(), "deskmate_apps_" + Guid.NewGuid().ToString("N"));
@@ -203,6 +384,13 @@ static class SelfTest
         Check(Math.Abs(w.Temp - 35.5) < 1e-9 && w.Code == 1 && Math.Abs(w.Humidity - 40) < 1e-9, "parse current");
         Check(w.Days.Count == 3 && w.Days[1].TMax == 37 && w.Days[2].Code == 3 && w.Days[0].Date == "2026-07-17", "parse daily");
 
+        // Regression: a body without "current" (error page / truncation) rendered as
+        // "0° and clear" from defaults instead of being refused
+        bool threw = false;
+        try { WeatherCore.ParseForecast("{}"); }
+        catch (FormatException) { threw = true; }
+        Check(threw, "forecast without current block rejected");
+
         var g1 = WeatherCore.ParseIpLocation("{\"latitude\":30.1,\"longitude\":31.2,\"city\":\"Cairo\",\"country_code\":\"EG\"}");
         Check(g1 != null && g1.Country == "EG" && Math.Abs(g1.Lat - 30.1) < 1e-9, "ipapi.co format");
         var g2 = WeatherCore.ParseIpLocation("{\"lat\":21.4,\"lon\":39.8,\"city\":\"Mecca\",\"countryCode\":\"SA\"}");
@@ -230,6 +418,10 @@ static class SelfTest
         Check(AutoThemeCore.EffectiveIndex(1, true, 6) == 4, "auto theme boundary 06:00");
         Check(AutoThemeCore.EffectiveIndex(1, true, 17) == 4, "auto theme boundary 17:59");
         Check(AutoThemeCore.EffectiveIndex(1, true, 18) == 1, "auto theme boundary 18:00");
+        // Regression: an out-of-range ThemeIndex made the effective index differ from the
+        // applied one forever — Apply → Reload → tick looped until StackOverflow killed the app
+        Check(AutoThemeCore.EffectiveIndex(7, false, 10) == 0, "out-of-range theme clamps to 0");
+        Check(AutoThemeCore.EffectiveIndex(-3, true, 22) == 0, "negative theme clamps to 0");
     }
 
     static void TestFocus()

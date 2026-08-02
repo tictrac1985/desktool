@@ -17,6 +17,36 @@ namespace DeskMate.Features
     {
         static readonly FocusCore Core = new FocusCore();
 
+        /// <summary>Raised when a phase completes, so an open panel can refresh its controls.</summary>
+        public static event Action Changed;
+
+        /// <summary>Driven by the widget's own one-second clock in MainWindow.
+        /// The panel used to own the only timer, so closing it froze the session: no completion,
+        /// no alert, and the day's counter never advanced. Phase transitions now live here and
+        /// run whether or not the panel is open.</summary>
+        public static void BackgroundTick(DateTime now)
+        {
+            if (!Core.Tick(now)) return;
+            if (Core.State == FocusCore.Phase.Work)
+            {
+                string today = now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+                if (Settings.I.FocusDoneDate == today) Settings.I.FocusDoneCount++;
+                else { Settings.I.FocusDoneDate = today; Settings.I.FocusDoneCount = 1; }
+                Settings.I.Save();
+                AlertSound.Play();
+                Toast.Show(L.T("fo_done_work"), "");
+                Core.Start(FocusCore.Phase.Break, now);
+            }
+            else
+            {
+                AlertSound.Play();
+                Toast.Show(L.T("fo_done_break"), "");
+                Core.Reset();
+            }
+            var handler = Changed;
+            if (handler != null) handler();
+        }
+
         public static void Open(Window owner)
         {
             PanelWindow.Toggle(owner, "focus", L.T("f_focus"), Build, 300);
@@ -95,8 +125,7 @@ namespace DeskMate.Features
                     Core.WorkMin = m;
                     timeText.Text = FocusCore.Format(TimeSpan.FromMinutes(m));
                     RefreshPresets();
-                });
-                chip.Padding = new Thickness(12, 4, 12, 4);
+                }, padding: new Thickness(12, 4, 12, 4));
                 presetBtns[i] = chip;
                 presetRow.Children.Add(chip);
             }
@@ -107,7 +136,8 @@ namespace DeskMate.Features
                 for (int i = 0; i < mins.Length; i++)
                 {
                     bool sel = Core.WorkMin == mins[i] && Core.State == FocusCore.Phase.Idle;
-                    ((TextBlock)presetBtns[i].Child).Foreground = sel ? Theme.Accent : Theme.Text;
+                    var tb = presetBtns[i].Tag as TextBlock;
+                    if (tb != null) tb.Foreground = sel ? Theme.Accent : Theme.Text;
                 }
             };
 
@@ -120,8 +150,7 @@ namespace DeskMate.Features
                 if (Core.State == FocusCore.Phase.Idle) Core.Start(FocusCore.Phase.Work, now);
                 else Core.TogglePause(now);
                 RefreshButtons();
-            }, accent: true);
-            mainBtn.Padding = new Thickness(22, 8, 22, 8);
+            }, accent: true, padding: new Thickness(22, 8, 22, 8));
             var resetBtn = Theme.MakeButton(L.T("fo_reset"), () =>
             {
                 Core.Reset();
@@ -135,7 +164,7 @@ namespace DeskMate.Features
             RefreshButtons = () =>
             {
                 string key = Core.State == FocusCore.Phase.Idle ? "fo_start" : (Core.Paused ? "fo_resume" : "fo_pause");
-                ((TextBlock)mainBtn.Child).Text = L.T(key);
+                Theme.SetButtonText(mainBtn, L.T(key));
                 RefreshPresets();
             };
             // ---- sessions today ----
@@ -176,35 +205,20 @@ namespace DeskMate.Features
                       + (Core.Paused ? " — " + L.T("fo_resume") : "");
             };
 
+            // the panel only draws; phase transitions belong to BackgroundTick so they survive
+            // the panel being closed
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-            timer.Tick += (s, e) =>
-            {
-                var now = DateTime.Now;
-                if (Core.Tick(now))
-                {
-                    if (Core.State == FocusCore.Phase.Work)
-                    {
-                        string today = now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
-                        if (Settings.I.FocusDoneDate == today) Settings.I.FocusDoneCount++;
-                        else { Settings.I.FocusDoneDate = today; Settings.I.FocusDoneCount = 1; }
-                        Settings.I.Save();
-                        AlertSound.Play();
-                        Toast.Show(L.T("fo_done_work"), "");
-                        Core.Start(FocusCore.Phase.Break, now);
-                    }
-                    else
-                    {
-                        AlertSound.Play();
-                        Toast.Show(L.T("fo_done_break"), "");
-                        Core.Reset();
-                    }
-                    RefreshButtons();
-                    RefreshToday();
-                }
-                Render(now);
-            };
+            timer.Tick += (s, e) => Render(DateTime.Now);
             timer.Start();
-            host.Closed += (s, e) => timer.Stop();
+
+            Action onChanged = () =>
+            {
+                RefreshButtons();
+                RefreshToday();
+                Render(DateTime.Now);
+            };
+            Changed += onChanged;
+            host.Closed += (s, e) => { timer.Stop(); Changed -= onChanged; };
 
             RefreshButtons();
             RefreshToday();

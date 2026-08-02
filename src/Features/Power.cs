@@ -58,10 +58,14 @@ namespace DeskMate.Features
             {
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "powercfg",
+                    // fully qualified on purpose: with UseShellExecute=false an unqualified name
+                    // is resolved against the app directory first, and %LocalAppData%\DeskMate
+                    // is user-writable — a planted powercfg.exe would run instead
+                    FileName = System.IO.Path.Combine(Environment.SystemDirectory, "powercfg.exe"),
                     Arguments = "/change standby-timeout-" + acdc + " " + minutes,
                     CreateNoWindow = true,
                     UseShellExecute = false,
+                    WorkingDirectory = Environment.SystemDirectory,
                 };
                 using (var p = Process.Start(psi)) p.WaitForExit(4000);
             }

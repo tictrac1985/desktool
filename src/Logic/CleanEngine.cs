@@ -20,6 +20,18 @@ namespace DeskMate.Logic
             return list;
         }
 
+        /// <summary>Hard stop on recursion depth. Real temp trees are shallow; anything
+        /// deeper is either pathological or an attempt to exhaust the stack.</summary>
+        const int MaxDepth = 32;
+
+        /// <summary>True when the path is a junction, symlink or mount point.
+        /// Unreadable paths report true so that "unknown" is treated as "do not touch".</summary>
+        public static bool IsReparsePoint(string path)
+        {
+            try { return (new DirectoryInfo(path).Attributes & FileAttributes.ReparsePoint) != 0; }
+            catch { return true; }
+        }
+
         /// <summary>Deletes contents of each directory (never the directory itself).
         /// Returns bytes freed. Locked/inaccessible files are silently skipped.</summary>
         public static long Clean(IEnumerable<string> dirs, Action<string> progress = null)
@@ -30,16 +42,26 @@ namespace DeskMate.Logic
                 try
                 {
                     if (!Directory.Exists(dir)) continue;
+                    if (IsReparsePoint(dir)) continue;
                     if (progress != null) progress(dir);
-                    freed += CleanDirContents(dir);
+                    freed += CleanDirContents(dir, 0);
                 }
                 catch { }
             }
             return freed;
         }
 
-        static long CleanDirContents(string dir)
+        static long CleanDirContents(string dir, int depth)
         {
+            if (depth > MaxDepth) return 0;
+            // re-verify at recursion entry (TOCTOU): a hostile process sharing the temp dir
+            // could swap a checked directory for a junction between the parent-level check
+            // and the descent. Whatever has become a reparse point is unlinked, never followed.
+            if (depth > 0 && IsReparsePoint(dir))
+            {
+                try { Directory.Delete(dir, false); } catch { }
+                return 0;
+            }
             long freed = 0;
             string[] files = null, subs = null;
             try { files = Directory.GetFiles(dir); } catch { }
@@ -62,7 +84,15 @@ namespace DeskMate.Logic
             {
                 foreach (string sub in subs)
                 {
-                    freed += CleanDirContents(sub);
+                    // A junction inside Temp can point anywhere — Documents, another user's
+                    // profile, a network share. Recursing would delete the *target's* contents,
+                    // so remove the link itself and never follow it.
+                    if (IsReparsePoint(sub))
+                    {
+                        try { Directory.Delete(sub, false); } catch { }
+                        continue;
+                    }
+                    freed += CleanDirContents(sub, depth + 1);
                     try { Directory.Delete(sub, false); } catch { }
                 }
             }

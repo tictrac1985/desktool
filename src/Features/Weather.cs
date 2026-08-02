@@ -14,26 +14,64 @@ namespace DeskMate.Features
     public static class WeatherFeature
     {
         static WeatherData _cache;
+        static double _cacheLat, _cacheLon; // coords the cache belongs to — a city change invalidates it
 
-        static WeatherFeature()
-        {
-            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
-        }
+        // No SecurityProtocol assignment on purpose: the .NET 4.8 default is SystemDefault,
+        // which lets Windows negotiate the best available protocol (TLS 1.3 included).
+        // Forcing `|= Tls12` would pin the app to 1.2 and block anything newer.
+
+        /// <summary>Largest response we will read. These endpoints answer with a couple of KB;
+        /// anything bigger is a hostile or broken server and must not be buffered.</summary>
+        const int MaxResponseBytes = 256 * 1024;
+
+        static bool _tlsReady;
 
         public static string HttpGet(string url, int timeoutMs = 8000)
         {
+            if (!_tlsReady)
+            {
+                _tlsReady = true;
+                try
+                {
+                    // Some machines negotiate no usable protocol with SystemDefault (seen in the
+                    // field: "Could not create SSL/TLS secure channel" against open-meteo.com).
+                    // Offer TLS 1.2 explicitly and TLS 1.3 (12288) where the OS supports it.
+                    ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12 | (SecurityProtocolType)12288;
+                }
+                catch { }
+            }
             var req = (HttpWebRequest)WebRequest.Create(url);
             req.Timeout = timeoutMs;
-            req.UserAgent = "DeskMate/1.0";
+            req.ReadWriteTimeout = timeoutMs;
+            req.UserAgent = "DeskMate/1.4";
+            req.AllowAutoRedirect = true;
+            req.MaximumAutomaticRedirections = 3;
             using (var resp = (HttpWebResponse)req.GetResponse())
-            using (var reader = new StreamReader(resp.GetResponseStream()))
-                return reader.ReadToEnd();
+            using (var stream = resp.GetResponseStream())
+            {
+                if (stream == null) return "";
+                var buffer = new char[8192];
+                var sb = new System.Text.StringBuilder();
+                using (var reader = new StreamReader(stream))
+                {
+                    int read;
+                    while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        sb.Append(buffer, 0, read);
+                        if (sb.Length > MaxResponseBytes)
+                            throw new InvalidOperationException("response exceeds " + MaxResponseBytes + " bytes");
+                    }
+                }
+                return sb.ToString();
+            }
         }
 
         /// <summary>Detect location by IP; fills Settings and returns it (null on failure).</summary>
         public static GeoLoc AutoLocate()
         {
-            foreach (string url in new[] { "https://ipapi.co/json/", "http://ip-api.com/json/" })
+            // https for both: a plaintext fallback let anyone on the network dictate the
+            // user's location, and hand attacker-controlled JSON straight to the parser
+            foreach (string url in new[] { "https://ipapi.co/json/", "https://ipwho.is/" })
             {
                 try
                 {
@@ -64,10 +102,15 @@ namespace DeskMate.Features
         {
             if (!HasLocation && Settings.I.AutoLocation) AutoLocate();
             if (!HasLocation) return null;
-            if (!forceRefresh && _cache != null && (DateTime.Now - _cache.FetchedAt).TotalMinutes < 10)
+            if (!forceRefresh && _cache != null
+                && Math.Abs(_cacheLat - Settings.I.Lat) < 0.0001
+                && Math.Abs(_cacheLon - Settings.I.Lon) < 0.0001
+                && (DateTime.Now - _cache.FetchedAt).TotalMinutes < 10)
                 return _cache;
             string json = HttpGet(WeatherCore.BuildForecastUrl(Settings.I.Lat, Settings.I.Lon));
             _cache = WeatherCore.ParseForecast(json);
+            _cacheLat = Settings.I.Lat;
+            _cacheLon = Settings.I.Lon;
             return _cache;
         }
 

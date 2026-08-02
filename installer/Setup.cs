@@ -16,10 +16,91 @@ namespace DeskMate.Setup
     static class SetupProgram
     {
         const string AppName = "DeskMate";
-        const string Version = "1.2.0";
+        const string Version = DeskMate.Core.AppVersion.Text;
+        const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + AppName;
         static bool _ar = true;
 
         static string T(string ar, string en) { return _ar ? ar : en; }
+
+        /// <summary>Guards every destructive path. A folder is only removable when it is the
+        /// one this install actually recorded, and it still looks like a DeskMate install.
+        /// Without this, running a copy of Uninstall.exe from Desktop or Downloads would
+        /// wipe that whole folder.</summary>
+        static bool IsOurInstallDir(string dir)
+        {
+            if (string.IsNullOrEmpty(dir)) return false;
+            string full;
+            try { full = Path.GetFullPath(dir).TrimEnd('\\'); } catch { return false; }
+
+            // never a drive root or a well-known system/profile folder
+            if (full.Length <= 3) return false;
+            foreach (Environment.SpecialFolder sf in new[]
+            {
+                Environment.SpecialFolder.Windows, Environment.SpecialFolder.System,
+                Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86,
+                Environment.SpecialFolder.UserProfile, Environment.SpecialFolder.DesktopDirectory,
+                Environment.SpecialFolder.MyDocuments, Environment.SpecialFolder.ApplicationData,
+                Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolder.CommonApplicationData,
+                Environment.SpecialFolder.StartMenu, Environment.SpecialFolder.Personal,
+            })
+            {
+                string p;
+                try { p = Environment.GetFolderPath(sf); } catch { continue; }
+                if (!string.IsNullOrEmpty(p) &&
+                    full.Equals(Path.GetFullPath(p).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+
+            // must match what the installer recorded in the registry
+            try
+            {
+                using (var k = Registry.CurrentUser.OpenSubKey(UninstallKey))
+                {
+                    string recorded = k == null ? null : k.GetValue("InstallLocation") as string;
+                    if (string.IsNullOrEmpty(recorded)) return false;
+                    if (!full.Equals(Path.GetFullPath(recorded).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                        return false;
+                }
+            }
+            catch { return false; }
+
+            // and still contain the payload we installed
+            return File.Exists(Path.Combine(full, "DeskMate.exe"));
+        }
+
+        /// <summary>Rejects install targets that would later be wiped by the uninstaller.</summary>
+        static bool IsSafeInstallTarget(string dir, out string reason)
+        {
+            reason = null;
+            string full;
+            try { full = Path.GetFullPath(dir).TrimEnd('\\'); }
+            catch { reason = T("مسار غير صالح", "Invalid path"); return false; }
+
+            if (full.Length <= 3)
+            {
+                reason = T("لا يمكن التثبيت في جذر القرص", "Cannot install to a drive root");
+                return false;
+            }
+            // the uninstaller removes this folder entirely, so it must be ours alone
+            if (!Path.GetFileName(full).Equals(AppName, StringComparison.OrdinalIgnoreCase))
+            {
+                reason = T("يجب أن ينتهي المسار بمجلد باسم DeskMate",
+                           "Path must end in a folder named DeskMate");
+                return false;
+            }
+            try
+            {
+                if (Directory.Exists(full) &&
+                    !File.Exists(Path.Combine(full, "DeskMate.exe")) &&
+                    (Directory.GetFiles(full).Length > 0 || Directory.GetDirectories(full).Length > 0))
+                {
+                    reason = T("المجلد موجود وغير فارغ", "Folder exists and is not empty");
+                    return false;
+                }
+            }
+            catch { reason = T("تعذر الوصول للمجلد", "Folder is not accessible"); return false; }
+            return true;
+        }
 
         [STAThread]
         static int Main(string[] args)
@@ -46,6 +127,8 @@ namespace DeskMate.Setup
         static void SilentInstall()
         {
             string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppName);
+            string why;
+            if (!IsSafeInstallTarget(dir, out why)) throw new InvalidOperationException(why);
             Directory.CreateDirectory(dir);
             string exePath = Path.Combine(dir, "DeskMate.exe");
             KillRunning(dir);
@@ -185,7 +268,14 @@ namespace DeskMate.Setup
                 {
                     _install.Enabled = false;
                     string dir = _path.Text.Trim();
-                    if (dir.Length == 0) return;
+                    if (dir.Length == 0) { _install.Enabled = true; return; }
+                    string why;
+                    if (!IsSafeInstallTarget(dir, out why))
+                    {
+                        _install.Enabled = true;
+                        _status.Text = T("خطأ: ", "Error: ") + why;
+                        return;
+                    }
                     Directory.CreateDirectory(dir);
                     string exePath = Path.Combine(dir, "DeskMate.exe");
 
@@ -265,14 +355,18 @@ namespace DeskMate.Setup
             }
         }
 
+        /// <summary>Stops only the DeskMate running out of <paramref name="dir"/>, so a copy
+        /// installed elsewhere by another profile is left alone.</summary>
         static void KillRunning(string dir)
         {
+            if (string.IsNullOrEmpty(dir)) return;
+            string target;
+            try { target = Path.GetFullPath(dir).TrimEnd('\\') + "\\"; } catch { return; }
             foreach (var p in Process.GetProcessesByName("DeskMate"))
             {
                 try
                 {
-                    string path = p.MainModule.FileName;
-                    if (string.IsNullOrEmpty(dir) || path.StartsWith(dir, StringComparison.OrdinalIgnoreCase))
+                    if (p.MainModule.FileName.StartsWith(target, StringComparison.OrdinalIgnoreCase))
                     {
                         p.Kill();
                         p.WaitForExit(3000);
@@ -293,7 +387,16 @@ namespace DeskMate.Setup
                 MessageBoxDefaultButton.Button1, opts) != DialogResult.Yes) return;
 
             string dir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            KillRunning(null);
+            if (!IsOurInstallDir(dir))
+            {
+                if (!silent) MessageBox.Show(
+                    T("لم يتم العثور على تثبيت صالح في هذا المجلد. شغّل أداة الإزالة من مجلد تثبيت ديسك ميت، أو استخدم \"إضافة أو إزالة البرامج\".",
+                      "No valid installation found in this folder. Run the uninstaller from the DeskMate install folder, or use Add/Remove Programs."),
+                    "DeskMate", MessageBoxButtons.OK, MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button1, opts);
+                return;
+            }
+            KillRunning(dir);
 
             // shortcuts
             TryDelete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), AppName + ".lnk"));
@@ -305,7 +408,7 @@ namespace DeskMate.Setup
                     if (run != null) run.DeleteValue(AppName, false);
             }
             catch { }
-            try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + AppName, false); } catch { }
+            try { Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, false); } catch { }
 
             // settings
             if (!silent && MessageBox.Show(
@@ -321,17 +424,23 @@ namespace DeskMate.Setup
                 catch { }
             }
 
-            // delete files in the install dir now; schedule removal of the dir (this exe is inside it)
-            foreach (var f in Directory.GetFiles(dir))
-            {
-                if (!f.EndsWith("Uninstall.exe", StringComparison.OrdinalIgnoreCase)) TryDelete(f);
-            }
+            // delete ONLY the files we own. Never blanket-delete the directory: the user may
+            // keep personal files next to a portable copy they later installed over.
+            // (IsOurInstallDir above is still the first guard — do not remove it.)
+            TryDelete(Path.Combine(dir, "DeskMate.exe"));
+            string fullDir = Path.GetFullPath(dir).TrimEnd('\\');
             var psi = new ProcessStartInfo
             {
-                FileName = "cmd.exe",
-                Arguments = "/c ping 127.0.0.1 -n 3 >nul & rd /s /q \"" + dir + "\"",
+                // fully qualified: an unqualified name resolves against the app directory first,
+                // which is exactly the folder we are about to clean
+                FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+                // after this process exits: delete our uninstaller, then rd WITHOUT /s —
+                // rd on a non-empty folder fails, so anything the user kept behind survives
+                Arguments = "/c ping 127.0.0.1 -n 3 >nul & del /q \"" + Path.Combine(fullDir, "Uninstall.exe") +
+                            "\" & rd \"" + fullDir + "\" 2>nul",
                 CreateNoWindow = true,
                 UseShellExecute = false,
+                WorkingDirectory = Environment.SystemDirectory,
             };
             try { Process.Start(psi); } catch { }
             if (!silent) MessageBox.Show(

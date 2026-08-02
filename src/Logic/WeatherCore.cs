@@ -53,15 +53,15 @@ namespace DeskMate.Logic
         {
             var root = DeskMate.Core.Json.Parse(json) as Dictionary<string, object>;
             if (root == null) throw new FormatException("bad weather json");
-            var w = new WeatherData { FetchedAt = DateTime.Now };
             var cur = DeskMate.Core.Json.GetObj(root, "current");
-            if (cur != null)
-            {
-                w.Temp = DeskMate.Core.Json.GetNum(cur, "temperature_2m", double.NaN);
-                w.Code = DeskMate.Core.Json.GetInt(cur, "weather_code", 0);
-                w.Humidity = DeskMate.Core.Json.GetNum(cur, "relative_humidity_2m", double.NaN);
-                w.WindKmh = DeskMate.Core.Json.GetNum(cur, "wind_speed_10m", double.NaN);
-            }
+            // a response without the "current" block is an error page or a truncated body —
+            // refuse it instead of rendering "0° and clear skies" from defaults
+            if (cur == null) throw new FormatException("weather json missing current block");
+            var w = new WeatherData { FetchedAt = DateTime.Now };
+            w.Temp = DeskMate.Core.Json.GetNum(cur, "temperature_2m", double.NaN);
+            w.Code = DeskMate.Core.Json.GetInt(cur, "weather_code", 0);
+            w.Humidity = DeskMate.Core.Json.GetNum(cur, "relative_humidity_2m", double.NaN);
+            w.WindKmh = DeskMate.Core.Json.GetNum(cur, "wind_speed_10m", double.NaN);
             var daily = DeskMate.Core.Json.GetObj(root, "daily");
             if (daily != null)
             {
@@ -104,7 +104,9 @@ namespace DeskMate.Logic
             return result;
         }
 
-        /// <summary>Parses ipapi.co/json or ip-api.com/json responses (field names differ).</summary>
+        /// <summary>Parses an IP-geolocation response. Both spellings are accepted so the
+        /// provider can be swapped without touching this: latitude/longitude/country_code
+        /// (ipapi.co, ipwho.is) and lat/lon/countryCode (ip-api.com style).</summary>
         public static GeoLoc ParseIpLocation(string json)
         {
             var d = DeskMate.Core.Json.Parse(json) as Dictionary<string, object>;

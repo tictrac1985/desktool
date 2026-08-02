@@ -27,6 +27,13 @@ namespace DeskMate.Features
             return _cache;
         }
 
+        /// <summary>Windows' own explorer.exe, never whatever "explorer.exe" the process
+        /// directory happens to contain.</summary>
+        static string ExplorerPath
+        {
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"); }
+        }
+
         static void Launch(AppEntry app)
         {
             try
@@ -34,7 +41,7 @@ namespace DeskMate.Features
                 if (!string.IsNullOrEmpty(app.LnkPath))
                     Process.Start(new ProcessStartInfo(app.LnkPath) { UseShellExecute = true });
                 else
-                    Process.Start(new ProcessStartInfo("explorer.exe", "shell:AppsFolder\\" + app.AppsFolderPath) { UseShellExecute = true });
+                    Process.Start(new ProcessStartInfo(ExplorerPath, "shell:AppsFolder\\" + app.AppsFolderPath) { UseShellExecute = true });
             }
             catch (Exception ex) { Log.Error("app open", ex); }
         }
@@ -138,9 +145,7 @@ namespace DeskMate.Features
                         string dest = Path.Combine(desktop, safe + ".lnk");
                         int n = 2;
                         while (File.Exists(dest)) dest = Path.Combine(desktop, safe + " (" + n++ + ").lnk");
-                        Win32.CreateShortcut(dest,
-                            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
-                            "shell:AppsFolder\\" + app.AppsFolderPath);
+                        Win32.CreateShortcut(dest, ExplorerPath, "shell:AppsFolder\\" + app.AppsFolderPath);
                     }
                     feedback.Text = L.T("ap_added");
                 }

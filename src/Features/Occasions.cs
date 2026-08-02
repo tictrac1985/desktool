@@ -80,7 +80,7 @@ namespace DeskMate.Features
 
             if (hasCustom)
             {
-                var row = MakeRow(L.T("oc_custom").Split('(')[0].Trim(),
+                var row = MakeRow(L.T("oc_custom_short"),
                     custom.ToString("d MMMM yyyy", ci),
                     LeftText(OccasionCore.DaysLeft(today, custom)),
                     false, () =>
@@ -111,8 +111,7 @@ namespace DeskMate.Features
                 Settings.I.Save();
                 PanelWindow.CloseCurrent();
                 Open(MainWindow.Instance);
-            });
-            addBtn.Padding = new Thickness(12, 4, 12, 4);
+            }, padding: new Thickness(12, 4, 12, 4));
             DockPanel.SetDock(addBtn, Dock.Right);
             inputRow.Children.Add(addBtn);
             inputRow.Children.Add(input);

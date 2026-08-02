@@ -362,7 +362,7 @@ namespace DeskMate.UI
         }
 
         /// <summary>Rounded text button for panels; accent variant gets a lifted accent gradient.</summary>
-        public static Border MakeButton(string text, Action onClick, bool accent = false)
+        public static Border MakeButton(string text, Action onClick, bool accent = false, Thickness? padding = null)
         {
             var tb = MakeText(text, 13, accent ? (IsLight ? Brushes.White : Brushes.Black) : Text);
             tb.HorizontalAlignment = HorizontalAlignment.Center;
@@ -372,7 +372,7 @@ namespace DeskMate.UI
                 accentBg = Freeze(new LinearGradientBrush(Lift(AccentColor, 26, 22, 20), AccentColor, 90));
             var btnLayers = new Grid();
             btnLayers.Children.Add(Bevel(9));
-            btnLayers.Children.Add(new Border { Padding = new Thickness(14, 7, 14, 7), Child = tb });
+            btnLayers.Children.Add(new Border { Padding = padding ?? new Thickness(14, 7, 14, 7), Child = tb });
             var b = new Border
             {
                 Background = accent ? accentBg : ButtonBg,
@@ -382,12 +382,23 @@ namespace DeskMate.UI
                 Child = btnLayers,
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(3),
+                // callers change the label through Tag/SetButtonText — never cast Child
+                // (Child is the bevel layering grid, not the TextBlock)
+                Tag = tb,
             };
             if (!accent) AttachHover(b, ButtonBg, HoverBg);
             else AttachHover(b, accentBg, Freeze(new SolidColorBrush(Lift(AccentColor, 40, 36, 34))));
             b.MouseLeftButtonUp += (s, e) => { e.Handled = true; try { onClick(); } catch (Exception ex) { Log.Error("btn", ex); } };
             b.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
             return b;
+        }
+
+        /// <summary>Safe label access for buttons made by <see cref="MakeButton"/> —
+        /// reads/writes the TextBlock kept in Tag regardless of internal layering.</summary>
+        public static void SetButtonText(Border b, string text)
+        {
+            var tb = b.Tag as TextBlock;
+            if (tb != null) tb.Text = text;
         }
 
         public static void AttachHover(Border b, Brush normal, Brush hover)

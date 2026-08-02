@@ -37,15 +37,32 @@ namespace DeskMate.Logic
             return null;
         }
 
+        /// <summary>Resolved timezones, cached: the panel refreshes every second for every city,
+        /// and FindSystemTimeZoneById takes a process-wide lock on each call.
+        /// A null entry records "this machine does not know the id" so it is not retried.</summary>
+        static readonly System.Collections.Generic.Dictionary<string, TimeZoneInfo> TzCache =
+            new System.Collections.Generic.Dictionary<string, TimeZoneInfo>(StringComparer.OrdinalIgnoreCase);
+
+        static TimeZoneInfo Resolve(string tzId)
+        {
+            lock (TzCache)
+            {
+                TimeZoneInfo tz;
+                if (TzCache.TryGetValue(tzId, out tz)) return tz;
+                try { tz = TimeZoneInfo.FindSystemTimeZoneById(tzId); }
+                catch { tz = null; }
+                TzCache[tzId] = tz;
+                return tz;
+            }
+        }
+
         /// <summary>Current wall-clock time in a Windows timezone. Null when the id is unknown
         /// on this machine.</summary>
         public static DateTime? TimeIn(string tzId, DateTime utcNow)
         {
-            try
-            {
-                var tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
-                return TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), tz);
-            }
+            var tz = Resolve(tzId);
+            if (tz == null) return null;
+            try { return TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), tz); }
             catch { return null; }
         }
 

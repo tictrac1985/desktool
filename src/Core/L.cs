@@ -130,6 +130,7 @@ namespace DeskMate.Core
             { "oc_today",        new[] { "اليوم!", "Today!" } },
             { "oc_tomorrow",     new[] { "غداً", "Tomorrow" } },
             { "oc_custom",       new[] { "تاريخ مخصص (سنة-شهر-يوم)", "Custom date (yyyy-MM-dd)" } },
+            { "oc_custom_short", new[] { "تاريخ مخصص", "Custom date" } },
             { "oc_bad",          new[] { "تاريخ غير صالح", "Invalid date" } },
             { "oc_nearest",      new[] { "الأقرب", "Coming up" } },
 

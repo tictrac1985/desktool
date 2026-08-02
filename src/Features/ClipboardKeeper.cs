@@ -14,18 +14,44 @@ namespace DeskMate.Features
     {
         static readonly List<string> Recent = new List<string>();
         static string _lastSeen;
-        static bool _settingOurselves;
+
+        /// <summary>Formats password managers and browsers attach to say "do not record this".
+        /// Honouring them is what keeps copied passwords out of the panel and off disk.</summary>
+        static readonly string[] SecretMarkers =
+        {
+            "ExcludeClipboardContentFromMonitorProcessing",  // Windows / KeePass / 1Password
+            "CanIncludeInClipboardHistory",                  // Windows 10+ clipboard history opt-out
+            "CanUploadToCloudClipboard",
+            "ConfidentialContent",                           // Edge / Chromium
+            "org.nspasteboard.ConcealedType",
+        };
+
+        /// <summary>True when the current clipboard owner marked its content as secret.</summary>
+        static bool IsSecret(IDataObject data)
+        {
+            if (data == null) return false;
+            foreach (string marker in SecretMarkers)
+            {
+                try { if (data.GetDataPresent(marker)) return true; }
+                catch { return true; }   // unreadable → assume secret rather than record it
+            }
+            return false;
+        }
+
+        /// <summary>Longest snippet worth keeping. Anything larger is a document, not a
+        /// clipping, and would bloat both memory and settings.json.</summary>
+        const int MaxClipLength = 8 * 1024;
 
         /// <summary>Called from MainWindow's WndProc on WM_CLIPBOARDUPDATE.</summary>
         public static void OnClipboardUpdate()
         {
-            if (_settingOurselves) { _settingOurselves = false; return; }
             if (!Settings.I.ShowClipboard) return;
             try
             {
                 if (!Clipboard.ContainsText()) return;
+                if (IsSecret(Clipboard.GetDataObject())) return;
                 string text = Clipboard.GetText();
-                if (string.IsNullOrEmpty(text) || text == _lastSeen) return;
+                if (string.IsNullOrEmpty(text) || text.Length > MaxClipLength || text == _lastSeen) return;
                 _lastSeen = text;
                 Recent.Remove(text);
                 Recent.Insert(0, text);
@@ -37,13 +63,11 @@ namespace DeskMate.Features
 
         static void CopyBack(string text)
         {
-            try
-            {
-                _settingOurselves = true;
-                Clipboard.SetText(text);
-                _lastSeen = text;
-            }
-            catch { _settingOurselves = false; }
+            // set _lastSeen first: the clipboard notification can arrive before SetText returns,
+            // and the text comparison in OnClipboardUpdate is what suppresses the echo
+            _lastSeen = text;
+            try { Clipboard.SetText(text); }
+            catch { /* another app holds the clipboard open; nothing to undo */ }
         }
 
         public static void Open(Window owner)

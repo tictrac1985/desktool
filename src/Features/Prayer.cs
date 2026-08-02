@@ -85,22 +85,34 @@ namespace DeskMate.Features
             return L.T(NameKeys[idx]) + " " + L.T("pr_in") + " " + dur;
         }
 
+        /// <summary>Top of the last minute that was already evaluated.</summary>
+        static DateTime _lastMinuteHandled = DateTime.MinValue;
+
         /// <summary>Called every second from the widget timer; fires notifications once per event.</summary>
         public static void MinuteTick(DateTime now)
         {
             if (!Settings.I.ShowPrayer || !Settings.I.PrayerNotify || !WeatherFeature.HasLocation) return;
-            if (now.Second != 0) return; // act once per minute
+
+            // Do NOT gate on `now.Second == 0`: a DispatcherTimer runs at Background priority and
+            // under load a whole second gets skipped, which silently dropped the alert for that
+            // minute. Track the minute instead, so every minute is evaluated exactly once
+            // whatever second the tick actually lands on.
+            var minute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0);
+            if (minute == _lastMinuteHandled) return;
+            _lastMinuteHandled = minute;
+
             var t = Today(now);
             if (t == null) return;
-            double h = now.TimeOfDay.TotalHours;
+            // anchor on the top of the minute so the windows below tile without gaps
+            double h = minute.TimeOfDay.TotalHours;
             for (int i = 0; i < 6; i++)
             {
                 if (i == 1 || double.IsNaN(t[i])) continue;
                 double diffMin = (t[i] - h) * 60.0;
                 int pre = Settings.I.PrayerPreAlertMin;
-                if (diffMin > -0.5 && diffMin <= 0.5)
+                if (diffMin > -1.0 && diffMin <= 0.0)
                     Notify(i, 0, now);
-                else if (pre > 0 && diffMin > pre - 0.5 && diffMin <= pre + 0.5)
+                else if (pre > 0 && diffMin > pre - 1.0 && diffMin <= pre)
                     Notify(i, pre, now);
             }
         }
@@ -122,8 +134,7 @@ namespace DeskMate.Features
         {
             stack.Children.Add(Theme.SectionTitle(L.T("pr_sound")));
             var row = new DockPanel { Margin = new Thickness(0, 2, 0, 0) };
-            var testBtn = Theme.MakeButton(L.T("pr_snd_test"), () => AlertSound.Play());
-            testBtn.Padding = new Thickness(10, 5, 10, 5);
+            var testBtn = Theme.MakeButton(L.T("pr_snd_test"), () => AlertSound.Play(), padding: new Thickness(10, 5, 10, 5));
             DockPanel.SetDock(testBtn, Dock.Right);
             row.Children.Add(testBtn);
 

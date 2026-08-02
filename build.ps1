@@ -2,7 +2,13 @@
 param(
     [switch]$SkipTests,
     [switch]$SkipInstaller,
-    [switch]$UiSmoke
+    [switch]$UiSmoke,
+    # Authenticode signing. Pass -SignThumbprint with a cert installed in Cert:\CurrentUser\My,
+    # or -SignPfx + -SignPfxPassword. Unsigned builds still work; they just trip SmartScreen.
+    [string]$SignThumbprint,
+    [string]$SignPfx,
+    [string]$SignPfxPassword,
+    [string]$TimestampUrl = "http://timestamp.digicert.com"
 )
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
@@ -87,9 +93,41 @@ if (-not (Test-Path $xaml)) { $xaml = Join-Path $fw "WPF\System.Xaml.dll" }
 $refsApp = @(
     "$fw\mscorlib.dll", "$fw\System.dll", "$fw\System.Core.dll", "$fw\System.Xml.dll",
     "$fw\System.Drawing.dll", "$fw\System.Windows.Forms.dll", "$fw\Microsoft.CSharp.dll",
+    "$fw\System.Security.dll",
     $xaml, "$fw\WPF\WindowsBase.dll", "$fw\WPF\PresentationCore.dll", "$fw\WPF\PresentationFramework.dll"
 )
-$refsPure = @("$fw\mscorlib.dll", "$fw\System.dll", "$fw\System.Core.dll", "$fw\System.Xml.dll")
+# System.Security carries ProtectedData (DPAPI), used by Core\Secret.cs
+$refsPure = @("$fw\mscorlib.dll", "$fw\System.dll", "$fw\System.Core.dll", "$fw\System.Xml.dll",
+              "$fw\System.Security.dll")
+
+# ---------------- Authenticode signing ----------------
+function Get-SignTool {
+    $roots = @("${env:ProgramFiles(x86)}\Windows Kits\10\bin", "$env:ProgramFiles\Windows Kits\10\bin")
+    foreach ($r in $roots) {
+        if (-not (Test-Path $r)) { continue }
+        $found = Get-ChildItem $r -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -match '\\x64\\' } |
+                 Sort-Object FullName -Descending | Select-Object -First 1
+        if ($found) { return $found.FullName }
+    }
+    return $null
+}
+
+function Invoke-Sign([string]$path) {
+    if (-not $SignThumbprint -and -not $SignPfx) { return }   # unsigned build: nothing to do
+    $signtool = Get-SignTool
+    if (-not $signtool) { throw "signtool.exe not found - install the Windows 10/11 SDK 'Signing Tools' feature" }
+    $a = @("sign", "/fd", "SHA256", "/td", "SHA256", "/tr", $TimestampUrl)
+    if ($SignThumbprint) { $a += @("/sha1", $SignThumbprint) }
+    else {
+        $a += @("/f", $SignPfx)
+        if ($SignPfxPassword) { $a += @("/p", $SignPfxPassword) }
+    }
+    $a += $path
+    & $signtool @a
+    if ($LASTEXITCODE -ne 0) { throw "signing failed for $path" }
+    Write-Host "Signed -> $path" -ForegroundColor Green
+}
 
 function Invoke-Csc([string]$out, [string]$target, [string[]]$sources, [string[]]$refs, [string[]]$extra) {
     $args = @("/nologo", "/codepage:65001", "/langversion:latest", "/optimize+", "/platform:anycpu",
@@ -119,8 +157,13 @@ if ((-not $SkipTests) -and (Test-Path $selfTest)) {
 # ---------------- Main app ----------------
 Write-Host "Building DeskMate.exe ..."
 $appSources = @(Get-ChildItem (Join-Path $root "src") -Recurse -Filter *.cs | ForEach-Object { $_.FullName })
-$appExe = Join-Path $dist "DeskMate.exe"
-Invoke-Csc $appExe "winexe" $appSources $refsApp @("/win32icon:$ico")
+$appExe   = Join-Path $dist "DeskMate.exe"
+$manifest = Join-Path $root "src\app.manifest"
+$appExtra = @("/win32icon:$ico")
+if (Test-Path $manifest) { $appExtra += "/win32manifest:$manifest" }
+Invoke-Csc $appExe "winexe" $appSources $refsApp $appExtra
+# sign before embedding: the installer carries this exact file as its payload
+Invoke-Sign $appExe
 Write-Host "OK -> $appExe" -ForegroundColor Green
 
 # ---------------- Installer ----------------
@@ -130,7 +173,11 @@ if ((-not $SkipInstaller) -and (Test-Path $setupSrc)) {
     $setupExe = Join-Path $dist "DeskMateSetup.exe"
     $refsSetup = @("$fw\mscorlib.dll", "$fw\System.dll", "$fw\System.Core.dll",
                    "$fw\System.Drawing.dll", "$fw\System.Windows.Forms.dll")
-    Invoke-Csc $setupExe "winexe" @($setupSrc) $refsSetup @("/win32icon:$ico", "/resource:$appExe,DeskMate.Payload")
+    $setupExtra = @("/win32icon:$ico", "/resource:$appExe,DeskMate.Payload")
+    if (Test-Path $manifest) { $setupExtra += "/win32manifest:$manifest" }
+    # AppVersion.cs is compiled in too: one version source for app and installer alike
+    Invoke-Csc $setupExe "winexe" @($setupSrc, (Join-Path $root "src\Core\AppVersion.cs")) $refsSetup $setupExtra
+    Invoke-Sign $setupExe
     Write-Host "OK -> $setupExe" -ForegroundColor Green
 }
 # ---------------- UI smoke screenshots (optional) ----------------
@@ -142,6 +189,8 @@ if ($UiSmoke -and (Test-Path $uiSmokeSrc)) {
     $shots = Join-Path $obj "uishots"
     Write-Host "Capturing UI screenshots -> $shots"
     & $smokeExe $shots | Out-Host
+    # the smoke run now reports every swallowed failure through its exit code
+    if ($LASTEXITCODE -ne 0) { throw "UiSmoke FAILED ($LASTEXITCODE) - see FAIL lines above" }
 }
 
 Write-Host "Build complete." -ForegroundColor Green

@@ -169,7 +169,10 @@ namespace DeskMate.UI
             {
                 UpdateLayout();
                 double w = ActualWidth, h = ActualHeight;
-                var wa = SystemParameters.WorkArea;
+                // work area of the screen ACTUALLY showing the widget — SystemParameters.WorkArea
+                // is the primary monitor only, so panels opened next to a widget on a second
+                // screen jumped back to the primary one
+                var wa = WorkAreaOf(owner);
                 double left = owner.Left + (owner.ActualWidth - w) / 2;
                 left = Math.Max(wa.Left + 4, Math.Min(left, wa.Right - w - 4));
                 double top = owner.Top + owner.ActualHeight - 6;
@@ -179,6 +182,23 @@ namespace DeskMate.UI
                 Top = top;
             }
             catch { }
+        }
+
+        /// <summary>Work area (in WPF device-independent units) of the monitor that hosts
+        /// the given window. Screen.WorkArea is in physical pixels, so it is converted with
+        /// the window's own DPI (the app is PerMonitorV2-aware).</summary>
+        static Rect WorkAreaOf(Window w)
+        {
+            try
+            {
+                var h = new WindowInteropHelper(w).Handle;
+                var r = System.Windows.Forms.Screen.FromHandle(h).WorkingArea;
+                var dpi = VisualTreeHelper.GetDpi(w);
+                return new Rect(
+                    r.Left * 96.0 / dpi.PixelsPerInchX, r.Top * 96.0 / dpi.PixelsPerInchY,
+                    r.Width * 96.0 / dpi.PixelsPerInchX, r.Height * 96.0 / dpi.PixelsPerInchY);
+            }
+            catch { return SystemParameters.WorkArea; }
         }
     }
 }

@@ -9,11 +9,17 @@ namespace DeskMate.Core
     /// Values map to: Dictionary&lt;string,object&gt;, List&lt;object&gt;, string, double, bool, null.</summary>
     public static class Json
     {
+        /// <summary>Nesting limit. The parser is recursive, so unbounded depth raises
+        /// StackOverflowException — which .NET cannot catch and which kills the process
+        /// outright. Input reaches here from settings.json and from remote weather /
+        /// geocoding / IP-location responses, so the limit is a hard requirement.</summary>
+        public const int MaxDepth = 64;
+
         public static object Parse(string text)
         {
             if (text == null) throw new ArgumentNullException("text");
             int pos = 0;
-            var v = ParseValue(text, ref pos);
+            var v = ParseValue(text, ref pos, 0);
             SkipWs(text, ref pos);
             if (pos != text.Length) throw new FormatException("Trailing characters at " + pos);
             return v;
@@ -24,13 +30,14 @@ namespace DeskMate.Core
             while (p < s.Length && (s[p] == ' ' || s[p] == '\t' || s[p] == '\r' || s[p] == '\n')) p++;
         }
 
-        static object ParseValue(string s, ref int p)
+        static object ParseValue(string s, ref int p, int depth)
         {
+            if (depth > MaxDepth) throw new FormatException("Nested deeper than " + MaxDepth + " at " + p);
             SkipWs(s, ref p);
             if (p >= s.Length) throw new FormatException("Unexpected end");
             char c = s[p];
-            if (c == '{') return ParseObject(s, ref p);
-            if (c == '[') return ParseArray(s, ref p);
+            if (c == '{') return ParseObject(s, ref p, depth);
+            if (c == '[') return ParseArray(s, ref p, depth);
             if (c == '"') return ParseString(s, ref p);
             if (c == 't') { Expect(s, ref p, "true"); return true; }
             if (c == 'f') { Expect(s, ref p, "false"); return false; }
@@ -45,7 +52,7 @@ namespace DeskMate.Core
             p += word.Length;
         }
 
-        static Dictionary<string, object> ParseObject(string s, ref int p)
+        static Dictionary<string, object> ParseObject(string s, ref int p, int depth)
         {
             var d = new Dictionary<string, object>();
             p++; // {
@@ -58,7 +65,7 @@ namespace DeskMate.Core
                 SkipWs(s, ref p);
                 if (p >= s.Length || s[p] != ':') throw new FormatException("Expected ':' at " + p);
                 p++;
-                d[key] = ParseValue(s, ref p);
+                d[key] = ParseValue(s, ref p, depth + 1);
                 SkipWs(s, ref p);
                 if (p >= s.Length) throw new FormatException("Unterminated object");
                 if (s[p] == ',') { p++; continue; }
@@ -67,7 +74,7 @@ namespace DeskMate.Core
             }
         }
 
-        static List<object> ParseArray(string s, ref int p)
+        static List<object> ParseArray(string s, ref int p, int depth)
         {
             var a = new List<object>();
             p++; // [
@@ -75,7 +82,7 @@ namespace DeskMate.Core
             if (p < s.Length && s[p] == ']') { p++; return a; }
             while (true)
             {
-                a.Add(ParseValue(s, ref p));
+                a.Add(ParseValue(s, ref p, depth + 1));
                 SkipWs(s, ref p);
                 if (p >= s.Length) throw new FormatException("Unterminated array");
                 if (s[p] == ',') { p++; continue; }
@@ -86,7 +93,8 @@ namespace DeskMate.Core
 
         static string ParseString(string s, ref int p)
         {
-            if (s[p] != '"') throw new FormatException("Expected string at " + p);
+            // bounds-checked: ParseObject calls this for keys and may already be at the end
+            if (p >= s.Length || s[p] != '"') throw new FormatException("Expected string at " + p);
             p++;
             var sb = new StringBuilder();
             while (true)
