@@ -71,6 +71,10 @@ namespace DeskMate.Core
 
         // custom occasion date (yyyy-MM-dd, Gregorian); empty = none
         public string OccasionCustom = "";
+        // custom occasion display name; empty = generic "custom date" label
+        public string OccasionCustomName = "";
+        // when true the custom occasion repeats every year (birthday/anniversary style)
+        public bool OccasionCustomYearly;
 
         // world clocks: Windows timezone ids chosen by the user
         public List<string> WorldClocks = new List<string>();
@@ -236,6 +240,8 @@ namespace DeskMate.Core
 
             Sec("StickyNote",         s => s.StickyNote,         (s, v) => s.StickyNote = v),
             Str("OccasionCustom",     s => s.OccasionCustom,     (s, v) => s.OccasionCustom = v),
+            Str("OccasionCustomName", s => s.OccasionCustomName, (s, v) => s.OccasionCustomName = v),
+            Bit("OccasionCustomYearly", s => s.OccasionCustomYearly, (s, v) => s.OccasionCustomYearly = v),
             List("WorldClocks",       s => s.WorldClocks),
         };
 

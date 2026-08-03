@@ -177,6 +177,7 @@ static class SelfTest
                 FocusDoneDate = "20260801", FocusDoneCount = 7,
                 AdhanSound = 2, AdhanPath = @"C:\sounds\adhan.wav",
                 StickyNote = "ملاحظة\nسطران", OccasionCustom = "2026-12-31",
+                OccasionCustomName = "عيد ميلاد", OccasionCustomYearly = true,
             };
             s.PinnedClips.Add("clip one");
             s.PinnedClips.Add("مقطع اثنان");
@@ -206,6 +207,7 @@ static class SelfTest
             Check(r.FocusDoneDate == "20260801" && r.FocusDoneCount == 7, "all: focus");
             Check(r.AdhanSound == 2 && r.AdhanPath == @"C:\sounds\adhan.wav", "all: sound");
             Check(r.StickyNote == "ملاحظة\nسطران" && r.OccasionCustom == "2026-12-31", "all: note + occasion");
+            Check(r.OccasionCustomName == "عيد ميلاد" && r.OccasionCustomYearly, "all: occasion name + yearly");
             Check(r.WorldClocks.Count == 2 && r.WorldClocks[0] == "Egypt Standard Time" &&
                   r.WorldClocks[1] == "Tokyo Standard Time", "all: world clocks");
 

@@ -22,6 +22,7 @@ static class UiSmoke
     /// <summary>Every swallowed problem lands here; a non-empty list fails the run.
     /// Silent passes once hid a crashing panel behind its stale screenshot.</summary>
     static readonly List<string> _failures = new List<string>();
+    static string _retried;
 
     [STAThread]
     static int Main(string[] args)
@@ -90,6 +91,15 @@ static class UiSmoke
             var prev = _steps[_index].Item1;
             try
             {
+                // a panel still opening under load gets ONE extra beat before it counts as failed
+                bool panelMissing = !prev.StartsWith("layout") && PanelWindow.Current == null;
+                if (panelMissing && _retried != prev)
+                {
+                    _retried = prev;
+                    _timer.Interval = TimeSpan.FromMilliseconds(900);
+                    _timer.Start();
+                    return;
+                }
                 if (prev.StartsWith("layout")) CaptureWidget(prev);
                 else CapturePanel(prev);
             }

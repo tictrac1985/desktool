@@ -29,9 +29,6 @@ namespace DeskMate.Features
                     OccasionCore.NextHijri(oc.Month, oc.Day, today), "h"));
 
             DateTime custom;
-            bool hasCustom = DateTime.TryParseExact(Settings.I.OccasionCustom, "yyyy-MM-dd",
-                CultureInfo.InvariantCulture, DateTimeStyles.None, out custom);
-            if (hasCustom && custom.Date < today.Date) hasCustom = false; // past custom date is stale
 
             // nearest builtin gets the hero card
             int nearestIdx = -1;
@@ -67,6 +64,18 @@ namespace DeskMate.Features
                 stack.Children.Add(hero);
             }
 
+            bool hasStored = DateTime.TryParseExact(Settings.I.OccasionCustom, "yyyy-MM-dd",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out custom);
+            DateTime? customNext = null;
+            if (hasStored)
+            {
+                if (Settings.I.OccasionCustomYearly)
+                    customNext = OccasionCore.NextGregorian(custom.Month, custom.Day, today);
+                else if (custom.Date >= today.Date)
+                    customNext = custom.Date; // one-time: only while still ahead
+            }
+            bool hasCustom = customNext != null;
+
             var ci = L.IsAr ? new CultureInfo("ar-EG") : new CultureInfo("en-US");
             for (int i = 0; i < entries.Count; i++)
             {
@@ -80,12 +89,15 @@ namespace DeskMate.Features
 
             if (hasCustom)
             {
-                var row = MakeRow(L.T("oc_custom_short"),
-                    custom.ToString("d MMMM yyyy", ci),
-                    LeftText(OccasionCore.DaysLeft(today, custom)),
+                string cname = string.IsNullOrWhiteSpace(Settings.I.OccasionCustomName)
+                    ? L.T("oc_custom_short") : Settings.I.OccasionCustomName.Trim();
+                var row = MakeRow(cname,
+                    customNext.Value.ToString("d MMMM yyyy", ci),
+                    LeftText(OccasionCore.DaysLeft(today, customNext.Value)),
                     false, () =>
                     {
                         Settings.I.OccasionCustom = "";
+                        Settings.I.OccasionCustomName = "";
                         Settings.I.Save();
                         PanelWindow.CloseCurrent();
                         Open(MainWindow.Instance);
@@ -93,29 +105,75 @@ namespace DeskMate.Features
                 stack.Children.Add(row);
             }
 
-            // ---- custom date entry ----
+            // ---- custom occasion entry: name field + day/month/year pickers ----
             var feedback = Theme.MakeText("", 11.5, Theme.Accent);
             stack.Children.Add(Theme.SectionTitle(L.T("oc_custom")));
-            var inputRow = new DockPanel();
-            var input = Theme.MakeInput(Settings.I.OccasionCustom);
-            var addBtn = Theme.MakeButton("+", () =>
+
+            var nameCap = Theme.MakeText(L.T("oc_name"), 11.5, Theme.TextFaint);
+            stack.Children.Add(nameCap);
+            var nameInput = Theme.MakeInput(Settings.I.OccasionCustomName);
+            nameInput.Margin = new Thickness(0, 2, 0, 6);
+            stack.Children.Add(nameInput);
+
+            var dayC = Theme.MakeCombo(); dayC.MinWidth = 0; dayC.Width = 58;
+            var monC = Theme.MakeCombo(); monC.MinWidth = 0; monC.Width = 116;
+            var yrC = Theme.MakeCombo(); yrC.MinWidth = 0; yrC.Width = 84;
+            string[] monthNames = ci.DateTimeFormat.MonthNames;
+            for (int m = 0; m < 12; m++) monC.Items.Add(monthNames[m]);
+            for (int y = today.Year; y <= today.Year + 10; y++)
+                yrC.Items.Add(y.ToString(CultureInfo.InvariantCulture));
+
+            Action refreshDays = () =>
             {
-                DateTime d;
-                if (!DateTime.TryParseExact(input.Text.Trim(), "yyyy-MM-dd",
-                        CultureInfo.InvariantCulture, DateTimeStyles.None, out d))
+                if (monC.SelectedIndex < 0 || yrC.SelectedIndex < 0) return;
+                int keep = dayC.SelectedIndex + 1;
+                int dim = DateTime.DaysInMonth(today.Year + yrC.SelectedIndex, monC.SelectedIndex + 1);
+                dayC.Items.Clear();
+                for (int d = 1; d <= dim; d++) dayC.Items.Add(d.ToString());
+                dayC.SelectedIndex = Math.Min(Math.Max(keep, 1), dim) - 1;
+            };
+            monC.SelectionChanged += (s, e) => refreshDays();
+            yrC.SelectionChanged += (s, e) => refreshDays();
+
+            // preselect the stored date (or today when empty)
+            int initDay = hasStored ? custom.Day : today.Day;
+            monC.SelectedIndex = (hasStored ? custom.Month : today.Month) - 1;
+            int yrIdx = hasStored ? custom.Year - today.Year : 0;
+            yrC.SelectedIndex = Math.Min(Math.Max(yrIdx, 0), 10);
+            refreshDays();
+            dayC.SelectedIndex = Math.Min(initDay, dayC.Items.Count) - 1;
+
+            var pickRow = new StackPanel { Orientation = Orientation.Horizontal };
+            dayC.Margin = new Thickness(0, 0, 4, 0);
+            monC.Margin = new Thickness(0, 0, 4, 0);
+            pickRow.Children.Add(dayC);
+            pickRow.Children.Add(monC);
+            pickRow.Children.Add(yrC);
+            stack.Children.Add(pickRow);
+
+            var actionRow = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
+            var yearly = Theme.MakeCheck(L.T("oc_yearly"), Settings.I.OccasionCustomYearly, v => { });
+            var addBtn = Theme.MakeButton(L.T("oc_add"), () =>
+            {
+                if (dayC.SelectedIndex < 0 || monC.SelectedIndex < 0 || yrC.SelectedIndex < 0)
                 {
                     feedback.Text = L.T("oc_bad");
                     return;
                 }
+                DateTime d;
+                try { d = new DateTime(today.Year + yrC.SelectedIndex, monC.SelectedIndex + 1, dayC.SelectedIndex + 1); }
+                catch { feedback.Text = L.T("oc_bad"); return; }
                 Settings.I.OccasionCustom = d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                Settings.I.OccasionCustomName = nameInput.Text.Trim();
+                Settings.I.OccasionCustomYearly = yearly.IsChecked == true;
                 Settings.I.Save();
                 PanelWindow.CloseCurrent();
                 Open(MainWindow.Instance);
-            }, padding: new Thickness(12, 4, 12, 4));
+            }, padding: new Thickness(16, 4, 16, 4));
             DockPanel.SetDock(addBtn, Dock.Right);
-            inputRow.Children.Add(addBtn);
-            inputRow.Children.Add(input);
-            stack.Children.Add(inputRow);
+            actionRow.Children.Add(addBtn);
+            actionRow.Children.Add(yearly);
+            stack.Children.Add(actionRow);
 
             feedback.HorizontalAlignment = HorizontalAlignment.Center;
             feedback.Margin = new Thickness(0, 4, 0, 0);
