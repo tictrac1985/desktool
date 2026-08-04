@@ -44,6 +44,20 @@ namespace DeskMate
                     try { Settings.I.Save(); } catch { }
                 };
 
+                // A value that could not be encrypted is dropped rather than written in the
+                // clear. Say so once: silently losing what the user just typed is the kind of
+                // failure that gets blamed on the app "eating" notes.
+                bool warned = false;
+                Secret.ProtectFailed += ctx =>
+                {
+                    if (warned) return;
+                    warned = true;
+                    app.Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        try { UI.Toast.Show(L.T("sec_protect_err")); } catch { }
+                    }));
+                };
+
                 var win = new UI.MainWindow();
                 StartShowListener(app);
                 win.Show();

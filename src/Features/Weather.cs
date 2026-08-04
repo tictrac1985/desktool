@@ -16,34 +16,36 @@ namespace DeskMate.Features
         static WeatherData _cache;
         static double _cacheLat, _cacheLon; // coords the cache belongs to — a city change invalidates it
 
-        // No SecurityProtocol assignment on purpose: the .NET 4.8 default is SystemDefault,
-        // which lets Windows negotiate the best available protocol (TLS 1.3 included).
-        // Forcing `|= Tls12` would pin the app to 1.2 and block anything newer.
-
         /// <summary>Largest response we will read. These endpoints answer with a couple of KB;
         /// anything bigger is a hostile or broken server and must not be buffered.</summary>
         const int MaxResponseBytes = 256 * 1024;
 
         static bool _tlsReady;
 
+        /// <summary>SystemDefault (the .NET 4.8 default) is the right choice in principle —
+        /// Windows then picks the best protocol, future versions included. In the field it
+        /// fails on some machines ("Could not create SSL/TLS secure channel" against
+        /// open-meteo.com), so 1.2 and 1.3 are enabled explicitly as a floor.
+        /// The two are enabled in separate attempts on purpose: TLS 1.3 (12288) is not a
+        /// defined value on every patch level, and a single combined assignment that threw
+        /// left the process with neither — the exact failure this works around.</summary>
+        static void EnsureTls()
+        {
+            if (_tlsReady) return;
+            _tlsReady = true;
+            try { ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12; }
+            catch (Exception ex) { Log.Error("tls12", ex); }
+            try { ServicePointManager.SecurityProtocol |= (SecurityProtocolType)12288; }
+            catch { /* TLS 1.3 unknown to this OS/runtime — 1.2 above is enough */ }
+        }
+
         public static string HttpGet(string url, int timeoutMs = 8000)
         {
-            if (!_tlsReady)
-            {
-                _tlsReady = true;
-                try
-                {
-                    // Some machines negotiate no usable protocol with SystemDefault (seen in the
-                    // field: "Could not create SSL/TLS secure channel" against open-meteo.com).
-                    // Offer TLS 1.2 explicitly and TLS 1.3 (12288) where the OS supports it.
-                    ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12 | (SecurityProtocolType)12288;
-                }
-                catch { }
-            }
+            EnsureTls();
             var req = (HttpWebRequest)WebRequest.Create(url);
             req.Timeout = timeoutMs;
             req.ReadWriteTimeout = timeoutMs;
-            req.UserAgent = "DeskMate/1.4";
+            req.UserAgent = "DeskMate/" + AppVersion.Text;   // one version source, not a literal
             req.AllowAutoRedirect = true;
             req.MaximumAutomaticRedirections = 3;
             using (var resp = (HttpWebResponse)req.GetResponse())
@@ -102,16 +104,49 @@ namespace DeskMate.Features
         {
             if (!HasLocation && Settings.I.AutoLocation) AutoLocate();
             if (!HasLocation) return null;
-            if (!forceRefresh && _cache != null
-                && Math.Abs(_cacheLat - Settings.I.Lat) < 0.0001
-                && Math.Abs(_cacheLon - Settings.I.Lon) < 0.0001
-                && (DateTime.Now - _cache.FetchedAt).TotalMinutes < 10)
-                return _cache;
+            if (!forceRefresh && IsCacheFresh()) return _cache;
             string json = HttpGet(WeatherCore.BuildForecastUrl(Settings.I.Lat, Settings.I.Lon));
-            _cache = WeatherCore.ParseForecast(json);
+            var fetched = WeatherCore.ParseForecast(json);
+            // coords first: the widget line reads these fields from the UI thread, and a
+            // reader must never see fresh data tagged with the previous city's coordinates
             _cacheLat = Settings.I.Lat;
             _cacheLon = Settings.I.Lon;
+            _cache = fetched;
             return _cache;
+        }
+
+        /// <summary>Age of the cache measured against the coordinates it was fetched for, so
+        /// switching city invalidates it even while the old entry is still young.</summary>
+        static bool IsCacheFresh()
+        {
+            var c = _cache;
+            return c != null
+                && Math.Abs(_cacheLat - Settings.I.Lat) < 0.0001
+                && Math.Abs(_cacheLon - Settings.I.Lon) < 0.0001
+                && (DateTime.Now - c.FetchedAt).TotalMinutes < 10;
+        }
+
+        /// <summary>Last fetched weather, or null. Pure read — never starts a request, so the
+        /// widget's one-second tick can call it freely.</summary>
+        public static WeatherData Cached { get { return _cache; } }
+
+        static int _refreshing;
+
+        /// <summary>Refreshes the cache in the background if it is stale. Deliberately returns
+        /// without doing anything when no location is known: the widget line must never be the
+        /// thing that first sends the user's IP to a geolocation service — that stays an
+        /// explicit action in the weather or settings panel.</summary>
+        public static void EnsureFresh()
+        {
+            if (!Settings.I.ShowWeather || !Settings.I.ShowWeatherLine) return;
+            if (!HasLocation || IsCacheFresh()) return;
+            if (System.Threading.Interlocked.CompareExchange(ref _refreshing, 1, 0) != 0) return;
+            Task.Run(() =>
+            {
+                try { GetWeather(false); }
+                catch (Exception ex) { Log.Error("weather line", ex); }
+                finally { System.Threading.Interlocked.Exchange(ref _refreshing, 0); }
+            });
         }
 
         public static void Open(Window owner)

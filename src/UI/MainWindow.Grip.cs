@@ -14,6 +14,23 @@ namespace DeskMate.UI
         double _gripStartScale;
         bool _scaling;
 
+        /// <summary>Wraps an element so the resize grip sits on ITS bottom-right corner.
+        /// The grip used to live in the window's root grid, which spans the union of every
+        /// card — in the tri-panel and orbit layouts that corner is empty space, leaving the
+        /// grip floating well away from the widget. Every layout now hands over the element
+        /// whose corner the user would actually reach for, the way a window's resize corner
+        /// is always on the window.</summary>
+        FrameworkElement WithGrip(FrameworkElement content)
+        {
+            // centre-aligned so the wrapper measures to the content instead of stretching to
+            // the parent — a stretched wrapper would put the grip back in the empty corner
+            // this whole helper exists to avoid
+            var g = new Grid { HorizontalAlignment = HorizontalAlignment.Center };
+            g.Children.Add(content);
+            g.Children.Add(BuildScaleGrip());
+            return g;
+        }
+
         Border BuildScaleGrip()
         {
             var lines = new System.Windows.Shapes.Path
@@ -37,7 +54,10 @@ namespace DeskMate.UI
                 // keep the grip at the VISUAL bottom-right in both flow directions
                 HorizontalAlignment = L.IsAr ? HorizontalAlignment.Left : HorizontalAlignment.Right,
                 FlowDirection = FlowDirection.LeftToRight,
-                Margin = new Thickness(2),
+                // MakeCard reserves 12px all round for its shadow, so pull the grip inside that
+                // margin to land on the card's visible corner rather than out in the shadow
+                Margin = L.IsAr ? new Thickness(14, 0, 0, 14) : new Thickness(0, 0, 14, 14),
+                ToolTip = L.T("st_scale"),
             };
             grip.MouseEnter += (s, e) => lines.Stroke = Theme.Accent;
             grip.MouseLeave += (s, e) => lines.Stroke = Theme.TextFaint;

@@ -120,12 +120,12 @@ namespace DeskMate.Features
             Theme.AttachHover(row, Brushes.Transparent, Theme.HoverBg);
             var dock = new DockPanel();
 
-            var openBtn = MakeMini("", L.T("ap_open"), () =>
+            var openBtn = MakeMini("\uE8A7", L.T("ap_open"), () =>
             {
                 Launch(app);
                 PanelWindow.CloseCurrent();
             });
-            var addBtn = MakeMini("", L.T("ap_add"), () =>
+            var addBtn = MakeMini("\uE710", L.T("ap_add"), () =>
             {
                 try
                 {

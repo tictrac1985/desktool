@@ -98,6 +98,7 @@ namespace DeskMate.Features
                     {
                         Settings.I.OccasionCustom = "";
                         Settings.I.OccasionCustomName = "";
+                        Settings.I.OccasionCustomYearly = false;  // clear the whole entry, not two thirds of it
                         Settings.I.Save();
                         PanelWindow.CloseCurrent();
                         Open(MainWindow.Instance);
@@ -120,14 +121,16 @@ namespace DeskMate.Features
             var yrC = Theme.MakeCombo(); yrC.MinWidth = 0; yrC.Width = 84;
             string[] monthNames = ci.DateTimeFormat.MonthNames;
             for (int m = 0; m < 12; m++) monC.Items.Add(monthNames[m]);
-            for (int y = today.Year; y <= today.Year + 10; y++)
+            // reach back a century: "repeats yearly" exists for birthdays and anniversaries,
+            // and a list starting at the current year made it impossible to enter the real one
+            for (int y = MinYear(today); y <= today.Year + 10; y++)
                 yrC.Items.Add(y.ToString(CultureInfo.InvariantCulture));
 
             Action refreshDays = () =>
             {
                 if (monC.SelectedIndex < 0 || yrC.SelectedIndex < 0) return;
                 int keep = dayC.SelectedIndex + 1;
-                int dim = DateTime.DaysInMonth(today.Year + yrC.SelectedIndex, monC.SelectedIndex + 1);
+                int dim = DateTime.DaysInMonth(MinYear(today) + yrC.SelectedIndex, monC.SelectedIndex + 1);
                 dayC.Items.Clear();
                 for (int d = 1; d <= dim; d++) dayC.Items.Add(d.ToString());
                 dayC.SelectedIndex = Math.Min(Math.Max(keep, 1), dim) - 1;
@@ -138,8 +141,8 @@ namespace DeskMate.Features
             // preselect the stored date (or today when empty)
             int initDay = hasStored ? custom.Day : today.Day;
             monC.SelectedIndex = (hasStored ? custom.Month : today.Month) - 1;
-            int yrIdx = hasStored ? custom.Year - today.Year : 0;
-            yrC.SelectedIndex = Math.Min(Math.Max(yrIdx, 0), 10);
+            int yrIdx = (hasStored ? custom.Year : today.Year) - MinYear(today);
+            yrC.SelectedIndex = Math.Min(Math.Max(yrIdx, 0), yrC.Items.Count - 1);
             refreshDays();
             dayC.SelectedIndex = Math.Min(initDay, dayC.Items.Count) - 1;
 
@@ -161,7 +164,7 @@ namespace DeskMate.Features
                     return;
                 }
                 DateTime d;
-                try { d = new DateTime(today.Year + yrC.SelectedIndex, monC.SelectedIndex + 1, dayC.SelectedIndex + 1); }
+                try { d = new DateTime(MinYear(today) + yrC.SelectedIndex, monC.SelectedIndex + 1, dayC.SelectedIndex + 1); }
                 catch { feedback.Text = L.T("oc_bad"); return; }
                 Settings.I.OccasionCustom = d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
                 Settings.I.OccasionCustomName = nameInput.Text.Trim();
@@ -181,6 +184,10 @@ namespace DeskMate.Features
 
             return stack;
         }
+
+        /// <summary>First year offered by the picker. A century back covers birthdays without
+        /// making the list unusable; the index into the combo is always year - MinYear.</summary>
+        static int MinYear(DateTime today) { return today.Year - 100; }
 
         static string LeftText(int days)
         {
@@ -213,7 +220,7 @@ namespace DeskMate.Features
                     Width = 22, Height = 22,
                     CornerRadius = new CornerRadius(11),
                     Background = Brushes.Transparent,
-                    Child = Theme.MakeGlyph("", 9, Theme.TextDim),
+                    Child = Theme.MakeGlyph("\uE711", 9, Theme.TextDim),
                     Cursor = Cursors.Hand,
                     Margin = new Thickness(2, 0, 2, 0),
                     VerticalAlignment = VerticalAlignment.Center,

@@ -36,8 +36,11 @@ static class SelfTest
         TestSettingsAllFields();
         TestEvaluator();
         TestPrayer();
+        TestPrayerAdjust();
+        TestNotes();
         TestCleaner();
         TestCleanerJunctionSafety();
+        TestCleanerFileLinkSafety();
         TestAppScanner();
         TestWeather();
         TestAutoTheme();
@@ -104,7 +107,21 @@ static class SelfTest
         Check(Secret.Unprotect("just plain text") == "just plain text", "secret passes through legacy plaintext");
         Check(Secret.Protect("") == "", "secret ignores empty");
         Check(Secret.Unprotect(null) == null, "secret ignores null");
-        Check(Secret.Unprotect("enc:v1:not-base64!!") == "", "secret drops corrupt blob");
+
+        // An undecryptable blob (foreign profile / restored backup / reset master key) must
+        // survive verbatim. Returning "" here used to be written straight back by the next
+        // Save, permanently destroying the note and every pinned clip.
+        const string foreign = "enc:v1:not-base64!!";
+        Check(Secret.Unprotect(foreign) == foreign, "secret keeps undecryptable blob");
+        Check(Secret.IsSealed(foreign), "secret reports sealed");
+        Check(Secret.Protect(Secret.Unprotect(foreign)) == foreign,
+              "secret survives a full load/save cycle it cannot decrypt");
+        Check(!Secret.IsSealed(plain) && !Secret.IsSealed("") && !Secret.IsSealed(null),
+              "secret does not report plaintext as sealed");
+
+        // and the whole point: readable values are still readable after the same cycle
+        Check(Secret.Unprotect(Secret.Protect(Secret.Unprotect(sealed_))) == plain,
+              "secret round-trips through load/save");
     }
 
     static void TestSettings()
@@ -144,6 +161,23 @@ static class SelfTest
             Settings.Load();
             Check(Settings.I.StickyNote == "legacy plain", "legacy plaintext note loads");
             Check(Settings.I.PinnedClips.Count == 1 && Settings.I.PinnedClips[0] == "old clip", "legacy pinned clip loads");
+
+            // A settings file carried over from another Windows profile: the app cannot read
+            // the note or the pins, and must not erase them either. Before the fix, this very
+            // sequence (load → save) wiped both permanently.
+            const string foreignNote = "enc:v1:AAAAforeign-note-blob";
+            const string foreignClip = "enc:v1:AAAAforeign-clip-blob";
+            File.WriteAllText(tmp, "{\"Lang\":\"ar\",\"StickyNote\":\"" + foreignNote +
+                                   "\",\"PinnedClips\":[\"" + foreignClip + "\"]}");
+            Settings.I = new Settings();
+            Settings.Load();
+            Check(Settings.I.StickyNote == foreignNote, "foreign note kept in memory");
+            Check(Settings.I.PinnedClips.Count == 1 && Settings.I.PinnedClips[0] == foreignClip,
+                  "foreign pinned clip kept in memory");
+            Settings.I.Save();
+            string after = File.ReadAllText(tmp);
+            Check(after.Contains(foreignNote), "foreign note survives a save");
+            Check(after.Contains(foreignClip), "foreign pinned clip survives a save");
         }
         finally
         {
@@ -290,6 +324,90 @@ static class SelfTest
         Check(PrayerCalc.FormatTime(0.0, false) == "12:00 AM", "format midnight");
     }
 
+    static void TestPrayerAdjust()
+    {
+        var baseT = new double[] { 4.5, 6.0, 12.25, 15.5, 18.75, 20.0 };
+
+        var none = PrayerCalc.ApplyAdjust(baseT, new int[6]);
+        for (int i = 0; i < 6; i++) Check(Math.Abs(none[i] - baseT[i]) < 1e-9, "adjust 0 is identity " + i);
+
+        var moved = PrayerCalc.ApplyAdjust(baseT, new[] { -5, 0, 3, 0, 0, 12 });
+        Check(Math.Abs(moved[0] - (4.5 - 5 / 60.0)) < 1e-9, "fajr 5 min earlier");
+        Check(Math.Abs(moved[2] - (12.25 + 3 / 60.0)) < 1e-9, "dhuhr 3 min later");
+        Check(Math.Abs(moved[5] - (20.0 + 12 / 60.0)) < 1e-9, "isha 12 min later");
+        Check(Math.Abs(moved[1] - 6.0) < 1e-9, "untouched prayer unchanged");
+        Check(Math.Abs(baseT[0] - 4.5) < 1e-9, "source array not mutated");
+
+        // wrap: a correction across midnight must stay a valid hour-of-day, never 24.1 or -0.2
+        var late = PrayerCalc.ApplyAdjust(new[] { 23.9 }, new[] { 30 });
+        Check(late[0] >= 0 && late[0] < 24, "wraps past midnight (got " + late[0] + ")");
+        Check(Math.Abs(late[0] - 0.4) < 1e-9, "wrapped value correct");
+        var early = PrayerCalc.ApplyAdjust(new[] { 0.1 }, new[] { -30 });
+        Check(early[0] >= 0 && early[0] < 24, "wraps before midnight (got " + early[0] + ")");
+        Check(Math.Abs(early[0] - 23.6) < 1e-9, "wrapped-back value correct");
+
+        // polar days give NaN times; a correction must not turn that into a real-looking hour
+        var polar = PrayerCalc.ApplyAdjust(new[] { double.NaN }, new[] { 10 });
+        Check(double.IsNaN(polar[0]), "NaN stays NaN");
+
+        // a shorter or missing correction array must not throw
+        Check(PrayerCalc.ApplyAdjust(baseT, new[] { 5 })[0] > 0, "short adjust array tolerated");
+        Check(PrayerCalc.ApplyAdjust(baseT, null)[3] == baseT[3], "null adjust tolerated");
+        Check(PrayerCalc.ApplyAdjust(null, new int[6]) == null, "null times tolerated");
+    }
+
+    static void TestNotes()
+    {
+        var n = new NoteItem
+        {
+            Text = "اشتري خبزاً\nوحليب",
+            Pinned = true,
+            RemindAt = new DateTime(2026, 8, 5, 14, 30, 0),
+        };
+        var back = NoteItem.Parse(n.Write());
+        Check(back != null, "note round-trips");
+        Check(back.Text == n.Text, "note text survives newlines and Arabic");
+        Check(back.Pinned, "note pin survives");
+        Check(back.RemindAt == n.RemindAt, "note reminder survives");
+
+        var plain = NoteItem.Parse(new NoteItem { Text = "x" }.Write());
+        Check(!plain.HasReminder, "note without reminder reports none");
+
+        // garbage must vanish, not become a blank row the user cannot explain
+        Check(NoteItem.Parse("not json") == null, "corrupt note dropped");
+        Check(NoteItem.Parse("") == null, "empty note dropped");
+        Check(NoteItem.Parse("{}") == null, "contentless note dropped");
+
+        var a = new NoteItem { Text = "a" };
+        var b = new NoteItem { Text = "b", Pinned = true };
+        var c = new NoteItem { Text = "c" };
+        var sorted = NoteItem.Sorted(new List<NoteItem> { a, b, c });
+        Check(sorted.Count == 3 && sorted[0] == b, "pinned notes sort first");
+        Check(sorted[1] == a && sorted[2] == c, "unpinned keep their order");
+        Check(NoteItem.Sorted(new List<NoteItem> { null, a }).Count == 1, "null entries skipped");
+
+        var now = new DateTime(2026, 8, 5, 15, 0, 0);
+        var list = new List<NoteItem>
+        {
+            new NoteItem { Text = "future", RemindAt = now.AddMinutes(5) },
+            new NoteItem { Text = "due",    RemindAt = now },
+            new NoteItem { Text = "late",   RemindAt = now.AddMinutes(-90) },
+            new NoteItem { Text = "none" },
+        };
+        var due = NoteItem.DueIndices(list, now);
+        Check(due.Count == 2, "only due reminders fire (got " + due.Count + ")");
+        Check(due.Contains(1) && due.Contains(2), "exact and overdue both fire");
+        // an overdue reminder must still fire: the tick can be delayed under load, and
+        // requiring an exact match would drop it silently forever
+        Check(!due.Contains(0) && !due.Contains(3), "future and reminderless stay quiet");
+        Check(NoteItem.DueIndices(null, now).Count == 0, "null list tolerated");
+
+        Check(new NoteItem { Text = "one  two\r\nthree" }.Preview() == "one two three",
+              "preview flattens whitespace");
+        Check(new NoteItem { Text = new string('x', 200) }.Preview(10).Length == 11,
+              "preview truncates with ellipsis");
+    }
+
     static void TestCleaner()
     {
         string sandbox = Path.Combine(Path.GetTempPath(), "deskmate_clean_" + Guid.NewGuid().ToString("N"));
@@ -354,6 +472,62 @@ static class SelfTest
             }
         }
         finally { try { Directory.Delete(root, true); } catch { } }
+    }
+
+    /// <summary>The junction defence covered directories only. GetFiles also returns file
+    /// symlinks, and SetFileAttributes follows a reparse point — so clearing ReadOnly before
+    /// deleting reached through the link and rewrote the attributes of the target, any file
+    /// the user can write. The link must be unlinked without ever touching what it points at.
+    /// </summary>
+    static void TestCleanerFileLinkSafety()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "deskmate_flink_" + Guid.NewGuid().ToString("N"));
+        string cleanMe = Path.Combine(root, "temp");
+        string victim = Path.Combine(root, "victim");
+        Directory.CreateDirectory(cleanMe);
+        Directory.CreateDirectory(victim);
+        try
+        {
+            string target = Path.Combine(victim, "protected.dat");
+            File.WriteAllBytes(target, new byte[256]);
+            File.SetAttributes(target, FileAttributes.ReadOnly | FileAttributes.Hidden);
+            File.WriteAllBytes(Path.Combine(cleanMe, "junk.tmp"), new byte[64]);
+
+            string plain = Path.Combine(cleanMe, "junk.tmp");
+            Check(!CleanEngine.IsFileReparsePoint(plain), "plain file is not a reparse point");
+            Check(CleanEngine.IsFileReparsePoint(Path.Combine(cleanMe, "does-not-exist")),
+                  "unreadable path treated as reparse point (fail closed)");
+
+            string link = Path.Combine(cleanMe, "link.dat");
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+                Arguments = "/c mklink \"" + link + "\" \"" + target + "\"",
+                CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true,
+            };
+            using (var p = System.Diagnostics.Process.Start(psi)) { p.StandardOutput.ReadToEnd(); p.WaitForExit(5000); }
+            // file symlinks need admin or Developer Mode; the checks above still ran
+            if (!File.Exists(link)) { Console.WriteLine("SKIP: file symlink test (needs Developer Mode)"); return; }
+
+            Check(CleanEngine.IsFileReparsePoint(link), "file symlink detected as reparse point");
+
+            CleanEngine.Clean(new[] { cleanMe });
+            Check(File.Exists(target), "symlink target NOT deleted");
+            var attrs = File.GetAttributes(target);
+            Check((attrs & FileAttributes.ReadOnly) != 0, "symlink target keeps ReadOnly");
+            Check((attrs & FileAttributes.Hidden) != 0, "symlink target keeps Hidden");
+            Check(!File.Exists(link), "symlink itself removed");
+        }
+        finally
+        {
+            try
+            {
+                foreach (var f in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                    try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
+                Directory.Delete(root, true);
+            }
+            catch { }
+        }
     }
 
     static void TestAppScanner()

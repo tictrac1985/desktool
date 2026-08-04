@@ -85,12 +85,25 @@ namespace DeskMate.Features
             {
                 listHost.Children.Clear();
                 bool any = false;
+                // pins encrypted for another Windows profile stay in settings untouched, but
+                // showing their ciphertext would be worse than useless — count them instead
+                int sealedPins = 0;
                 if (Settings.I.PinnedClips.Count > 0)
                 {
                     listHost.Children.Add(Theme.SectionTitle(L.T("cb_pinned")));
                     foreach (string clip in Settings.I.PinnedClips.ToArray())
                     {
+                        if (Secret.IsSealed(clip)) { sealedPins++; continue; }
                         listHost.Children.Add(MakeRow(clip, true, rebuild));
+                        any = true;
+                    }
+                    if (sealedPins > 0)
+                    {
+                        var locked = Theme.MakeText(
+                            string.Format(L.T("sec_locked_some"), sealedPins), 11.5, Theme.TextFaint);
+                        locked.TextWrapping = TextWrapping.Wrap;
+                        locked.Margin = new Thickness(4, 2, 4, 2);
+                        listHost.Children.Add(locked);
                         any = true;
                     }
                 }
@@ -145,7 +158,7 @@ namespace DeskMate.Features
             Theme.AttachHover(row, Theme.ButtonBg, Theme.HoverBg);
             var dock = new DockPanel();
 
-            var pinBtn = MakeMini(pinned ? "" : "", () =>
+            var pinBtn = MakeMini(pinned ? "\uE77A" : "\uE718", () =>
             {
                 if (pinned) Settings.I.PinnedClips.Remove(clip);
                 else
@@ -156,7 +169,7 @@ namespace DeskMate.Features
                 Settings.I.Save();
                 rebuild();
             });
-            var delBtn = MakeMini("", () =>
+            var delBtn = MakeMini("\uE74D", () =>
             {
                 Recent.Remove(clip);
                 Settings.I.PinnedClips.Remove(clip);

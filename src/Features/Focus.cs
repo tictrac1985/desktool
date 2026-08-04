@@ -174,7 +174,7 @@ namespace DeskMate.Features
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 10, 0, 0),
             };
-            var leaf = Theme.MakeGlyph("", 12, Theme.Accent); // check: sessions done
+            var leaf = Theme.MakeGlyph("\uE73E", 12, Theme.Accent); // check: sessions done
             leaf.VerticalAlignment = VerticalAlignment.Center;
             leaf.Margin = new Thickness(0, 0, 6, 0);
             var todayText = Theme.MakeText("", 12, Theme.TextDim);

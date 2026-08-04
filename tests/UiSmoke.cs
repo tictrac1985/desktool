@@ -34,7 +34,10 @@ static class UiSmoke
         {
             try { File.Delete(old); } catch { }
         }
+        IsolateSettings();
         Settings.Load();
+        // never let a capture run repoint the user's autostart at this temporary exe
+        Settings.I.AutoStart = false;
         Theme.Apply(DeskMate.Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.AutoTheme, DateTime.Now.Hour));
         _app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         _win = new MainWindow();
@@ -58,13 +61,29 @@ static class UiSmoke
             Tuple.Create("clipboard", (Action)(() => ClipboardKeeper.Open(_win)), 900),
             Tuple.Create("focus", (Action)(() => FocusFeature.Open(_win)), 900),
             Tuple.Create("occasions", (Action)(() => OccasionsFeature.Open(_win)), 900),
-            Tuple.Create("note", (Action)(() => StickyNoteFeature.Open(_win)), 900),
+            // seeded first: an empty list only proves the placeholder renders, not the task row
+            Tuple.Create("note", (Action)(() => { SeedTasks(); StickyNoteFeature.Open(_win); }), 900),
+            Tuple.Create("note_edit", (Action)(() => StickyNoteFeature.OpenEditorForSmoke()), 900),
             Tuple.Create("sysmon", (Action)(() => SysMonFeature.Open(_win)), 1600),
             Tuple.Create("worldclock", (Action)(() => WorldClocksFeature.Open(_win)), 1200),
             Tuple.Create("weather", (Action)(() => WeatherFeature.Open(_win)), 8000),
             Tuple.Create("apps", (Action)(() => AppsFeature.Open(_win)), 2000),
             Tuple.Create("prayer", (Action)(() => PrayerFeature.Open(_win)), 8000),
             Tuple.Create("settings", (Action)(() => SettingsFeature.Open(_win)), 1200),
+            // opened the way a user opens it — from an icon — so the caret and the anchored
+            // placement are actually rendered instead of silently falling back
+            Tuple.Create("anchored", (Action)(() =>
+            {
+                SetLayout(0);
+                // on-screen for this one step: parked at -4000 the panel is clamped back into
+                // the work area, thousands of pixels from its anchor, and the caret would only
+                // ever prove the clamp rather than the placement
+                _win.Left = 120;
+                _win.Top = 120;
+                _win.UpdateLayout();
+                PanelWindow.PendingAnchor = FindToolCircle(_win);
+                CalculatorFeature.Open(_win);
+            }), 900),
         };
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
@@ -72,6 +91,69 @@ static class UiSmoke
         _timer.Start();
         _app.Run();
         return _failures.Count == 0 ? 0 : 1;
+    }
+
+    /// <summary>Puts a couple of tasks in the isolated settings so the list screenshot shows
+    /// a real row — completion circle, reminder line and actions — instead of the empty state.
+    /// Safe because IsolateSettings has already redirected the file.</summary>
+    static void SeedTasks()
+    {
+        var notes = new List<DeskMate.Logic.NoteItem>
+        {
+            new DeskMate.Logic.NoteItem
+            {
+                Text = "مراجعة تقرير الربع الأخير",
+                RemindAt = DateTime.Now.Date.AddDays(1).AddHours(9),
+            },
+            new DeskMate.Logic.NoteItem { Text = "الاتصال بالصيانة", Pinned = true },
+            new DeskMate.Logic.NoteItem { Text = "شراء هدية العيد" },
+        };
+        StickyNoteFeature.Save(notes);
+    }
+
+    /// <summary>Points settings at a throwaway copy of the real file.
+    /// This harness builds a live MainWindow, so without isolation a capture run writes to the
+    /// user's %AppData% settings — panels save as they are exercised, and MainWindow.Loaded
+    /// calls SetAutoStart, which repoints the HKCU Run key at this temporary exe. Copying the
+    /// file keeps the screenshots representative of the real configuration while making the
+    /// run read-only as far as the user's machine is concerned.</summary>
+    static void IsolateSettings()
+    {
+        try
+        {
+            string temp = Path.Combine(Path.GetTempPath(),
+                "deskmate_uismoke_" + Guid.NewGuid().ToString("N") + ".json");
+            string live = Settings.DefaultPath;
+            if (File.Exists(live)) File.Copy(live, temp, true);
+            Settings.OverridePath = temp;
+            AppDomain.CurrentDomain.ProcessExit += (s, e) =>
+            {
+                try { File.Delete(temp); } catch { }
+                try { File.Delete(temp + ".bak"); } catch { }
+            };
+        }
+        catch (Exception ex)
+        {
+            // better to render defaults than to write over the user's real settings
+            Settings.OverridePath = Path.Combine(Path.GetTempPath(), "deskmate_uismoke_fallback.json");
+            Console.WriteLine("WARN: settings isolation fell back to defaults: " + ex.Message);
+        }
+    }
+
+    /// <summary>First tool-icon circle in the widget — the 40x40 Border built by
+    /// Theme.MakeToolCell. Used as the anchor so the "opened from an icon" path is covered.</summary>
+    static FrameworkElement FindToolCircle(DependencyObject root)
+    {
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            var b = child as System.Windows.Controls.Border;
+            if (b != null && b.Width == 40 && b.Height == 40) return b;
+            var found = FindToolCircle(child);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     static void SetLayout(int idx)

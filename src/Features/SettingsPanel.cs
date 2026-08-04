@@ -158,6 +158,7 @@ namespace DeskMate.Features
             stack.Children.Add(Theme.MakeCheck(L.T("st_seconds"), Settings.I.ShowSeconds, v => { Settings.I.ShowSeconds = v; SaveAndReload(); }));
             stack.Children.Add(Theme.MakeCheck(L.T("st_hijri"), Settings.I.ShowHijri, v => { Settings.I.ShowHijri = v; SaveAndReload(); }));
             stack.Children.Add(Theme.MakeCheck(L.T("st_prayer_line"), Settings.I.ShowNextPrayerLine, v => { Settings.I.ShowNextPrayerLine = v; SaveAndReload(); }));
+            stack.Children.Add(Theme.MakeCheck(L.T("st_weather_line"), Settings.I.ShowWeatherLine, v => { Settings.I.ShowWeatherLine = v; SaveAndReload(); }));
             stack.Children.Add(Theme.MakeCheck(L.T("st_autostart"), Settings.I.AutoStart, v =>
             {
                 Settings.I.AutoStart = v;

@@ -27,6 +27,23 @@ namespace DeskMate.UI
             _prayerLine.Margin = new Thickness(0, 5, 0, 0);
             _prayerLine.Visibility = Visibility.Collapsed;
 
+            _weatherGlyph = Theme.MakeText("", 13, Theme.Accent, Theme.SymbolFont);
+            _weatherGlyph.VerticalAlignment = VerticalAlignment.Center;
+            _weatherGlyph.Margin = new Thickness(0, 0, 5, 0);
+            _weatherText = Theme.MakeText("", 12.5, Theme.TextDim);
+            _weatherText.VerticalAlignment = VerticalAlignment.Center;
+            _weatherLine = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 4, 0, 0),
+                Visibility = Visibility.Collapsed,
+                // the temperature reads left-to-right in both languages
+                FlowDirection = FlowDirection.LeftToRight,
+            };
+            _weatherLine.Children.Add(_weatherGlyph);
+            _weatherLine.Children.Add(_weatherText);
+
             switch (Settings.I.LayoutIndex)
             {
                 case 1: _rootEl = BuildConnected(); break;
@@ -38,9 +55,10 @@ namespace DeskMate.UI
             }
             _rootEl.LayoutTransform = new ScaleTransform(Settings.I.Scale, Settings.I.Scale);
 
+            // the grip is attached by each layout to its own bottom card (see WithGrip), not
+            // to this root — the root spans the union of all cards and its corner is empty
             var host = new Grid();
             host.Children.Add(_rootEl);
-            host.Children.Add(BuildScaleGrip());
             host.MouseLeftButtonDown += (s, e) =>
             {
                 if (e.OriginalSource is FrameworkElement) { try { DragMove(); SavePosition(); } catch { } }
@@ -50,6 +68,17 @@ namespace DeskMate.UI
             ApplyCardOpacity();
             if (_clock != null) _clock.Tick(DateTime.Now);
             ScheduleConnectorDraw();
+        }
+
+        /// <summary>The two optional lines under the clock (next prayer, current weather),
+        /// grouped so every layout has a single insertion point and both stay collapsed —
+        /// taking no vertical space — until they actually have something to say.</summary>
+        StackPanel StatusLines()
+        {
+            var s = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            s.Children.Add(_prayerLine);
+            s.Children.Add(_weatherLine);
+            return s;
         }
 
         IClockView MakeClock(bool timeOnly, double digitalSize = 58)
@@ -80,11 +109,26 @@ namespace DeskMate.UI
             };
         }
 
-        /// <summary>Cell width that keeps n icons on one row within the given pixel budget.</summary>
+        /// <summary>How wide a single-row layout may grow. Scaled to the screen the widget
+        /// lives on rather than a fixed number: on a wide desktop there is no reason to squeeze
+        /// fourteen tools into 620px, and on a small one this still compresses. Capped so an
+        /// ultrawide monitor does not stretch the widget from edge to edge.</summary>
+        static double RowBudget()
+        {
+            double w = SystemParameters.WorkArea.Width;
+            if (w <= 0) return 900;
+            return Math.Min(w * 0.88, 1500);
+        }
+
+        /// <summary>Cell width that keeps n icons on one row within the given pixel budget.
+        /// The gap between cells counts against the budget, otherwise a "fitting" row still
+        /// overflowed by one gap per icon.</summary>
         static double CellWidthFor(int n, double budget)
         {
-            if (n <= 0 || n * 58 <= budget) return 58;
-            return Math.Max(44, Math.Floor(budget / n));
+            if (n <= 0) return Theme.DefaultCellWidth;
+            double each = budget / n - Theme.CellGap;
+            if (each >= Theme.DefaultCellWidth) return Theme.DefaultCellWidth;
+            return Math.Max(50, Math.Floor(each));
         }
 
         /// <summary>Splits tool cells into centered, evenly-sized rows — 6+5 instead of 8+3 —
@@ -103,6 +147,9 @@ namespace DeskMate.UI
                 {
                     Orientation = Orientation.Horizontal,
                     HorizontalAlignment = HorizontalAlignment.Center,
+                    // breathing room between rows: two-line labels above would otherwise sit
+                    // right against the next row's icons
+                    Margin = new Thickness(0, i == 0 ? 0 : 8, 0, 0),
                 };
                 int take = Math.Min(perRow, n - i);
                 for (int k = 0; k < take; k++) row.Children.Add(cells[i++]);
@@ -117,10 +164,10 @@ namespace DeskMate.UI
             _clock = MakeClock(false);
             var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
             stack.Children.Add(_clock.Root);
-            stack.Children.Add(_prayerLine);
+            stack.Children.Add(StatusLines());
             stack.Children.Add(Hairline(12));
-            stack.Children.Add(BuildBalancedRows(BuildIcons(false), 8, new Thickness(0, 8, 0, 0)));
-            return MakeCardTracked(stack);
+            stack.Children.Add(BuildBalancedRows(BuildIcons(false), 7, new Thickness(0, 8, 0, 0)));
+            return WithGrip(MakeCardTracked(stack));
         }
 
         /// <summary>Layout 1 — clock card with rays connecting to free-floating icons.
@@ -130,7 +177,7 @@ namespace DeskMate.UI
             _clock = MakeClock(false);
             var inner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
             inner.Children.Add(_clock.Root);
-            inner.Children.Add(_prayerLine);
+            inner.Children.Add(StatusLines());
             _clockCard = MakeCardTracked(inner);
             _clockCard.Margin = new Thickness(12, 12, 12, 2);
             // hug the clock content instead of stretching to the icon row's width —
@@ -139,7 +186,7 @@ namespace DeskMate.UI
 
             _connectors = new Canvas { Height = 28, IsHitTestVisible = false, ClipToBounds = false };
 
-            double cw = CellWidthFor(IconDefs().Count, 620);
+            double cw = CellWidthFor(IconDefs().Count, RowBudget());
             var iconsRow = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
@@ -151,7 +198,8 @@ namespace DeskMate.UI
             var root = new StackPanel();
             root.Children.Add(_clockCard);
             root.Children.Add(_connectors);
-            root.Children.Add(iconsRow);
+            // the icon row is the bottom-most, widest thing here — its corner is the widget's
+            root.Children.Add(WithGrip(iconsRow));
             return root;
         }
 
@@ -162,7 +210,7 @@ namespace DeskMate.UI
             _clock = MakeClock(true);
             var centerInner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
             centerInner.Children.Add(_clock.Root);
-            centerInner.Children.Add(_prayerLine);
+            centerInner.Children.Add(StatusLines());
             var centerCard = MakeCardTracked(centerInner, 26);
             centerCard.Margin = new Thickness(4, 12, 4, 6);
 
@@ -180,15 +228,15 @@ namespace DeskMate.UI
             row.Children.Add(centerCard);
             row.Children.Add(gregCard);
 
-            var pillContent = BuildBalancedRows(BuildIcons(false), 8, new Thickness(0));
+            var pillContent = BuildBalancedRows(BuildIcons(false), 7, new Thickness(0));
             var pill = MakeCardTracked(pillContent, 30);
-            pill.Padding = new Thickness(12, 6, 12, 8);
+            Theme.SetCardPadding(pill, new Thickness(12, 6, 12, 8));
             pill.Margin = new Thickness(12, 0, 12, 12);
             pill.HorizontalAlignment = HorizontalAlignment.Center;
 
             var root = new StackPanel();
             root.Children.Add(row);
-            root.Children.Add(pill);
+            root.Children.Add(WithGrip(pill));
             return root;
         }
 
@@ -204,7 +252,7 @@ namespace DeskMate.UI
             text.MaxWidth = 96;
             stack.Children.Add(text);
             var card = MakeCardTracked(stack, 18);
-            card.Padding = new Thickness(12, 10, 12, 10);
+            Theme.SetCardPadding(card, new Thickness(12, 10, 12, 10));
             card.Margin = new Thickness(4, 12, 4, 6);
             card.VerticalAlignment = VerticalAlignment.Center;
             return card;
@@ -217,10 +265,10 @@ namespace DeskMate.UI
             _clock = MakeClock(false, 46);
             var inner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             inner.Children.Add(_clock.Root);
-            inner.Children.Add(_prayerLine);
+            inner.Children.Add(StatusLines());
             var card = MakeCardTracked(inner);
             card.Margin = new Thickness(0);
-            card.Padding = new Thickness(26);
+            Theme.SetCardPadding(card, new Thickness(26));
 
             // populate the clock text BEFORE measuring — an empty time string would
             // undersize the circle and clip the seconds at the edge
@@ -231,12 +279,20 @@ namespace DeskMate.UI
             double size = Math.Sqrt(mw * mw + mh * mh) + 14;
             card.Width = size;
             card.Height = size;
-            card.CornerRadius = new CornerRadius(size / 2);
+            // through the helper: setting CornerRadius alone left the sheen, bevel and rim as
+            // rounded rectangles, drawing a visible square edge inside this circular card
+            Theme.SetCardRadius(card, size / 2);
             card.FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
 
             var icons = BuildIcons(true);
-            double ringR = size / 2 + 48;
-            double pad = 56; // room for icon cells + their permanent labels outside the ring
+            double cellW = Theme.DefaultCellWidth;
+            // ring wide enough that neighbouring cells do not touch: the arc between two icons
+            // must be at least one cell plus a gap, otherwise wide labels collide on the circle
+            double minR = icons.Count > 2
+                ? (cellW + Theme.CellGap) / (2 * Math.Sin(Math.PI / icons.Count))
+                : 0;
+            double ringR = Math.Max(size / 2 + 48, minR);
+            double pad = cellW / 2 + 34; // room for icon cells + their labels outside the ring
             double canvasSize = 2 * (ringR + pad);
             var canvas = new Canvas
             {
@@ -273,10 +329,22 @@ namespace DeskMate.UI
                 double ix = c + ringR * Math.Cos(a);
                 double iy = c + ringR * Math.Sin(a);
                 // tool cell is 58 wide; its 40px circle center sits at (29, 20)
-                Canvas.SetLeft(icons[i], ix - 29);
+                Canvas.SetLeft(icons[i], ix - cellW / 2);
                 Canvas.SetTop(icons[i], iy - 20);
                 canvas.Children.Add(icons[i]);
             }
+
+            // This layout is a circle inside a square canvas, so the square's bottom-right
+            // corner is empty sky — the grip would float there with nothing under it. Put it
+            // ON the ring at 45°, the nearest thing to "the widget's own corner" here.
+            var grip = BuildScaleGrip();
+            grip.HorizontalAlignment = HorizontalAlignment.Left;
+            grip.VerticalAlignment = VerticalAlignment.Top;
+            grip.Margin = new Thickness(0);
+            double d = ringR * Math.Sqrt(2) / 2;
+            Canvas.SetLeft(grip, c + d - 11);
+            Canvas.SetTop(grip, c + d - 11);
+            canvas.Children.Add(grip);
             return canvas;
         }
 
@@ -287,11 +355,11 @@ namespace DeskMate.UI
             _clock = new MinimalClock();
             var stack = new StackPanel { MinWidth = 176 };
             stack.Children.Add(_clock.Root);
-            stack.Children.Add(_prayerLine);
+            stack.Children.Add(StatusLines());
             stack.Children.Add(Hairline(10, 6));
             foreach (var def in IconDefs())
                 stack.Children.Add(MakeSidebarRow(def.Item1, def.Item2, def.Item3));
-            return MakeCardTracked(stack, 22);
+            return WithGrip(MakeCardTracked(stack, 22));
         }
 
         FrameworkElement MakeSidebarRow(string glyph, string titleKey, Action onClick)
@@ -344,6 +412,7 @@ namespace DeskMate.UI
             row.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
+                PanelWindow.PendingAnchor = circle;   // open attached to this row's icon
                 try { onClick(); } catch (Exception ex) { Log.Error("sidebar", ex); }
             };
             return row;
@@ -356,7 +425,7 @@ namespace DeskMate.UI
             _clock = new MinimalClock();
             var clockCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             clockCol.Children.Add(_clock.Root);
-            clockCol.Children.Add(_prayerLine);
+            clockCol.Children.Add(StatusLines());
             clockCol.Margin = new Thickness(6, 0, 6, 0);
 
             var rowStack = new StackPanel
@@ -373,7 +442,7 @@ namespace DeskMate.UI
                 Margin = new Thickness(10, 0, 10, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             });
-            double cw = CellWidthFor(IconDefs().Count, 640);
+            double cw = CellWidthFor(IconDefs().Count, RowBudget());
             foreach (var ic in BuildIcons(false, cw))
             {
                 ((FrameworkElement)ic).VerticalAlignment = VerticalAlignment.Center;
@@ -381,8 +450,8 @@ namespace DeskMate.UI
             }
 
             var pill = MakeCardTracked(rowStack, 40);
-            pill.Padding = new Thickness(18, 10, 18, 10);
-            return pill;
+            Theme.SetCardPadding(pill, new Thickness(18, 10, 18, 10));
+            return WithGrip(pill);
         }
     }
 }

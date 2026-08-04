@@ -18,6 +18,30 @@ namespace DeskMate.Logic
             new[] { 18.5, 0.0 },    // UmmAlQura (isha = maghrib + 90 min)
         };
 
+        /// <summary>Applies the user's per-prayer correction in minutes to a computed set of
+        /// times. Kept separate from the astronomy: the formulas are fixed and verified, while
+        /// this is a preference — the local mosque's adhan is what people actually follow, and
+        /// it differs from any calculation by a few minutes.
+        /// NaN entries (polar days with no true sunrise) stay NaN, and results wrap inside the
+        /// day so a correction near midnight cannot produce hour 24.5 or -0.3.</summary>
+        public static double[] ApplyAdjust(double[] times, int[] minutes)
+        {
+            if (times == null) return null;
+            var outT = new double[times.Length];
+            for (int i = 0; i < times.Length; i++)
+            {
+                double t = times[i];
+                if (minutes != null && i < minutes.Length && !double.IsNaN(t))
+                {
+                    t += minutes[i] / 60.0;
+                    t %= 24.0;
+                    if (t < 0) t += 24.0;
+                }
+                outT[i] = t;
+            }
+            return outT;
+        }
+
         /// <summary>Pick a sensible default method from an ISO country code.</summary>
         public static Method AutoMethod(string country)
         {

@@ -44,7 +44,12 @@ namespace DeskMate.UI
                 w.MouseLeftButtonDown += (s, e) => w.Close();
                 w.Loaded += (s, e) =>
                 {
-                    var wa = SystemParameters.WorkArea;
+                    // the monitor showing the widget, not always the primary one — a prayer
+                    // alert belongs next to the widget the user is actually looking at
+                    var owner = MainWindow.Instance;
+                    var wa = owner != null && owner.IsVisible
+                        ? PanelWindow.WorkAreaOf(owner)
+                        : SystemParameters.WorkArea;
                     w.Left = L.IsAr ? wa.Left + 16 : wa.Right - w.ActualWidth - 16;
                     w.Top = wa.Bottom - w.ActualHeight - 16;
                     // gentle entrance: rise + fade

@@ -31,7 +31,10 @@ namespace DeskMate.Features
         static double[] TimesFor(DateTime date)
         {
             double tz = TimeZoneInfo.Local.GetUtcOffset(date).TotalHours;
-            return PrayerCalc.Times(date, Settings.I.Lat, Settings.I.Lon, tz, EffectiveMethod);
+            var t = PrayerCalc.Times(date, Settings.I.Lat, Settings.I.Lon, tz, EffectiveMethod);
+            // one place: display, the widget line and the alerts all read through here, so a
+            // correction can never apply to the panel but not to the notification
+            return PrayerCalc.ApplyAdjust(t, Settings.I.PrayerAdjust);
         }
 
         static double[] Today(DateTime now)
@@ -309,8 +312,80 @@ namespace DeskMate.Features
             stack.Children.Add(preRow);
 
             PlaySoundRow(host, stack);
+            AdjustSection(stack);
 
             return stack;
+        }
+
+        /// <summary>Per-prayer correction in minutes, collapsed by default — six more rows
+        /// always open would bury the times themselves, and most users set this once.</summary>
+        static void AdjustSection(StackPanel stack)
+        {
+            var rows = new StackPanel { Visibility = Visibility.Collapsed };
+
+            var header = Theme.MakeButton(L.T("pr_adjust"), () =>
+            {
+                rows.Visibility = rows.Visibility == Visibility.Visible
+                    ? Visibility.Collapsed : Visibility.Visible;
+            }, padding: new Thickness(12, 5, 12, 5));
+            header.HorizontalAlignment = HorizontalAlignment.Stretch;
+            header.Margin = new Thickness(3, 10, 3, 0);
+            stack.Children.Add(header);
+
+            var hint = Theme.MakeText(L.T("pr_adjust_hint"), 11, Theme.TextFaint);
+            hint.TextWrapping = TextWrapping.Wrap;
+            hint.Margin = new Thickness(2, 6, 2, 4);
+            rows.Children.Add(hint);
+
+            for (int i = 0; i < 6; i++) rows.Children.Add(AdjustRow(i));
+            stack.Children.Add(rows);
+        }
+
+        static FrameworkElement AdjustRow(int idx)
+        {
+            var value = Theme.MakeText("", 12.5, Theme.Accent);
+            value.MinWidth = 46;
+            value.TextAlignment = TextAlignment.Center;
+            value.VerticalAlignment = VerticalAlignment.Center;
+            value.FlowDirection = FlowDirection.LeftToRight;   // "+5" / "-5" never mirrored
+
+            Action refresh = () =>
+            {
+                int m = Settings.I.PrayerAdjust[idx];
+                value.Text = m == 0 ? "0" : (m > 0 ? "+" + m : m.ToString());
+                value.Foreground = m == 0 ? Theme.TextFaint : Theme.Accent;
+            };
+            Action<int> bump = delta =>
+            {
+                int m = Math.Max(-60, Math.Min(60, Settings.I.PrayerAdjust[idx] + delta));
+                Settings.I.PrayerAdjust[idx] = m;
+                Settings.I.Save();
+                Invalidate();                       // recompute today's times with the new offset
+                refresh();
+                if (MainWindow.Instance != null) MainWindow.Instance.RefreshPrayerLine();
+            };
+            refresh();
+
+            var minus = Theme.MakeIconButton("\uE738", L.T("pr_adjust_less"), () => bump(-1), 26, 12);
+            var plus = Theme.MakeIconButton("\uE710", L.T("pr_adjust_more"), () => bump(1), 26, 12);
+
+            var controls = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+                FlowDirection = FlowDirection.LeftToRight,   // − value + reads the same either way
+            };
+            controls.Children.Add(minus);
+            controls.Children.Add(value);
+            controls.Children.Add(plus);
+
+            var row = new DockPanel { Margin = new Thickness(2, 2, 2, 2) };
+            DockPanel.SetDock(controls, Dock.Right);
+            row.Children.Add(controls);
+            var name = Theme.MakeText(L.T(NameKeys[idx]), 13, idx == 1 ? Theme.TextFaint : Theme.TextDim);
+            name.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(name);
+            return row;
         }
     }
 }

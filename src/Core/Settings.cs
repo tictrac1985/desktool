@@ -18,6 +18,9 @@ namespace DeskMate.Core
         public bool ShowSeconds = false;
         public bool ShowHijri = true;
         public bool ShowNextPrayerLine = true;
+        /// <summary>Compact "☀ 27° City" line on the widget itself. Independent of ShowWeather:
+        /// the tool can stay in the icon row with the always-on line switched off.</summary>
+        public bool ShowWeatherLine = true;
         public bool AutoStart = true;
         public double PosX = -1;
         public double PosY = -1;
@@ -53,6 +56,11 @@ namespace DeskMate.Core
         public int PrayerMethod = -1;         // -1 auto by country
         public bool PrayerNotify = true;
         public int PrayerPreAlertMin = 10;
+        /// <summary>Per-prayer correction in minutes (fajr, sunrise, dhuhr, asr, maghrib, isha).
+        /// Astronomical calculation and the local mosque routinely differ by a few minutes, and
+        /// people follow their mosque — without this the times are "wrong" no matter how correct
+        /// the maths is.</summary>
+        public int[] PrayerAdjust = new int[6];
 
         // clipboard
         public int ClipboardMax = 25;
@@ -66,8 +74,10 @@ namespace DeskMate.Core
         public int AdhanSound = 0;
         public string AdhanPath = "";
 
-        // sticky note
+        // sticky note — kept only to migrate the single pre-1.5.1 note into Notes on first load
         public string StickyNote = "";
+        /// <summary>Notes, each a JSON object (see Logic.NoteItem) encrypted at rest.</summary>
+        public List<string> Notes = new List<string>();
 
         // custom occasion date (yyyy-MM-dd, Gregorian); empty = none
         public string OccasionCustom = "";
@@ -158,6 +168,32 @@ namespace DeskMate.Core
             }
         }
 
+        /// <summary>Fixed-length int array, stored as a JSON number list. Length is preserved
+        /// on read whatever the file says, so a hand-edited or older settings file cannot make
+        /// the rest of the app index past the end.</summary>
+        class IntArrayField : Field
+        {
+            public Func<Settings, int[]> Get;
+            public override void Read(Settings s, Dictionary<string, object> d)
+            {
+                var target = Get(s);
+                var list = Json.GetList(d, Name);
+                for (int i = 0; i < target.Length; i++)
+                    target[i] = i < list.Count && list[i] is double ? (int)Math.Round((double)list[i]) : 0;
+            }
+            public override void Write(Settings s, Dictionary<string, object> d)
+            {
+                var outList = new List<object>();
+                foreach (int v in Get(s)) outList.Add((double)v);
+                d[Name] = outList;
+            }
+        }
+
+        static Field Ints(string n, Func<Settings, int[]> g)
+        {
+            return new IntArrayField { Name = n, Get = g };
+        }
+
         static Field Str(string n, Func<Settings, string> g, Action<Settings, string> s)
         {
             return new StrField { Name = n, Get = g, Set = s };
@@ -196,6 +232,7 @@ namespace DeskMate.Core
             Bit("ShowSeconds",        s => s.ShowSeconds,        (s, v) => s.ShowSeconds = v),
             Bit("ShowHijri",          s => s.ShowHijri,          (s, v) => s.ShowHijri = v),
             Bit("ShowNextPrayerLine", s => s.ShowNextPrayerLine, (s, v) => s.ShowNextPrayerLine = v),
+            Bit("ShowWeatherLine",    s => s.ShowWeatherLine,    (s, v) => s.ShowWeatherLine = v),
             Bit("AutoStart",          s => s.AutoStart,          (s, v) => s.AutoStart = v),
             Num("PosX",               s => s.PosX,               (s, v) => s.PosX = v),
             Num("PosY",               s => s.PosY,               (s, v) => s.PosY = v),
@@ -228,6 +265,7 @@ namespace DeskMate.Core
             Int("PrayerMethod",       s => s.PrayerMethod,       (s, v) => s.PrayerMethod = v),
             Bit("PrayerNotify",       s => s.PrayerNotify,       (s, v) => s.PrayerNotify = v),
             Int("PrayerPreAlertMin",  s => s.PrayerPreAlertMin,  (s, v) => s.PrayerPreAlertMin = v),
+            Ints("PrayerAdjust",      s => s.PrayerAdjust),
 
             Int("ClipboardMax",       s => s.ClipboardMax,       (s, v) => s.ClipboardMax = v),
             SecList("PinnedClips",    s => s.PinnedClips),
@@ -239,6 +277,7 @@ namespace DeskMate.Core
             Str("AdhanPath",          s => s.AdhanPath,          (s, v) => s.AdhanPath = v),
 
             Sec("StickyNote",         s => s.StickyNote,         (s, v) => s.StickyNote = v),
+            SecList("Notes",          s => s.Notes),
             Str("OccasionCustom",     s => s.OccasionCustom,     (s, v) => s.OccasionCustom = v),
             Str("OccasionCustomName", s => s.OccasionCustomName, (s, v) => s.OccasionCustomName = v),
             Bit("OccasionCustomYearly", s => s.OccasionCustomYearly, (s, v) => s.OccasionCustomYearly = v),
@@ -256,6 +295,13 @@ namespace DeskMate.Core
             // keep in sync with UI.Theme.Palettes.Length — an out-of-range value used to
             // loop Theme.Apply → Reload → tick → Apply until StackOverflow killed the process
             if (ThemeIndex < 0 || ThemeIndex > 4) ThemeIndex = 0;
+            if (PrayerAdjust == null || PrayerAdjust.Length != 6) PrayerAdjust = new int[6];
+            for (int i = 0; i < PrayerAdjust.Length; i++)
+            {
+                // a correction beyond an hour is a mis-set location, not a mosque difference
+                if (PrayerAdjust[i] < -60) PrayerAdjust[i] = -60;
+                if (PrayerAdjust[i] > 60) PrayerAdjust[i] = 60;
+            }
         }
 
         // ---------------- load / save ----------------

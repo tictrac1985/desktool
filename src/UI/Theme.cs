@@ -106,14 +106,89 @@ namespace DeskMate.UI
             }
 
             CardBg = Freeze(new LinearGradientBrush(p.CardTop, p.CardBottom, 90));
+
+            // crisp 1px specular edge: bright where light lands on the top curve, gone by the
+            // time it reaches the sides. This is the line that reads as a real lit edge —
+            // the broad Bevel gradient alone looks like a printed highlight, not geometry.
+            var rim = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            rim.GradientStops.Add(new GradientStop(Color.FromArgb(IsLight ? (byte)0xC0 : (byte)0x7A, 255, 255, 255), 0));
+            rim.GradientStops.Add(new GradientStop(Color.FromArgb(IsLight ? (byte)0x30 : (byte)0x20, 255, 255, 255), 0.35));
+            rim.GradientStops.Add(new GradientStop(Color.FromArgb(0, 255, 255, 255), 1));
+            RimBrush = Freeze(rim);
+
+            _elevation = null;   // opacities depend on IsLight — rebuild lazily per palette
             ControlStyles.Invalidate();
+        }
+
+        // ---------------- elevation ----------------
+
+        /// <summary>Specular edge brush used by <see cref="RimLight"/>.</summary>
+        public static Brush RimBrush;
+
+        static DropShadowEffect[] _elevation;
+
+        /// <summary>One shadow ramp for the whole app, so a key, a card and a floating panel
+        /// sit at visibly different heights instead of each picking its own numbers.
+        /// 1 = resting key · 2 = raised surface · 3 = floating above the desktop.
+        /// Effects are frozen and shared: a DropShadowEffect per control is measurable cost
+        /// on a widget that rebuilds its whole tree on every settings change.</summary>
+        public static DropShadowEffect Elevation(int level)
+        {
+            if (_elevation == null)
+            {
+                _elevation = new[]
+                {
+                    MakeShadow(6, 1.5, IsLight ? 0.20 : 0.32),
+                    MakeShadow(14, 3, IsLight ? 0.24 : 0.42),
+                    MakeShadow(30, 7, IsLight ? 0.30 : 0.55),
+                };
+            }
+            return _elevation[Math.Max(1, Math.Min(3, level)) - 1];
+        }
+
+        static DropShadowEffect MakeShadow(double blur, double depth, double opacity)
+        {
+            var e = new DropShadowEffect
+            {
+                Color = Colors.Black, BlurRadius = blur, ShadowDepth = depth,
+                Opacity = opacity, Direction = 270,
+            };
+            e.Freeze();
+            return e;
+        }
+
+        /// <summary>Overlay that draws the specular edge. Sits above the fill and below the
+        /// content, so text is never dimmed by it.</summary>
+        public static Border RimLight(double radius)
+        {
+            return new Border
+            {
+                CornerRadius = new CornerRadius(radius),
+                BorderThickness = new Thickness(1),
+                BorderBrush = RimBrush,
+                IsHitTestVisible = false,
+            };
+        }
+
+        /// <summary>Top-lit face for a raised key. The key fills are translucent white (or
+        /// translucent accent) over the card, so "catching the light" means the top of the cap
+        /// is denser and the bottom thinner — brightening RGB does nothing to a fill that is
+        /// already pure white. Varying alpha is what actually reads as a curved surface.</summary>
+        public static Brush KeyFace(Color c, int lift = 16)
+        {
+            var top = Color.FromArgb((byte)Math.Min(255, c.A + lift), c.R, c.G, c.B);
+            var bottom = Color.FromArgb((byte)Math.Max(0, c.A - lift / 2), c.R, c.G, c.B);
+            return Freeze(new LinearGradientBrush(top, bottom, 90));
         }
 
         static Brush Freeze(Brush b) { if (b.CanFreeze) b.Freeze(); return b; }
 
+        /// <summary>Brightens a colour, keeping its alpha. Preserving alpha matters: the button
+        /// and key fills are translucent whites over the card, and dropping alpha here turned a
+        /// 12%-white keycap into solid white.</summary>
         static Color Lift(Color c, int dr, int dg, int db)
         {
-            return Color.FromRgb(
+            return Color.FromArgb(c.A,
                 (byte)Math.Min(255, c.R + dr), (byte)Math.Min(255, c.G + dg), (byte)Math.Min(255, c.B + db));
         }
 
@@ -159,30 +234,83 @@ namespace DeskMate.UI
 
         // ---------------- cards & chrome ----------------
 
-        /// <summary>Glass card: gradient body + 1px edge + 3D bevel (top light, bottom
-        /// shade) + deep soft shadow so the card floats above the desktop.</summary>
+        /// <summary>Glass card, built in depth order: gradient body · broad sheen across the
+        /// upper third · bevel (top light, bottom shade) · crisp specular rim on the edge ·
+        /// content · deep shadow. The sheen and the rim are what separate "a rounded
+        /// rectangle with a shadow" from a surface that looks like it has thickness.</summary>
         public static Border MakeCard(UIElement content, double radius = 24)
         {
+            double inner = Math.Max(1, radius - 1);
             var layers = new Grid();
-            var bevel = Bevel(Math.Max(1, radius - 1));
+
+            var sheen = new Border
+            {
+                CornerRadius = new CornerRadius(inner),
+                Background = GlassTop,
+                IsHitTestVisible = false,
+                Margin = new Thickness(1),
+            };
+            layers.Children.Add(sheen);
+
+            var bevel = Bevel(inner);
             bevel.Margin = new Thickness(1);
             layers.Children.Add(bevel);
-            layers.Children.Add(content);
+
+
+            var rim = RimLight(radius);
+            layers.Children.Add(rim);
+            // padding belongs to the content layer, not the card: the sheen, bevel and rim
+            // have to reach the card's own edge, and an outer Padding would inset them all
+            var pad = new Border
+            {
+                Padding = new Thickness(18, 14, 18, 14),
+                Child = content,
+            };
+            layers.Children.Add(pad);
+
             return new Border
             {
                 Background = CardBg,
                 BorderBrush = CardBorder,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(radius),
-                Padding = new Thickness(18, 14, 18, 14),
                 Child = layers,
-                Effect = new DropShadowEffect
-                {
-                    Color = Colors.Black, BlurRadius = 30, ShadowDepth = 7,
-                    Opacity = IsLight ? 0.30 : 0.55, Direction = 270,
-                },
+                Effect = Elevation(3),
                 Margin = new Thickness(12), // room for the shadow inside the transparent window
+                // callers reshape the card through SetCardPadding / SetCardRadius — touching
+                // Padding or CornerRadius directly leaves these light layers behind
+                Tag = new CardParts { Pad = pad, Sheen = sheen, Bevel = bevel, Rim = rim },
             };
+        }
+
+        /// <summary>The layers of a card that have to be reshaped together. Kept in the card's
+        /// Tag so a caller can resize or re-pad the card without the sheen, bevel and rim
+        /// silently keeping the original geometry — which drew a rounded SQUARE rim inside the
+        /// orbit layout's circular clock card.</summary>
+        class CardParts
+        {
+            public Border Pad, Sheen, Bevel, Rim;
+        }
+
+        /// <summary>Adjusts the inner spacing of a card made by <see cref="MakeCard"/>.
+        /// Use instead of <c>card.Padding</c>, which would inset the card's own light layers.</summary>
+        public static void SetCardPadding(Border card, Thickness padding)
+        {
+            var p = card.Tag as CardParts;
+            if (p != null) p.Pad.Padding = padding;
+        }
+
+        /// <summary>Reshapes a card, keeping its light layers in step. Use instead of setting
+        /// <c>card.CornerRadius</c>, which changes only the outline.</summary>
+        public static void SetCardRadius(Border card, double radius)
+        {
+            card.CornerRadius = new CornerRadius(radius);
+            var p = card.Tag as CardParts;
+            if (p == null) return;
+            double inner = Math.Max(1, radius - 1);
+            p.Sheen.CornerRadius = new CornerRadius(inner);
+            p.Bevel.CornerRadius = new CornerRadius(inner);
+            p.Rim.CornerRadius = new CornerRadius(radius);
         }
 
         /// <summary>Full-width hairline used to separate panel sections.</summary>
@@ -237,14 +365,24 @@ namespace DeskMate.UI
 
         // ---------------- tool cell: icon + permanent label ----------------
 
+        /// <summary>Width a tool cell gets when there is room. Sized so the longest Arabic
+        /// tool names ("الآلة الحاسبة", "مواقيت الصلاة") fit on one or two lines inside their
+        /// own cell — the desktop has space to spare, and a cramped row is the first thing
+        /// that makes the widget look unfinished.</summary>
+        public const double DefaultCellWidth = 76;
+
+        /// <summary>Clear gap between neighbouring cells, so labels never appear to touch.</summary>
+        public const double CellGap = 8;
+
         /// <summary>The widget's signature button: a 40px circle with its name always
         /// visible underneath. Hover lifts the circle and lights glyph + label in the accent.
         /// cellWidth shrinks the cell for dense single-row layouts (label scales with it).</summary>
-        public static FrameworkElement MakeToolCell(string glyph, string label, Action onClick, bool floating, double cellWidth = 58)
+        public static FrameworkElement MakeToolCell(string glyph, string label, Action onClick, bool floating, double cellWidth = DefaultCellWidth)
         {
             var glyphText = MakeGlyph(glyph, 16);
             var circleLayers = new Grid();
             circleLayers.Children.Add(Bevel(19));
+            circleLayers.Children.Add(RimLight(20));
             circleLayers.Children.Add(glyphText);
             var circle = new Border
             {
@@ -264,26 +402,27 @@ namespace DeskMate.UI
             group.Children.Add(zoom);
             group.Children.Add(lift);
             circle.RenderTransform = group;
-            if (floating)
-            {
-                circle.Effect = new DropShadowEffect
-                {
-                    Color = Colors.Black, BlurRadius = 10, ShadowDepth = 2,
-                    Opacity = IsLight ? 0.25 : 0.45, Direction = 270,
-                };
-            }
+            // a floating icon sits straight on the desktop with no card behind it, so it needs
+            // real separation; inside a card the card's own shadow already does that work
+            if (floating) circle.Effect = Elevation(2);
 
+            // The label used to be allowed to overflow its cell (MaxWidth = cellWidth + 20 with
+            // -10 side margins), so neighbouring Arabic names — "تنظيف سريع" beside
+            // "الآلة الحاسبة" — ran straight into each other with no gap. A label now stays
+            // inside its own cell and wraps to a second line instead of invading the next one.
             var name = new TextBlock
             {
                 Text = label,
-                FontSize = cellWidth < 52 ? 9.5 : 10.5,
+                FontSize = cellWidth < 60 ? 9.5 : 10.5,
                 FontFamily = UiFont,
                 Foreground = TextDim,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
                 TextTrimming = TextTrimming.CharacterEllipsis,
-                MaxWidth = cellWidth + 20,
-                Margin = new Thickness(-10, 4, -10, 0),
+                MaxWidth = cellWidth,
+                MaxHeight = 30,          // two lines at this size; a third would unbalance the row
+                Margin = new Thickness(0, 5, 0, 0),
             };
 
             var cell = new StackPanel
@@ -292,7 +431,7 @@ namespace DeskMate.UI
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Background = Brushes.Transparent,
                 Cursor = Cursors.Hand,
-                Margin = new Thickness(1, 0, 1, 0),
+                Margin = new Thickness(CellGap / 2, 0, CellGap / 2, 0),
             };
             // StackPanel Background only paints with a panel hit-test surface
             cell.Children.Add(circle);
@@ -329,6 +468,8 @@ namespace DeskMate.UI
                 e.Handled = true;
                 zoom.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.1, TimeSpan.FromMilliseconds(90)));
                 zoom.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.1, TimeSpan.FromMilliseconds(90)));
+                // hand the panel the icon it came from, so it can open attached to it
+                PanelWindow.PendingAnchor = circle;
                 try { onClick(); } catch (Exception ex) { Log.Error("toolcell", ex); }
             };
             return cell;

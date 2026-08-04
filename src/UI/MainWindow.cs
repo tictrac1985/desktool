@@ -13,21 +13,21 @@ namespace DeskMate.UI
     /// <summary>MDL2 glyph codes as escapes (literal PUA chars are fragile in source files).</summary>
     static class Glyphs
     {
-        public const string Cleaner = "";
-        public const string Calc = "";
-        public const string Wallpaper = "";
-        public const string Power = "";
-        public const string Clipboard = "";
-        public const string Weather = "";
-        public const string Apps = "";
-        public const string Prayer = "";
-        public const string SettingsGear = "";
-        public const string Calendar = "";
-        public const string Focus = "";
-        public const string Occasions = "";
-        public const string Note = "";
-        public const string SysMon = "";
-        public const string WorldClock = "";
+        public const string Cleaner = "\uE74D";
+        public const string Calc = "\uE8EF";
+        public const string Wallpaper = "\uE91B";
+        public const string Power = "\uE7E8";
+        public const string Clipboard = "\uE77F";
+        public const string Weather = "\uE706";
+        public const string Apps = "\uE71D";
+        public const string Prayer = "\uE708";
+        public const string SettingsGear = "\uE713";
+        public const string Calendar = "\uE787";
+        public const string Focus = "\uE916";
+        public const string Occasions = "\uE735";
+        public const string Note = "\uE70F";
+        public const string SysMon = "\uE772";
+        public const string WorldClock = "\uE774";
     }
 
     /// <summary>The desktop widget shell. Split across:
@@ -41,6 +41,11 @@ namespace DeskMate.UI
         readonly DispatcherTimer _timer = new DispatcherTimer();
         IClockView _clock;
         System.Windows.Controls.TextBlock _prayerLine;
+        // widget weather line: glyph and text are separate because the WMO glyph needs
+        // Segoe UI Symbol while the temperature must stay in the UI font
+        System.Windows.Controls.StackPanel _weatherLine;
+        System.Windows.Controls.TextBlock _weatherGlyph, _weatherText;
+        int _lastWeatherMin = -1;
         WF.NotifyIcon _tray;
         IntPtr _hwnd;
         bool _reallyExiting;
@@ -120,6 +125,7 @@ namespace DeskMate.UI
         public void Reload()
         {
             _lastPrayerLineMin = -1;
+            _lastWeatherMin = -1;   // the rebuilt line starts empty; force a repaint on the next tick
             BuildUI();
             SetupTray();
             OnTick(DateTime.Now);
@@ -209,6 +215,7 @@ namespace DeskMate.UI
 
             PrayerFeature.MinuteTick(now);
             FocusFeature.BackgroundTick(now);
+            StickyNoteFeature.BackgroundTick(now);   // note reminders fire whether the panel is open or not
             // the countdown only changes once a minute — skip the recompute otherwise
             if (now.Minute != _lastPrayerLineMin)
             {
@@ -221,6 +228,42 @@ namespace DeskMate.UI
                 }
                 else _prayerLine.Visibility = Visibility.Collapsed;
             }
+
+            if (now.Minute != _lastWeatherMin)
+            {
+                _lastWeatherMin = now.Minute;
+                WeatherFeature.EnsureFresh();   // no-op unless enabled, located and stale
+                UpdateWeatherLine();
+            }
+        }
+
+        /// <summary>Repaints the next-prayer line immediately. Called when a per-prayer
+        /// correction changes, so the widget agrees with the panel without waiting for the
+        /// next minute boundary.</summary>
+        public void RefreshPrayerLine()
+        {
+            if (_prayerLine == null) return;
+            _lastPrayerLineMin = -1;
+            OnTick(DateTime.Now);
+        }
+
+        /// <summary>Paints the widget weather line from whatever is already cached. Never
+        /// requests anything itself, so it is safe on the UI thread every minute.</summary>
+        void UpdateWeatherLine()
+        {
+            if (_weatherLine == null) return;
+            var w = Settings.I.ShowWeather && Settings.I.ShowWeatherLine ? WeatherFeature.Cached : null;
+            if (w == null || double.IsNaN(w.Temp))
+            {
+                _weatherLine.Visibility = Visibility.Collapsed;
+                return;
+            }
+            bool night = DateTime.Now.Hour < 6 || DateTime.Now.Hour >= 19;
+            _weatherGlyph.Text = WeatherCore.WmoGlyph(w.Code, night);
+            string city = Settings.I.City;
+            _weatherText.Text = Math.Round(w.Temp) + "°" +
+                (string.IsNullOrEmpty(city) ? "" : "  ·  " + city);
+            _weatherLine.Visibility = Visibility.Visible;
         }
 
         // ---------------- tray ----------------

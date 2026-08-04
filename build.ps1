@@ -175,8 +175,12 @@ if ((-not $SkipInstaller) -and (Test-Path $setupSrc)) {
                    "$fw\System.Drawing.dll", "$fw\System.Windows.Forms.dll")
     $setupExtra = @("/win32icon:$ico", "/resource:$appExe,DeskMate.Payload")
     if (Test-Path $manifest) { $setupExtra += "/win32manifest:$manifest" }
-    # AppVersion.cs is compiled in too: one version source for app and installer alike
-    Invoke-Csc $setupExe "winexe" @($setupSrc, (Join-Path $root "src\Core\AppVersion.cs")) $refsSetup $setupExtra
+    # AppVersion.cs is compiled in too: one version source for app and installer alike.
+    # SetupAssemblyInfo.cs turns that constant into real file metadata — without it the
+    # installer shipped as 0.0.0.0 in Explorer's Details tab.
+    Invoke-Csc $setupExe "winexe" @($setupSrc,
+        (Join-Path $root "src\Core\AppVersion.cs"),
+        (Join-Path $root "installer\SetupAssemblyInfo.cs")) $refsSetup $setupExtra
     Invoke-Sign $setupExe
     Write-Host "OK -> $setupExe" -ForegroundColor Green
 }

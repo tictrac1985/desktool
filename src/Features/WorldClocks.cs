@@ -122,7 +122,7 @@ namespace DeskMate.Features
                         Width = 20, Height = 20,
                         CornerRadius = new CornerRadius(10),
                         Background = Brushes.Transparent,
-                        Child = Theme.MakeGlyph("", 8.5, Theme.TextDim),
+                        Child = Theme.MakeGlyph("\uE711", 8.5, Theme.TextDim),
                         Cursor = Cursors.Hand,
                         VerticalAlignment = VerticalAlignment.Center,
                     };

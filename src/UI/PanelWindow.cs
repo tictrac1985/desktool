@@ -22,6 +22,16 @@ namespace DeskMate.UI
         readonly Grid _contentHost = new Grid();
         Window _owner;
 
+        /// <summary>The icon whose click is about to open a panel. Set by the tool cell right
+        /// before it invokes the feature, consumed once by <see cref="Toggle"/>. A field rather
+        /// than a parameter so all fourteen features keep their one-argument Open(owner).</summary>
+        public static FrameworkElement PendingAnchor;
+
+        FrameworkElement _anchor;
+        FrameworkElement _caret;
+        /// <summary>True when the panel sits below its anchor, so the caret points up.</summary>
+        bool _caretUp = true;
+
         /// <summary>Set while a modal dialog owned by this panel is open, so losing
         /// activation to the dialog does not auto-close the panel (and kill the dialog).</summary>
         public bool SuppressAutoClose;
@@ -71,7 +81,7 @@ namespace DeskMate.UI
                 Width = 26, Height = 26,
                 CornerRadius = new CornerRadius(13),
                 Background = Theme.ButtonBg,
-                Child = Theme.MakeGlyph("", 10),
+                Child = Theme.MakeGlyph("\uE711", 10),
                 Cursor = Cursors.Hand,
                 VerticalAlignment = VerticalAlignment.Center,
             };
@@ -101,17 +111,44 @@ namespace DeskMate.UI
             stack.Children.Add(_contentHost);
 
             var card = Theme.MakeCard(stack, 18);
-            Content = card;
+
+            // A tail pointing at the icon reads as "this panel belongs to that button".
+            // It is a real triangle drawn OVER the card edge, not a square tucked behind it:
+            // the card is translucent glass, so anything hidden underneath shows straight
+            // through, and the card's 1px border would cut across it. The figure is left
+            // unclosed so WPF fills the triangle but strokes only the two slanted sides —
+            // the base then merges into the card instead of drawing a line across it.
+            _caret = new System.Windows.Shapes.Path
+            {
+                Fill = Theme.CardBg,
+                Stroke = Theme.CardBorder,
+                StrokeThickness = 1,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                Visibility = Visibility.Collapsed,
+                IsHitTestVisible = false,
+            };
+
+            // The root inherits the window's FlowDirection on purpose. Forcing it to LTR and
+            // flipping the card back nests two mirror transforms, which renders the whole
+            // panel mirrored. PlaceCaret mirrors its own margin instead — one place to reason
+            // about, and the visual tree stays a single direction throughout.
+            var root = new Grid();
+            root.Children.Add(card);
+            root.Children.Add(_caret);   // above the card: it covers the border it grows out of
+            Content = root;
 
             // quick, quiet entrance
             Opacity = 0;
             var slide = new TranslateTransform(0, 8);
-            card.RenderTransform = slide;
+            root.RenderTransform = slide;
             Loaded += (s, e) =>
             {
                 BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(140)));
+                // rise into place when below the anchor, settle down when above it, so the
+                // motion always starts from the icon's side
                 slide.BeginAnimation(TranslateTransform.YProperty,
-                    new DoubleAnimation(0, TimeSpan.FromMilliseconds(160))
+                    new DoubleAnimation(_caretUp ? 8 : -8, 0, TimeSpan.FromMilliseconds(160))
                     { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
             };
 
@@ -130,6 +167,11 @@ namespace DeskMate.UI
         /// window so features can close it or trigger re-layout.</summary>
         public static void Toggle(Window owner, string key, string title, Func<PanelWindow, FrameworkElement> build, double width = 320)
         {
+            // consume it immediately: a panel reopened later from the tray or from a settings
+            // change must not inherit the anchor of whichever icon was clicked last
+            var anchor = PendingAnchor;
+            PendingAnchor = null;
+
             if (_current != null)
             {
                 bool same = _currentKey == key;
@@ -151,6 +193,7 @@ namespace DeskMate.UI
             p._contentHost.Children.Clear();
             p._contentHost.Children.Add(content);
             p._owner = owner;
+            p._anchor = anchor;
             _current = p;
             _currentKey = key;
             p.Loaded += (s, e) => p.PlaceNear(owner);
@@ -163,6 +206,10 @@ namespace DeskMate.UI
             if (_current != null) { try { _current.Close(); } catch { } }
         }
 
+        /// <summary>Shadow padding baked into <see cref="Theme.MakeCard"/>: the visible card
+        /// edge sits this far inside the window on every side.</summary>
+        const double CardInset = 12;
+
         void PlaceNear(Window owner)
         {
             try
@@ -173,21 +220,107 @@ namespace DeskMate.UI
                 // is the primary monitor only, so panels opened next to a widget on a second
                 // screen jumped back to the primary one
                 var wa = WorkAreaOf(owner);
-                double left = owner.Left + (owner.ActualWidth - w) / 2;
-                left = Math.Max(wa.Left + 4, Math.Min(left, wa.Right - w - 4));
-                double top = owner.Top + owner.ActualHeight - 6;
-                if (top + h > wa.Bottom - 4) top = owner.Top - h + 6;
-                if (top < wa.Top + 4) top = wa.Top + 4;
+
+                // anchor to the icon that was clicked; fall back to the whole widget for panels
+                // reopened without one (tray menu, or a settings change re-running Open)
+                Rect a = AnchorRect(owner);
+
+                // centre on the anchor, then keep the card fully on screen. The clamp is what
+                // stops a panel opened from an edge icon hanging off the monitor.
+                double left = a.Left + (a.Width - w) / 2;
+                left = Math.Max(wa.Left - CardInset + 4, Math.Min(left, wa.Right - w + CardInset - 4));
+
+                // prefer below the anchor; flip above when it would not fit
+                double below = a.Bottom - CardInset + 2;
+                double above = a.Top - h + CardInset - 2;
+                _caretUp = true;
+                double top = below;
+                if (below + h > wa.Bottom + CardInset - 4 && above >= wa.Top - CardInset + 4)
+                {
+                    top = above;
+                    _caretUp = false;
+                }
+                top = Math.Max(wa.Top - CardInset + 4, Math.Min(top, wa.Bottom - h + CardInset - 4));
+
                 Left = left;
                 Top = top;
+                PlaceCaret(a, left, w, h);
             }
             catch { }
+        }
+
+        /// <summary>Screen rect of the clicked icon in the same units as Window.Left/Top.
+        /// PointToScreen returns physical pixels, so it is divided by the window's own DPI —
+        /// matching how <see cref="WorkAreaOf"/> converts, which is what keeps the two
+        /// comparable on a per-monitor-DPI setup. Both corners are transformed because an
+        /// element inside an RTL widget has its local origin on the visual right.</summary>
+        Rect AnchorRect(Window owner)
+        {
+            var el = _anchor;
+            if (el != null && el.IsVisible && PresentationSource.FromVisual(el) != null)
+            {
+                try
+                {
+                    var dpi = VisualTreeHelper.GetDpi(el);
+                    Point p1 = el.PointToScreen(new Point(0, 0));
+                    Point p2 = el.PointToScreen(new Point(el.ActualWidth, el.ActualHeight));
+                    double x1 = Math.Min(p1.X, p2.X) / dpi.DpiScaleX;
+                    double x2 = Math.Max(p1.X, p2.X) / dpi.DpiScaleX;
+                    double y1 = Math.Min(p1.Y, p2.Y) / dpi.DpiScaleY;
+                    double y2 = Math.Max(p1.Y, p2.Y) / dpi.DpiScaleY;
+                    if (x2 > x1 && y2 > y1) return new Rect(x1, y1, x2 - x1, y2 - y1);
+                }
+                catch { /* detached by a Reload mid-click — fall through to the widget */ }
+            }
+            return new Rect(owner.Left, owner.Top, owner.ActualWidth, owner.ActualHeight);
+        }
+
+        /// <summary>Points the caret at the anchor's centre, clamped away from the rounded
+        /// corners so it never straddles one.</summary>
+        void PlaceCaret(Rect anchor, double windowLeft, double w, double h)
+        {
+            if (_caret == null) return;
+            if (_anchor == null) { _caret.Visibility = Visibility.Collapsed; return; }
+
+            const double tw = 17, th = 8;   // tail footprint
+            double centre = anchor.Left + anchor.Width / 2 - windowLeft;
+            double min = CardInset + 22, max = w - CardInset - 22;
+            if (max <= min) { _caret.Visibility = Visibility.Collapsed; return; }
+            centre = Math.Max(min, Math.Min(centre, max));
+
+            // HorizontalAlignment.Left measures from the visual right under RTL, so the offset
+            // is mirrored here rather than by forcing the tree into one direction
+            double fromLeft = centre - tw / 2;
+            double offset = FlowDirection == FlowDirection.RightToLeft ? w - fromLeft - tw : fromLeft;
+
+            // the base overlaps the card by 1px so it hides the border segment it sits on
+            var fig = new PathFigure { IsClosed = false, IsFilled = true };
+            if (_caretUp)
+            {
+                fig.StartPoint = new Point(0, th);
+                fig.Segments.Add(new LineSegment(new Point(tw / 2, 0), true));
+                fig.Segments.Add(new LineSegment(new Point(tw, th), true));
+            }
+            else
+            {
+                fig.StartPoint = new Point(0, 0);
+                fig.Segments.Add(new LineSegment(new Point(tw / 2, th), true));
+                fig.Segments.Add(new LineSegment(new Point(tw, 0), true));
+            }
+            var geo = new PathGeometry();
+            geo.Figures.Add(fig);
+            geo.Freeze();
+            ((System.Windows.Shapes.Path)_caret).Data = geo;
+
+            double top = _caretUp ? CardInset - th + 1 : h - CardInset - 1;
+            _caret.Margin = new Thickness(offset, top, 0, 0);
+            _caret.Visibility = Visibility.Visible;
         }
 
         /// <summary>Work area (in WPF device-independent units) of the monitor that hosts
         /// the given window. Screen.WorkArea is in physical pixels, so it is converted with
         /// the window's own DPI (the app is PerMonitorV2-aware).</summary>
-        static Rect WorkAreaOf(Window w)
+        public static Rect WorkAreaOf(Window w)
         {
             try
             {

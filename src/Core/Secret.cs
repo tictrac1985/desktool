@@ -12,29 +12,55 @@ namespace DeskMate.Core
     {
         const string Prefix = "enc:v1:";
 
-        /// <summary>Encrypts to "enc:v1:&lt;base64&gt;". Fail-closed: if DPAPI is unavailable the
-        /// value is dropped (empty string) rather than stored as readable plain text — we
-        /// promised the user these values are not stored readable, so a silent plaintext
-        /// fallback would be a privacy breach.</summary>
+        /// <summary>Raised when a value could not be encrypted and was therefore dropped.
+        /// The UI subscribes so the loss is visible instead of silent.</summary>
+        public static event Action<string> ProtectFailed;
+
+        /// <summary>True for ciphertext that this Windows user cannot decrypt — a settings
+        /// file carried over from another profile, restored from a backup, or written before
+        /// a DPAPI master-key reset. Such a value is kept byte-for-byte rather than erased,
+        /// so it stays recoverable from the original profile. Callers must not display it.</summary>
+        public static bool IsSealed(string value)
+        {
+            return !string.IsNullOrEmpty(value) && value.StartsWith(Prefix, StringComparison.Ordinal);
+        }
+
+        /// <summary>Encrypts to "enc:v1:&lt;base64&gt;".
+        /// A value that is already sealed ciphertext (see <see cref="IsSealed"/>) is passed
+        /// through untouched — re-encrypting it is impossible and dropping it would destroy
+        /// data the owning profile can still read.
+        /// If DPAPI itself fails the value is dropped rather than stored as readable plain
+        /// text — we promised the user these values are not stored readable — but the drop is
+        /// announced through <see cref="ProtectFailed"/> instead of happening in silence.</summary>
         public static string Protect(string plain)
         {
             if (string.IsNullOrEmpty(plain)) return plain;
+            if (IsSealed(plain)) return plain;
             try
             {
                 byte[] cipher = ProtectedData.Protect(
                     Encoding.UTF8.GetBytes(plain), null, DataProtectionScope.CurrentUser);
                 return Prefix + Convert.ToBase64String(cipher);
             }
-            catch (Exception ex) { Log.Error("Secret.Protect", ex); return ""; }
+            catch (Exception ex)
+            {
+                Log.Error("Secret.Protect", ex);
+                var handler = ProtectFailed;
+                if (handler != null) { try { handler("Secret.Protect"); } catch { } }
+                return "";
+            }
         }
 
         /// <summary>Decrypts a value written by <see cref="Protect"/>. Values without the
         /// prefix are returned as-is: that is how settings written by earlier versions keep
-        /// working, and they get encrypted on the next save.</summary>
+        /// working, and they get encrypted on the next save.
+        /// On failure the ciphertext is returned unchanged, NOT an empty string: returning ""
+        /// used to be written straight back by the next Save, permanently destroying the
+        /// user's note and pinned clips the moment a settings file met a different profile.
+        /// Callers test <see cref="IsSealed"/> and show a locked state instead of the text.</summary>
         public static string Unprotect(string stored)
         {
-            if (string.IsNullOrEmpty(stored) || !stored.StartsWith(Prefix, StringComparison.Ordinal))
-                return stored;
+            if (!IsSealed(stored)) return stored;
             try
             {
                 byte[] plain = ProtectedData.Unprotect(
@@ -44,9 +70,9 @@ namespace DeskMate.Core
             }
             catch (Exception ex)
             {
-                // wrong user profile or corrupted blob — drop it rather than show ciphertext
+                // wrong user profile, restored backup, or reset master key — keep the bytes
                 Log.Error("Secret.Unprotect", ex);
-                return "";
+                return stored;
             }
         }
     }

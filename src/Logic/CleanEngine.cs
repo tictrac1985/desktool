@@ -32,6 +32,17 @@ namespace DeskMate.Logic
             catch { return true; }
         }
 
+        /// <summary>Same test for a file entry. Directory-only checking was not enough:
+        /// GetFiles also returns file symlinks, and SetFileAttributes follows a reparse point,
+        /// so clearing ReadOnly before deleting rewrote the attributes of the *target* — any
+        /// file the user can write, chosen by whoever plants the link in a shared temp dir.
+        /// Unreadable entries report true, same "unknown means do not touch" rule.</summary>
+        public static bool IsFileReparsePoint(string path)
+        {
+            try { return (new FileInfo(path).Attributes & FileAttributes.ReparsePoint) != 0; }
+            catch { return true; }
+        }
+
         /// <summary>Deletes contents of each directory (never the directory itself).
         /// Returns bytes freed. Locked/inaccessible files are silently skipped.</summary>
         public static long Clean(IEnumerable<string> dirs, Action<string> progress = null)
@@ -71,6 +82,9 @@ namespace DeskMate.Logic
                 {
                     try
                     {
+                        // a file symlink is unlinked as-is: never clear attributes through it,
+                        // that would reach the target instead of the link
+                        if (IsFileReparsePoint(f)) { try { File.Delete(f); } catch { } continue; }
                         long size = new FileInfo(f).Length;
                         File.SetAttributes(f, FileAttributes.Normal);
                         File.Delete(f);

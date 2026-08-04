@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,6 +19,20 @@ namespace DeskMate.Features
     public static class CalculatorFeature
     {
         static bool _pro;
+
+        /// <summary>Recent "expression = result" pairs, newest first. A calculator without any
+        /// memory of what you just worked out forces you to retype the number you are building
+        /// on — the single most common thing anyone does with one.</summary>
+        static readonly List<string[]> History = new List<string[]>();
+        const int MaxHistory = 12;
+
+        static void Remember(string expr, string result)
+        {
+            if (string.IsNullOrEmpty(expr) || string.IsNullOrEmpty(result)) return;
+            History.RemoveAll(h => h[0] == expr);
+            History.Insert(0, new[] { expr, result });
+            while (History.Count > MaxHistory) History.RemoveAt(History.Count - 1);
+        }
 
         public static void Open(Window owner)
         {
@@ -55,12 +70,23 @@ namespace DeskMate.Features
                 Padding = new Thickness(0),
                 TextAlignment = TextAlignment.Right,
             };
+            // copy sits inside the well, on the result itself — a result you cannot get out of
+            // the calculator is only half useful
+            var copyBtn = Theme.MakeIconButton("\uE8C8", L.T("calc_copy"), () => { }, 26, 11);
+            copyBtn.VerticalAlignment = VerticalAlignment.Bottom;
+            copyBtn.HorizontalAlignment = HorizontalAlignment.Left;
+            copyBtn.Opacity = 0.75;
+
             var displayLayer = new Grid();
             displayLayer.Children.Add(placeholder);
             displayLayer.Children.Add(display);
             var wellInner = new StackPanel();
             wellInner.Children.Add(preview);
-            wellInner.Children.Add(displayLayer);
+            var displayRow = new DockPanel();
+            DockPanel.SetDock(copyBtn, Dock.Left);
+            displayRow.Children.Add(copyBtn);
+            displayRow.Children.Add(displayLayer);
+            wellInner.Children.Add(displayRow);
             // recessed well: inset bevel makes the display look carved into the panel
             var wellLayers = new Grid();
             wellLayers.Children.Add(Theme.InsetBevel(13));
@@ -78,14 +104,18 @@ namespace DeskMate.Features
 
             // ---------------- key actions ----------------
             Action<string> append = s => { display.Text += s; display.CaretIndex = display.Text.Length; };
+            Action rebuildHistory = null;
             Action equals = () =>
             {
                 string expr = display.Text;
                 try
                 {
                     double v = ExpressionEvaluator.Eval(expr);
+                    string result = v.ToString("G12", CultureInfo.InvariantCulture);
                     preview.Text = expr + "  =";
-                    display.Text = v.ToString("G12", CultureInfo.InvariantCulture);
+                    display.Text = result;
+                    Remember(expr, result);
+                    if (rebuildHistory != null) rebuildHistory();
                 }
                 catch { display.Text = L.T("calc_error"); }
                 display.CaretIndex = display.Text.Length;
@@ -128,6 +158,8 @@ namespace DeskMate.Features
             var fnHover = new SolidColorBrush(Color.FromArgb((byte)(Theme.IsLight ? 0x38 : 0x40),
                 Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
             var coral = new SolidColorBrush(Theme.IsLight ? Color.FromRgb(0xC8, 0x4A, 0x38) : Color.FromRgb(0xFF, 0x8A, 0x7A));
+            // digit keys are tinted from the shared button colour so they follow every palette
+            var digitFace = ((SolidColorBrush)Theme.ButtonBg).Color;
 
             Func<string, Action, int, Border> key = (label, action, kind) =>
             {
@@ -146,24 +178,30 @@ namespace DeskMate.Features
                 tb.VerticalAlignment = VerticalAlignment.Center;
                 if (semi) tb.FontWeight = FontWeights.SemiBold;
 
+                // Raised keys get a top-lit face rather than one flat colour — a keycap catches
+                // light on its upper curve, and that gradient is most of what sells the depth.
                 Brush bg, hover, border = null;
                 switch (kind)
                 {
-                    case 1: bg = opBg; hover = opHover; border = opBorder; break;
+                    case 1: bg = Theme.KeyFace(opBg.Color, 14); hover = opHover; border = opBorder; break;
                     case 2: bg = eqBg; hover = eqHover; break;
                     case 3: case 4: bg = Brushes.Transparent; hover = Theme.HoverBg; break;
                     case 5: bg = Theme.AccentSoft; hover = fnHover; break;
-                    default: bg = Theme.ButtonBg; hover = Theme.HoverBg; border = Theme.ButtonBorder; break;
+                    default: bg = Theme.KeyFace(digitFace, 10); hover = Theme.HoverBg; border = Theme.ButtonBorder; break;
                 }
+                double radius = kind == 5 ? 10 : 14;
                 var keyLayers = new Grid();
-                keyLayers.Children.Add(Theme.Bevel(kind == 5 ? 9 : 13));
+                keyLayers.Children.Add(Theme.Bevel(radius - 1));
+                // keycaps get the same specular edge as the cards; ghost keys (3, 4) stay flat
+                // so the pad reads as three tiers instead of one wall of buttons
+                if (kind != 3 && kind != 4) keyLayers.Children.Add(Theme.RimLight(radius));
                 keyLayers.Children.Add(tb);
                 var b = new Border
                 {
                     Background = bg,
                     BorderBrush = border,
                     BorderThickness = border == null ? new Thickness(0) : new Thickness(1),
-                    CornerRadius = new CornerRadius(kind == 5 ? 10 : 14),
+                    CornerRadius = new CornerRadius(radius),
                     Height = kind == 5 ? 30 : 48,
                     Margin = new Thickness(3),
                     Cursor = Cursors.Hand,
@@ -171,29 +209,36 @@ namespace DeskMate.Features
                     RenderTransformOrigin = new Point(0.5, 0.5),
                 };
                 if (kind == 2)
-                    b.Effect = new DropShadowEffect
+                {
+                    // equals glows in the accent instead of casting a shadow — it is the one
+                    // key that should look lit rather than merely raised
+                    var glow = new DropShadowEffect
                     {
-                        Color = Theme.AccentColor, BlurRadius = 14, ShadowDepth = 0,
-                        Opacity = Theme.IsLight ? 0.18 : 0.38,
+                        Color = Theme.AccentColor, BlurRadius = 16, ShadowDepth = 0,
+                        Opacity = Theme.IsLight ? 0.20 : 0.42,
                     };
-                else if (kind <= 1)
-                    // physical key lift: soft ambient shadow under digits and operators
-                    b.Effect = new DropShadowEffect
-                    {
-                        Color = Colors.Black, BlurRadius = 7, ShadowDepth = 2,
-                        Opacity = Theme.IsLight ? 0.16 : 0.30, Direction = 270,
-                    };
+                    glow.Freeze();
+                    b.Effect = glow;
+                }
+                else if (kind <= 1) b.Effect = Theme.Elevation(1);
 
-                // press physics: quick squash on down, spring back on up
+                // press physics: the cap travels down into the panel and its shadow collapses,
+                // then springs back. Scale alone reads as a flat image being resized.
                 var zoom = new ScaleTransform(1, 1);
-                b.RenderTransform = zoom;
+                var drop = new TranslateTransform(0, 0);
+                var moves = new TransformGroup();
+                moves.Children.Add(zoom);
+                moves.Children.Add(drop);
+                b.RenderTransform = moves;
                 Theme.AttachHover(b, bg, hover);
                 b.MouseLeftButtonDown += (s, e) =>
                 {
                     e.Handled = true;
                     var dur = TimeSpan.FromMilliseconds(60);
-                    zoom.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.9, dur));
-                    zoom.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.9, dur));
+                    zoom.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.94, dur));
+                    zoom.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.94, dur));
+                    drop.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(1.5, dur));
+                    if (kind <= 1) b.Effect =null;   // key is down: nothing under it to shade
                 };
                 b.MouseLeftButtonUp += (s, e) =>
                 {
@@ -202,7 +247,19 @@ namespace DeskMate.Features
                     var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
                     zoom.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, dur) { EasingFunction = ease });
                     zoom.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, dur) { EasingFunction = ease });
+                    drop.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, dur) { EasingFunction = ease });
+                    if (kind <= 1) b.Effect =Theme.Elevation(1);
                     try { action(); } catch (Exception ex) { Log.Error("calckey", ex); }
+                };
+                // releasing outside the key must restore it too, or it stays visually stuck down
+                b.MouseLeave += (s, e) =>
+                {
+                    zoom.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+                    zoom.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                    drop.BeginAnimation(TranslateTransform.YProperty, null);
+                    zoom.ScaleX = zoom.ScaleY = 1.0;
+                    drop.Y = 0;
+                    if (kind <= 1) b.Effect =Theme.Elevation(1);
                 };
                 return b;
             };
@@ -288,10 +345,67 @@ namespace DeskMate.Features
             };
             stack.Children.Add(toggle);
 
+            // ---------------- history strip ----------------
+            var historyRow = new StackPanel { Orientation = Orientation.Horizontal };
+            var historyScroll = new ScrollViewer
+            {
+                Content = historyRow,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Margin = new Thickness(0, 0, 0, 8),
+                MaxHeight = 40,
+            };
+            rebuildHistory = () =>
+            {
+                historyRow.Children.Clear();
+                foreach (var h in History)
+                {
+                    string expr = h[0], result = h[1];
+                    var chip = Theme.MakeButton(result, () =>
+                    {
+                        // append rather than replace: the usual reason to reach for an earlier
+                        // result is to keep calculating with it
+                        append(result);
+                        display.Focus();
+                    }, padding: new Thickness(10, 3, 10, 3));
+                    chip.ToolTip = expr + " = " + result;
+                    chip.Margin = new Thickness(0, 0, 5, 0);
+                    historyRow.Children.Add(chip);
+                }
+                historyScroll.Visibility = History.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            };
+            rebuildHistory();
+            stack.Children.Insert(0, historyScroll);
+
+            copyBtn.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                string t = display.Text;
+                if (string.IsNullOrEmpty(t) || t == L.T("calc_error")) return;
+                try { Clipboard.SetText(t); preview.Text = L.T("calc_copied"); }
+                catch (Exception ex) { Log.Error("calc copy", ex); }
+            };
+
+            // ---------------- keyboard ----------------
+            // The display is a real TextBox, so digits already type. What was missing is the
+            // operator keys: * and / are what a keyboard actually produces, while the evaluator
+            // and the on-screen keys speak × and ÷.
+            display.PreviewTextInput += (s, e) =>
+            {
+                string ch = e.Text;
+                if (ch == "*") { append("×"); e.Handled = true; }
+                else if (ch == "/") { append("÷"); e.Handled = true; }
+                else if (ch == "=") { equals(); e.Handled = true; }
+            };
             display.KeyDown += (s, e) =>
             {
                 if (e.Key == Key.Enter) { equals(); e.Handled = true; }
                 else if (e.Key == Key.Escape) { clear(); e.Handled = true; }
+                else if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None
+                         && display.SelectionLength == 0 && display.CaretIndex == display.Text.Length)
+                {
+                    clear(); e.Handled = true;   // Del at the end clears, like a calculator's C
+                }
             };
             host.Loaded += (s, e) => display.Focus();
             return stack;
