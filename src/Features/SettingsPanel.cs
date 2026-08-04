@@ -116,14 +116,67 @@ namespace DeskMate.Features
                 themeRow.Children.Add(swatch);
             }
             stack.Children.Add(themeRow);
-            stack.Children.Add(Theme.MakeCheck(L.T("st_auto_theme"), Settings.I.AutoTheme, v =>
+            stack.Children.Add(Theme.MakeCheck(L.T("st_material_you"), Settings.I.MaterialYou, v =>
             {
-                Settings.I.AutoTheme = v;
-                Theme.Apply(Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, v, DateTime.Now.Hour));
+                Settings.I.MaterialYou = v;
+                if (v) Logic.MaterialYouCore.Invalidate();   // force re-derive on next tick
                 SaveAndReload();
                 PanelWindow.CloseCurrent();
                 Open(MainWindow.Instance);
             }));
+
+            stack.Children.Add(Theme.MakeCheck(L.T("st_auto_theme"), Settings.I.AutoTheme, v =>
+            {
+                Settings.I.AutoTheme = v;
+                Theme.Apply(Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.LightThemeIndex, v, DateTime.Now.Hour));
+                SaveAndReload();
+                PanelWindow.CloseCurrent();
+                Open(MainWindow.Instance);
+            }));
+
+            // "Day palette" — which palette to flip to during daylight when AutoTheme is on.
+            // Hidden when AutoTheme is off: the chosen theme is always the active one in that case.
+            if (Settings.I.AutoTheme)
+            {
+                stack.Children.Add(Theme.SectionTitle(L.T("st_day_palette")));
+                var dayRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 8) };
+                for (int i = 0; i < Theme.Palettes.Length; i++)
+                {
+                    int idx = i;
+                    var pal = Theme.Palettes[i];
+                    bool selected = Settings.I.LightThemeIndex == i;
+                    var swatch = new Border
+                    {
+                        Width = 26, Height = 26,
+                        CornerRadius = new CornerRadius(13),
+                        Background = new System.Windows.Media.LinearGradientBrush(pal.CardTop, pal.CardBottom, 90),
+                        BorderBrush = selected ? Theme.Accent : Theme.CardBorder,
+                        BorderThickness = new Thickness(selected ? 2.5 : 1),
+                        Margin = new Thickness(2, 0, 2, 0),
+                        Cursor = System.Windows.Input.Cursors.Hand,
+                        ToolTip = L.IsAr ? pal.KeyAr : pal.KeyEn,
+                        Child = new System.Windows.Shapes.Ellipse
+                        {
+                            Width = 10, Height = 10,
+                            Fill = new System.Windows.Media.SolidColorBrush(pal.Accent),
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                        },
+                    };
+                    swatch.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
+                    swatch.MouseLeftButtonUp += (s, e) =>
+                    {
+                        e.Handled = true;
+                        Settings.I.LightThemeIndex = idx;
+                        Theme.Apply(Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, idx, true, DateTime.Now.Hour));
+                        SaveAndReload();
+                        PanelWindow.CloseCurrent();
+                        Open(MainWindow.Instance);
+                    };
+                    dayRow.Children.Add(swatch);
+                }
+                stack.Children.Add(dayRow);
+            }
 
             // ---- background transparency ----
             stack.Children.Add(Theme.SectionTitle(L.T("st_opacity")));
@@ -141,7 +194,10 @@ namespace DeskMate.Features
             clockCombo.Items.Add(L.T("st_style_digital"));
             clockCombo.Items.Add(L.T("st_style_analog"));
             clockCombo.Items.Add(L.T("st_style_minimal"));
-            clockCombo.SelectedIndex = Math.Max(0, Math.Min(2, Settings.I.ClockStyle));
+            clockCombo.Items.Add(L.T("st_style_flip"));
+            clockCombo.Items.Add(L.T("st_style_word"));
+            clockCombo.Items.Add(L.T("st_style_neon"));
+            clockCombo.SelectedIndex = Math.Max(0, Math.Min(5, Settings.I.ClockStyle));
             clockCombo.SelectionChanged += (s, e) =>
             {
                 Settings.I.ClockStyle = clockCombo.SelectedIndex;

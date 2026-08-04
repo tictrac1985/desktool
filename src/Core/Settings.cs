@@ -27,6 +27,14 @@ namespace DeskMate.Core
         public int ThemeIndex = 0;
         public bool AutoTheme = false;        // day (06–18) → light palette, night → chosen palette
         public int LayoutIndex = 0;      // 0 classic, 1 connected, 2 tri-panel, 3 orbit, 4 sidebar, 5 dock
+        /// <summary>Index of the palette used for the "day" side of <see cref="AutoTheme"/>.
+        /// Defaults to 4 (Light) for backward compatibility. The user can pick a different
+        /// light-friendly palette without losing their night choice.</summary>
+        public int LightThemeIndex = 4;
+        /// <summary>When true, the dominant colour of the current desktop wallpaper is
+        /// extracted once and used to build a custom palette. Overrides <see cref="ThemeIndex"/>
+        /// (until turned off). Default off: most users want a stable theme.</summary>
+        public bool MaterialYou = false;
         public double Scale = 1.0;
         public double BgOpacity = 1.0;   // 0.3 .. 1.0 — widget card background only
 
@@ -238,6 +246,8 @@ namespace DeskMate.Core
             Num("PosY",               s => s.PosY,               (s, v) => s.PosY = v),
             Int("ThemeIndex",         s => s.ThemeIndex,         (s, v) => s.ThemeIndex = v),
             Bit("AutoTheme",          s => s.AutoTheme,          (s, v) => s.AutoTheme = v),
+            Int("LightThemeIndex",    s => s.LightThemeIndex,    (s, v) => s.LightThemeIndex = v),
+            Bit("MaterialYou",        s => s.MaterialYou,        (s, v) => s.MaterialYou = v),
             Int("LayoutIndex",        s => s.LayoutIndex,        (s, v) => s.LayoutIndex = v),
             Num("Scale",              s => s.Scale,              (s, v) => s.Scale = v),
             Num("BgOpacity",          s => s.BgOpacity,          (s, v) => s.BgOpacity = v),
@@ -294,7 +304,9 @@ namespace DeskMate.Core
             if (AdhanSound < 0 || AdhanSound > 2) AdhanSound = 0;
             // keep in sync with UI.Theme.Palettes.Length — an out-of-range value used to
             // loop Theme.Apply → Reload → tick → Apply until StackOverflow killed the process
-            if (ThemeIndex < 0 || ThemeIndex > 4) ThemeIndex = 0;
+            if (ThemeIndex < 0 || ThemeIndex > 7) ThemeIndex = 0;
+            if (LightThemeIndex < 0 || LightThemeIndex > 7) LightThemeIndex = 4;
+            if (ClockStyle < 0 || ClockStyle > 5) ClockStyle = 0;   // 0..5: digital, analog, minimal, flip, word, neon
             if (PrayerAdjust == null || PrayerAdjust.Length != 6) PrayerAdjust = new int[6];
             for (int i = 0; i < PrayerAdjust.Length; i++)
             {

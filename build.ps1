@@ -98,7 +98,7 @@ $refsApp = @(
 )
 # System.Security carries ProtectedData (DPAPI), used by Core\Secret.cs
 $refsPure = @("$fw\mscorlib.dll", "$fw\System.dll", "$fw\System.Core.dll", "$fw\System.Xml.dll",
-              "$fw\System.Security.dll")
+              "$fw\System.Security.dll", "$fw\System.Drawing.dll")
 
 # ---------------- Authenticode signing ----------------
 function Get-SignTool {

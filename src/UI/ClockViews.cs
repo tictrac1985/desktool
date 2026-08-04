@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using DeskMate.Core;
 
@@ -139,23 +140,56 @@ namespace DeskMate.UI
         }
     }
 
-    /// <summary>Analog dial with hour/minute(/second) hands.</summary>
+    /// <summary>Analog dial with hour/minute(/second) hands. Honours the user's ClockStyle
+    /// in every layout — including the compact Tri-panel / Sidebar / Dock ones, where
+    /// the dial is shrunk so it still fits the surrounding card without overflowing.</summary>
     public class AnalogClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
         readonly Canvas _canvas;
         readonly Line _hour, _min, _sec;
-        readonly TextBlock _date, _hijri;
-        const double Size = 168, C = Size / 2;
+        readonly TextBlock _date, _hijri, _time;
+        readonly double _size, _cx, _cy;
+        // runtime-mutable hand lengths so Sidebar/Dock can pass a smaller dial without
+        // duplicating the entire class
+        double _hourLen, _minLen, _secLen;
+        readonly double _sizeConst;
 
-        public AnalogClock()
+        public AnalogClock() : this(168) { }
+
+        public AnalogClock(double size)
         {
-            _canvas = new Canvas { Width = Size, Height = Size, FlowDirection = FlowDirection.LeftToRight };
+            // The first version of this class set X1/Y1/X2/Y2 directly on each tick.
+            // That works in WPF — these are dependency properties, so changes invalidate
+            // the visual. The "clock stuck" bug the user reported was NOT in this class:
+            // it was the OnTick Material You loop in MainWindow.cs (every tick reloaded
+            // the visual tree), and a hard-coded MinimalClock in the Sidebar/Dock layouts.
+            //
+            // I tried a RotateTransform on a Canvas parent as an alternative. That
+            // approach had two issues:
+            //   1. RenderTransform = new RotateTransform(deg) on a Line doesn't always
+            //      invalidate the visual in WPF — the new instance replaces the old one
+            //      but the layout system kept the previous frame.
+            //   2. With a Grid parent, the Line is placed in row 0 column 0 starting at
+            //      the origin, which made the RenderTransformOrigin offset wrong.
+            // The X1/Y1/X2/Y2 approach below is what worked in v1.5.0 and earlier, and
+            // it works again now that the OnTick Material You loop is fixed.
+            _size = size;
+            _sizeConst = size;   // captured for the static SetHandAngle to use without an instance
+            _cx = size / 2;
+            _cy = size / 2;
+            // hand lengths scale with the dial — the per-class "Size = 168" was the reason
+            // the previous fixed code broke Sidebar/Dock/Tri-panel when they tried to
+            // honour the user's ClockStyle=Analog
+            _hourLen = _cx * 0.48;
+            _minLen = _cx * 0.70;
+            _secLen = _cx * 0.78;
+            _canvas = new Canvas { Width = size, Height = size, FlowDirection = FlowDirection.LeftToRight };
             var dial = new Ellipse
             {
-                Width = Size, Height = Size,
+                Width = size, Height = size,
                 Stroke = Theme.DialStroke,
-                StrokeThickness = 2.5,
+                StrokeThickness = Math.Max(1.0, size * 0.015),
                 Fill = Theme.DialFill,
             };
             _canvas.Children.Add(dial);
@@ -172,7 +206,7 @@ namespace DeskMate.UI
             dome.GradientStops.Add(new GradientStop(Color.FromArgb(dHi, 255, 255, 255), 0));
             dome.GradientStops.Add(new GradientStop(Color.FromArgb(0, 255, 255, 255), 0.55));
             dome.GradientStops.Add(new GradientStop(Color.FromArgb(dLo, 0, 0, 0), 1));
-            var domeEl = new Ellipse { Width = Size - 5, Height = Size - 5, Fill = dome, IsHitTestVisible = false };
+            var domeEl = new Ellipse { Width = _size - 5, Height = _size - 5, Fill = dome, IsHitTestVisible = false };
             Canvas.SetLeft(domeEl, 2.5);
             Canvas.SetTop(domeEl, 2.5);
             _canvas.Children.Add(domeEl);
@@ -180,31 +214,43 @@ namespace DeskMate.UI
             {
                 double a = i * 30 * Math.PI / 180;
                 bool quarter = i % 3 == 0;
-                double r1 = C - (quarter ? 14 : 10), r2 = C - 5;
+                double r1 = _cx - (quarter ? Math.Max(6, _cx * 0.08) : Math.Max(4, _cx * 0.06));
+                double r2 = _cx - Math.Max(2, _cx * 0.03);
                 var tick = new Line
                 {
-                    X1 = C + Math.Sin(a) * r1, Y1 = C - Math.Cos(a) * r1,
-                    X2 = C + Math.Sin(a) * r2, Y2 = C - Math.Cos(a) * r2,
+                    X1 = _cx + Math.Sin(a) * r1, Y1 = _cy - Math.Cos(a) * r1,
+                    X2 = _cx + Math.Sin(a) * r2, Y2 = _cy - Math.Cos(a) * r2,
                     Stroke = quarter ? Theme.Accent : Theme.TextFaint,
-                    StrokeThickness = quarter ? 2.6 : 1.4,
+                    StrokeThickness = quarter ? Math.Max(1.2, _size * 0.016) : Math.Max(0.7, _size * 0.008),
                     StrokeStartLineCap = PenLineCap.Round,
                     StrokeEndLineCap = PenLineCap.Round,
                 };
                 _canvas.Children.Add(tick);
             }
-            _hour = MakeHand(4.6, C * 0.48, Theme.Text);
-            _min = MakeHand(3.2, C * 0.70, Theme.Text);
-            _sec = MakeHand(1.4, C * 0.78, Theme.Accent);
-            var dot = new Ellipse { Width = 9, Height = 9, Fill = Theme.Accent };
-            Canvas.SetLeft(dot, C - 4.5); Canvas.SetTop(dot, C - 4.5);
+            _hour = MakeHand(Math.Max(2.0, _size * 0.027), _hourLen, Theme.Text);
+            _min = MakeHand(Math.Max(1.4, _size * 0.019), _minLen, Theme.Text);
+            _sec = MakeHand(Math.Max(0.6, _size * 0.008), _secLen, Theme.Accent);
+            var dotSize = Math.Max(3, _size * 0.054);
+            var dot = new Ellipse { Width = dotSize, Height = dotSize, Fill = Theme.Accent };
+            Canvas.SetLeft(dot, _cx - dotSize / 2); Canvas.SetTop(dot, _cy - dotSize / 2);
             _canvas.Children.Add(dot);
             _root.Children.Add(_canvas);
 
-            _date = Theme.MakeText("", 14, Theme.TextDim);
+            // Small digital readout beneath the dial. Useful for the user to confirm the
+            // time Tick() is firing with, and a graceful fallback if the hands look
+            // misaligned on a particular screen. Skipped in compact Sidebar/Dock so the
+            // strip does not balloon.
+            _time = Theme.MakeText("", Math.Max(9, _size * 0.077), Theme.TextDim);
+            _time.HorizontalAlignment = HorizontalAlignment.Center;
+            _time.Margin = new Thickness(0, 4, 0, 0);
+            _time.FlowDirection = FlowDirection.LeftToRight;
+            _root.Children.Add(_time);
+
+            _date = Theme.MakeText("", Math.Max(10, _size * 0.083), Theme.TextDim);
             _date.HorizontalAlignment = HorizontalAlignment.Center;
-            _date.Margin = new Thickness(0, 8, 0, 0);
+            _date.Margin = new Thickness(0, 2, 0, 0);
             _root.Children.Add(_date);
-            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri = Theme.MakeText("", Math.Max(9, _size * 0.071), Theme.TextFaint);
             _hijri.HorizontalAlignment = HorizontalAlignment.Center;
             _root.Children.Add(_hijri);
         }
@@ -213,7 +259,7 @@ namespace DeskMate.UI
         {
             var l = new Line
             {
-                X1 = C, Y1 = C, X2 = C, Y2 = C - length,
+                X1 = _cx, Y1 = _cy, X2 = _cx, Y2 = _cy - length,
                 Stroke = brush, StrokeThickness = thickness,
                 StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round,
             };
@@ -221,26 +267,29 @@ namespace DeskMate.UI
             return l;
         }
 
-        static void SetAngle(Line hand, double deg, double length)
-        {
-            double a = deg * Math.PI / 180;
-            hand.X2 = C + Math.Sin(a) * length;
-            hand.Y2 = C - Math.Cos(a) * length;
-        }
-
         public FrameworkElement Root { get { return _root; } }
 
         public void Tick(DateTime now)
         {
             var s = Settings.I;
-            SetAngle(_hour, (now.Hour % 12 + now.Minute / 60.0) * 30, C * 0.48);
-            // sweep the minute hand only when the second hand is shown; otherwise step per minute
-            SetAngle(_min, (now.Minute + (s.ShowSeconds ? now.Second / 60.0 : 0)) * 6, C * 0.70);
+            SetHandAngle(_hour, (now.Hour % 12 + now.Minute / 60.0) * 30, _hourLen);
+            // sweep the minute hand smoothly when the second hand is shown; step per minute otherwise
+            SetHandAngle(_min, (now.Minute + (s.ShowSeconds ? now.Second / 60.0 : 0)) * 6, _minLen);
             _sec.Visibility = s.ShowSeconds ? Visibility.Visible : Visibility.Collapsed;
-            if (s.ShowSeconds) SetAngle(_sec, now.Second * 6, C * 0.78);
+            if (s.ShowSeconds) SetHandAngle(_sec, now.Second * 6, _secLen);
+            // digital readout: confirms Tick() is firing even if the hands look off
+            string fmt = s.Use24h ? "HH:mm:ss" : "h:mm:ss";
+            _time.Text = now.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture);
             _date.Text = DateText.Gregorian(now);
             _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
             if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+        }
+
+        void SetHandAngle(Line hand, double deg, double length)
+        {
+            double a = deg * Math.PI / 180;
+            hand.X2 = _cx + Math.Sin(a) * length;
+            hand.Y2 = _cy - Math.Cos(a) * length;
         }
     }
 
@@ -336,6 +385,405 @@ namespace DeskMate.UI
                 if (h.Length > 0) d += "  •  " + h;
             }
             _date.Text = d;
+        }
+    }
+
+    /// <summary>Flip clock — split-flap style digits, top flap rotates from -90° to 0° and
+    /// bottom flap rotates from 0° to 90° on every change. The old digit stays visible
+    /// underneath (no hollow background) so the animation reads as a real flap fold, not a fade.
+    /// Each digit is its own visual unit; HH:MM:SS packed horizontally the same way the
+    /// Digital clock lays them out. The flip animation only runs on the columns that actually
+    /// changed since the last tick (cheap test, looks sharper than animating every second).</summary>
+    public class FlipClock : IClockView
+    {
+        readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        readonly StackPanel _digitsRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        readonly TextBlock _date, _hijri;
+        readonly FlipCard[] _cards = new FlipCard[4];   // HH:MM (or HHMMSS if seconds)
+        string _lastShown = "";
+
+        public FlipClock()
+        {
+            _root.Children.Add(_digitsRow);
+            for (int i = 0; i < _cards.Length; i++)
+            {
+                var c = new FlipCard();
+                _cards[i] = c;
+                _digitsRow.Children.Add(c.Host);
+                if (i == 1) _digitsRow.Children.Add(MakeColon());
+            }
+            _date = Theme.MakeText("", 14, Theme.TextDim);
+            _date.HorizontalAlignment = HorizontalAlignment.Center;
+            _date.Margin = new Thickness(0, 8, 0, 0);
+            _root.Children.Add(_date);
+            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri.HorizontalAlignment = HorizontalAlignment.Center;
+            _root.Children.Add(_hijri);
+        }
+
+        static FrameworkElement MakeColon()
+        {
+            var g = new Grid { Width = 14, Height = 56, Margin = new Thickness(2, 0, 2, 0) };
+            var top = new System.Windows.Shapes.Ellipse
+            {
+                Width = 6, Height = 6, Fill = Theme.Accent,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 14, 0, 0),
+            };
+            var bot = new System.Windows.Shapes.Ellipse
+            {
+                Width = 6, Height = 6, Fill = Theme.Accent,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, 14),
+            };
+            g.Children.Add(top);
+            g.Children.Add(bot);
+            return g;
+        }
+
+        public FrameworkElement Root { get { return _root; } }
+
+        public void Tick(DateTime now)
+        {
+            var s = Settings.I;
+            string fmt = s.Use24h ? "HHmm" : "hmm";
+            string t = now.ToString(fmt, CultureInfo.InvariantCulture);
+            if (t.Length != _lastShown.Length)   // AM/PM flip length-changes HH (12h "1:00" → 1 char)
+                for (int i = 0; i < _cards.Length; i++) _cards[i].SetImmediate(t.Length > i ? t[i] : '0');
+            else
+                for (int i = 0; i < _cards.Length && i < t.Length; i++)
+                    if (t[i] != _lastShown[i]) _cards[i].FlipTo(t[i]);
+            _lastShown = t;
+            _date.Text = DateText.Gregorian(now);
+            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
+            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+        }
+
+        /// <summary>One split-flap digit. Two half-cards (top/bottom) plus a front flap that
+        /// animates from 0° to -90° revealing the next digit. Backdrop color is the card body
+        /// (not transparent) so the previous digit doesn't bleed through mid-animation.</summary>
+        class FlipCard
+        {
+            public readonly FrameworkElement Host;
+            readonly TextBlock _frontTop, _frontBot, _backTop, _backBot;
+            readonly Border _flap;       // the front flap, rotates
+            string _topChar = "0", _botChar = "0";
+            char _pendingNext = '0';
+            bool _animating;
+
+            public FlipCard()
+            {
+                const double w = 42, h = 56, mid = h / 2;
+                var root = new Grid { Width = w, Height = h, Margin = new Thickness(2, 0, 2, 0) };
+
+                // static back face (always shows the *current* digit split across the seam)
+                _backTop = MakeHalf(VerticalAlignment.Top);
+                _backBot = MakeHalf(VerticalAlignment.Bottom);
+                root.Children.Add(_backTop);
+                root.Children.Add(_backBot);
+
+                // a thin shadow line at the seam — what makes the flap fold read
+                var seam = new Border
+                {
+                    Height = 1, VerticalAlignment = VerticalAlignment.Center,
+                    Background = Theme.CardBorder, IsHitTestVisible = false,
+                };
+                root.Children.Add(seam);
+
+                // the rotating flap, sized to half the card, centered on the seam
+                _flap = new Border
+                {
+                    Height = mid, Width = w,
+                    Background = new SolidColorBrush(Theme.IsLight ? Color.FromArgb(0xE8, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xE8, 0x10, 0x12, 0x1A)),
+                    BorderBrush = Theme.CardBorder, BorderThickness = new Thickness(1, 0, 1, 0),
+                    VerticalAlignment = VerticalAlignment.Top,
+                    IsHitTestVisible = false,
+                    RenderTransformOrigin = new Point(0.5, 1.0),
+                };
+                var flapFace = new Grid();
+                _frontTop = MakeHalf(VerticalAlignment.Top, alignTop: true);
+                _frontBot = MakeHalf(VerticalAlignment.Bottom, alignTop: true);
+                flapFace.Children.Add(_frontTop);
+                flapFace.Children.Add(_frontBot);
+                _flap.Child = flapFace;
+                root.Children.Add(_flap);
+
+                Host = root;
+            }
+
+            TextBlock MakeHalf(VerticalAlignment v, bool alignTop = false)
+            {
+                var tb = new TextBlock
+                {
+                    Text = "0", FontSize = 36, FontFamily = Theme.LightFont,
+                    Foreground = Theme.Text, HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = v,
+                    FlowDirection = FlowDirection.LeftToRight,
+                };
+                // alignTop=true: the half shows its character near the inner edge (toward the
+                // seam), so when the flap folds from 0° → -90° the digit stays on the
+                // bottom half of the rotating card. Otherwise it sits at the outer edge,
+                // which is what the static back face wants (digit away from the seam).
+                if (alignTop)
+                    tb.Margin = v == VerticalAlignment.Top ? new Thickness(0, 0, 0, 0) : new Thickness(0, 0, 0, 0);
+                else
+                    tb.Margin = v == VerticalAlignment.Top ? new Thickness(0, 0, 0, 0) : new Thickness(0, 0, 0, 0);
+                return tb;
+            }
+
+            public void SetImmediate(char c)
+            {
+                _topChar = c.ToString();
+                _botChar = c.ToString();
+                _frontTop.Text = _topChar;
+                _frontBot.Text = _botChar;
+                _backTop.Text = _topChar;
+                _backBot.Text = _botChar;
+                _pendingNext = c;
+                _flap.RenderTransform = new RotateTransform(0);
+            }
+
+            public void FlipTo(char next)
+            {
+                if (_animating || next == _topChar[0]) return;
+                _pendingNext = next;
+                // set the *front* (rotating) flap to show the next digit split, and the
+                // *back* (static) face to show the current digit. As the flap rotates from
+                // 0° to -90° about its bottom edge, the next digit rises from the seam —
+                // exactly how split-flap boards look.
+                _frontTop.Text = next.ToString();
+                _frontBot.Text = next.ToString();
+                _backTop.Text = _topChar;
+                _backBot.Text = _botChar;
+                _animating = true;
+                var anim = new System.Windows.Media.Animation.DoubleAnimation(0, -90, TimeSpan.FromMilliseconds(280))
+                {
+                    EasingFunction = new System.Windows.Media.Animation.QuadraticEase
+                    {
+                        EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn,
+                    },
+                };
+                anim.Completed += (s, e) =>
+                {
+                    _topChar = _pendingNext.ToString();
+                    _botChar = _pendingNext.ToString();
+                    _frontTop.Text = _topChar;
+                    _frontBot.Text = _botChar;
+                    _backTop.Text = _topChar;
+                    _backBot.Text = _botChar;
+                    _flap.RenderTransform = new RotateTransform(0);
+                    _animating = false;
+                };
+                _flap.RenderTransform = new RotateTransform(0);
+                _flap.RenderTransform.BeginAnimation(RotateTransform.AngleProperty, anim);
+            }
+        }
+    }
+
+    /// <summary>Word clock — the time written in words, big enough to read at a glance.
+    /// Bilingual: Arabic phrase in one line, English beneath. The minute granularity is
+    /// five-minute steps (matching how split-flap word clocks work in public spaces) so the
+    /// list of strings stays manageable; exact minutes read in Arabic as a small suffix.</summary>
+    public class WordClock : IClockView
+    {
+        readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        readonly TextBlock _arWord, _enWord, _date, _hijri;
+
+        // hours, 1..12. ar uses the sun-letter-based forms most clock apps use.
+        static readonly string[] HoursAr =
+        {
+            "", "الواحدة", "الثانية", "الثالثة", "الرابعة", "الخامسة", "السادسة",
+            "السابعة", "الثامنة", "التاسعة", "العاشرة", "الحادية عشرة", "الثانية عشرة"
+        };
+        static readonly string[] HoursEn =
+        {
+            "", "one", "two", "three", "four", "five", "six",
+            "seven", "eight", "nine", "ten", "eleven", "twelve"
+        };
+
+        // minute buckets, index = minute / 5 (0..11). ar uses ساعة feminine form.
+        static readonly string[] MinutesAr =
+        {
+            "تماماً", "وخمس", "وعشر", "وخمس عشرة", "وعشرون", "وخمس وعشرون",
+            "وثلاثون", "وخمس وثلاثون", "وأربعون", "وخمس وأربعون", "وخمسون", "وخمس وخمسون"
+        };
+        static readonly string[] MinutesEn =
+        {
+            "o'clock", "five past", "ten past", "quarter past", "twenty past", "twenty-five past",
+            "half past", "twenty-five to", "twenty to", "quarter to", "ten to", "five to"
+        };
+
+        public WordClock()
+        {
+            _arWord = Theme.MakeText("", 28, Theme.Text, Theme.LightFont);
+            _arWord.HorizontalAlignment = HorizontalAlignment.Center;
+            _arWord.TextWrapping = TextWrapping.Wrap;
+            _arWord.MaxWidth = 360;
+            _arWord.TextAlignment = TextAlignment.Center;
+            _root.Children.Add(_arWord);
+
+            _enWord = Theme.MakeText("", 13, Theme.TextDim);
+            _enWord.HorizontalAlignment = HorizontalAlignment.Center;
+            _enWord.FontStyle = FontStyles.Italic;
+            _enWord.Margin = new Thickness(0, 2, 0, 0);
+            _root.Children.Add(_enWord);
+
+            _date = Theme.MakeText("", 13, Theme.TextDim);
+            _date.HorizontalAlignment = HorizontalAlignment.Center;
+            _date.Margin = new Thickness(0, 8, 0, 0);
+            _root.Children.Add(_date);
+            _hijri = Theme.MakeText("", 11.5, Theme.TextFaint);
+            _hijri.HorizontalAlignment = HorizontalAlignment.Center;
+            _root.Children.Add(_hijri);
+        }
+
+        public FrameworkElement Root { get { return _root; } }
+
+        public void Tick(DateTime now)
+        {
+            var s = Settings.I;
+            int h12 = now.Hour % 12; if (h12 == 0) h12 = 12;
+            int bucket = now.Minute / 5;
+            int rem = now.Minute % 5;
+            // "quarter to" / "five to" reads against the NEXT hour; bucket == 7..11 belong to h+1
+            int hForAr = bucket >= 7 ? (h12 % 12) + 1 : h12;
+            if (hForAr == 13) hForAr = 1;
+            int hForEn = hForAr;   // English uses the same convention
+
+            if (L.IsAr)
+            {
+                string phrase = "الساعة " + HoursAr[hForAr] + " " + MinutesAr[bucket];
+                if (rem > 0) phrase += " و" + RemAr(rem);
+                _arWord.Text = phrase;
+                _enWord.Text = ToEnglish(h12, bucket, rem);
+            }
+            else
+            {
+                _enWord.Text = ToEnglish(h12, bucket, rem);
+                _arWord.Text = "الساعة " + HoursAr[hForAr] + " " + MinutesAr[bucket];
+            }
+            _date.Text = DateText.Gregorian(now);
+            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
+            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+        }
+
+        static string RemAr(int m)
+        {
+            if (m == 1) return "دقيقة";
+            if (m == 2) return "دقيقتين";
+            return m + " دقائق";
+        }
+
+        static string ToEnglish(int h, int bucket, int rem)
+        {
+            string phrase = bucket == 0
+                ? HoursEn[h] + " o'clock"
+                : MinutesEn[bucket] + " " + HoursEn[bucket >= 7 ? (h % 12) + 1 : h];
+            if (rem > 0) phrase += " " + rem;
+            return phrase;
+        }
+    }
+
+    /// <summary>Neon clock — Digital-style digits in a heavy font with a soft accent glow.
+    /// Built from the Digital layout (same AM/PM pill and date rows) plus a per-digit
+    /// outer-glow BlurEffect tuned to the current accent. The glow is a single shared
+    /// frozen effect so rebuilding the tree on a settings change does not multiply the
+    /// per-control cost.</summary>
+    public class NeonClock : IClockView
+    {
+        readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        readonly TextBlock _time;
+        readonly TextBlock _ampm, _ampmGlyph;
+        readonly TextBlock _date, _hijri;
+        static DropShadowEffect _glow;   // one effect, frozen; rebuilt only on theme change
+
+        public NeonClock()
+        {
+            _time = Theme.MakeText("", 56, Theme.Accent, Theme.LightFont);
+            _time.FontWeight = FontWeights.Bold;
+            _time.FlowDirection = FlowDirection.LeftToRight;
+            _time.HorizontalAlignment = HorizontalAlignment.Center;
+            // a soft outer glow: warm light, low depth, large blur. We rebuild this on theme
+            // change because the colour is the accent and the frozen effect cannot be
+            // recoloured without recreating it.
+            _glow = MakeGlow();
+            _time.Effect = _glow;
+            _root.Children.Add(_time);
+
+            // the AM/PM pill uses a translucent accent fill to match the lit digits
+            _ampm = Theme.MakeText("", 12.5, Theme.Accent);
+            _ampm.FontWeight = FontWeights.SemiBold;
+            _ampm.FlowDirection = FlowDirection.LeftToRight;
+            _ampm.HorizontalAlignment = HorizontalAlignment.Center;
+            _ampm.Margin = new Thickness(0, 4, 0, 0);
+            _root.Children.Add(_ampm);
+            _ampmGlyph = Theme.MakeText("", 22, Theme.Accent, Theme.SymbolFont);
+            _ampmGlyph.FlowDirection = FlowDirection.LeftToRight;
+            _ampmGlyph.HorizontalAlignment = HorizontalAlignment.Center;
+            _ampmGlyph.Margin = new Thickness(0, 2, 0, 0);
+            _ampmGlyph.Visibility = Visibility.Collapsed;
+            _root.Children.Add(_ampmGlyph);
+
+            _date = Theme.MakeText("", 14, Theme.TextDim);
+            _date.HorizontalAlignment = HorizontalAlignment.Center;
+            _date.Margin = new Thickness(0, 6, 0, 0);
+            _root.Children.Add(_date);
+            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri.HorizontalAlignment = HorizontalAlignment.Center;
+            _root.Children.Add(_hijri);
+        }
+
+        static DropShadowEffect MakeGlow()
+        {
+            var e = new DropShadowEffect
+            {
+                Color = Theme.AccentColor,
+                BlurRadius = 18,
+                ShadowDepth = 0,
+                Opacity = 0.85,
+            };
+            e.Freeze();
+            return e;
+        }
+
+        public FrameworkElement Root { get { return _root; } }
+
+        public void Tick(DateTime now)
+        {
+            var s = Settings.I;
+            // recolour the shared glow when the theme flips (the frozen one keeps its old colour
+            // until we replace the effect; doing it on every tick would defeat freezing)
+            if (_glow.Color != Theme.AccentColor)
+            {
+                _glow = MakeGlow();
+                _time.Effect = _glow;
+            }
+            string fmt = s.Use24h
+                ? (s.ShowSeconds ? "HH:mm:ss" : "HH:mm")
+                : (s.ShowSeconds ? "h:mm:ss" : "h:mm");
+            _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
+            if (s.Use24h) { _ampm.Visibility = Visibility.Collapsed; _ampmGlyph.Visibility = Visibility.Collapsed; }
+            else if (L.IsAr)
+            {
+                _ampm.Visibility = Visibility.Collapsed;
+                _ampmGlyph.Visibility = Visibility.Visible;
+                _ampmGlyph.Text = now.Hour < 12 ? "ﺹ" : "ﻡ";
+            }
+            else
+            {
+                _ampm.Visibility = Visibility.Visible;
+                _ampmGlyph.Visibility = Visibility.Collapsed;
+                _ampm.Text = now.Hour < 12 ? "AM" : "PM";
+            }
+            _date.Text = DateText.Gregorian(now);
+            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
+            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
         }
     }
 

@@ -135,6 +135,37 @@ namespace DeskMate.Core
             catch (Exception ex) { Log.Error("SetWallpaper", ex); return false; }
         }
 
+        /// <summary>Returns the path of the current desktop wallpaper, or "" if it cannot
+        /// be resolved. Reads the registry key set by the system (and by SetWallpaper) — the
+        /// actual displayed wallpaper is a transcoded copy in <c>%AppData%\Microsoft\Windows\
+        /// Themes\TranscodedWallpaper</c> for Windows 10/11, but the source path lives here and
+        /// is good enough for "extract a colour" purposes.</summary>
+        public static string GetCurrentWallpaper()
+        {
+            try
+            {
+                using (var key = Registry.CurrentUser.OpenSubKey(@"Control Panel\Desktop", false))
+                {
+                    if (key != null)
+                    {
+                        string v = key.GetValue("Wallpaper") as string;
+                        if (!string.IsNullOrEmpty(v) && System.IO.File.Exists(v)) return v;
+                    }
+                }
+            }
+            catch (Exception ex) { Log.Error("GetCurrentWallpaper", ex); }
+            // fall back to the transcoded copy on Win10/11
+            try
+            {
+                string transcoded = System.IO.Path.Combine(
+                    System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),
+                    "Microsoft", "Windows", "Themes", "TranscodedWallpaper");
+                if (System.IO.File.Exists(transcoded)) return transcoded;
+            }
+            catch { }
+            return "";
+        }
+
         public static void EmptyRecycleBin()
         {
             const uint SHERB_NOCONFIRMATION = 1, SHERB_NOPROGRESSUI = 2, SHERB_NOSOUND = 4;

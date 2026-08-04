@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using DeskMate.Core;
 using DeskMate.Features;
@@ -185,12 +186,40 @@ namespace DeskMate.UI
         void OnTick(DateTime now)
         {
             // auto day/night theme — flip the palette exactly when the boundary is crossed
-            int eff = AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.AutoTheme, now.Hour);
-            if (eff != Theme.AppliedIndex)
+            int eff = AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.LightThemeIndex, Settings.I.AutoTheme, now.Hour);
+
+            // Material You: derive the palette from the wallpaper. The override is sticky
+            // until the user unchecks the option, but we still re-derive on every tick in
+            // case the wallpaper changed (cheap because MaterialYouCore caches by path+mtime).
+            //
+            // Each branch that calls Reload() must also update Theme.AppliedIndex so the next
+            // tick does NOT take the same branch again. The earlier code kept AppliedIndex at
+            // the old value (so the "eff != AppliedIndex" branch fired every tick when Material
+            // You was on), which rebuilt the visual tree every second and froze the clock —
+            // the clock object was recreated on every Reload() and lost its per-tick state.
+            if (Settings.I.MaterialYou && !Theme.MaterialYouActive)
             {
+                var mp = Logic.MaterialYouCore.GenerateFromWallpaper();
+                Theme.ApplyMaterial(Color.FromRgb((byte)mp.Accent.R, (byte)mp.Accent.G, (byte)mp.Accent.B),
+                    Color.FromRgb((byte)mp.CardTop.R, (byte)mp.CardTop.G, (byte)mp.CardTop.B),
+                    Color.FromRgb((byte)mp.CardBottom.R, (byte)mp.CardBottom.G, (byte)mp.CardBottom.B),
+                    eff);
+                Reload();
+                return;
+            }
+            if (!Settings.I.MaterialYou && Theme.MaterialYouActive)
+            {
+                // user just turned Material You off — fall back to the normal theme
                 Theme.Apply(eff);
                 Reload();
-                return; // Reload already ticks once
+                return;
+            }
+            if (eff != Theme.AppliedIndex)
+            {
+                // normal theme flip (ThemeIndex change, or day/night boundary crossed)
+                Theme.Apply(eff);
+                Reload();
+                return;
             }
 
             // "Show desktop" (Win+D) minimizes even tool windows; restore automatically

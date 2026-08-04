@@ -86,8 +86,11 @@ namespace DeskMate.UI
             if (timeOnly) return new TimeOnlyClock();
             switch (Settings.I.ClockStyle)
             {
-                case 1: return new AnalogClock();
+                case 1: return new AnalogClock();       // 168 px — large Classic / Connected / Orbit
                 case 2: return new MinimalClock();
+                case 3: return new FlipClock();
+                case 4: return new WordClock();
+                case 5: return new NeonClock();
                 default: return new DigitalClock(digitalSize);
             }
         }
@@ -204,10 +207,14 @@ namespace DeskMate.UI
         }
 
         /// <summary>Layout 2 — big time in the middle, Hijri card on one side and
-        /// Gregorian on the other, icon pill underneath.</summary>
+        /// Gregorian on the other, icon pill underneath. The clock honours the user's
+        /// ClockStyle — Analog is rendered as a 120-px compact dial that fits between
+        /// the date cards without overflowing.</summary>
         FrameworkElement BuildTriple()
         {
-            _clock = MakeClock(true);
+            // Tri-panel is wide enough for a 120-px analog dial; Flip/Word/Neon and Digital
+            // are drawn at the size their builders default to. Minimal stays Minimal.
+            _clock = Settings.I.ClockStyle == 1 ? (IClockView)new AnalogClock(120) : MakeClock(false);
             var centerInner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
             centerInner.Children.Add(_clock.Root);
             centerInner.Children.Add(StatusLines());
@@ -349,10 +356,17 @@ namespace DeskMate.UI
         }
 
         /// <summary>Layout 4 — vertical sidebar: compact clock on top, menu-style rows
-        /// with always-visible names beneath.</summary>
+        /// with always-visible names beneath. The clock honours the user's ClockStyle —
+        /// Analog is rendered as a 104-px compact dial that fits the strip; Flip and Word
+        /// are too tall for the column and fall back to Digital; Minimal and Neon are honoured.</summary>
         FrameworkElement BuildSidebar()
         {
-            _clock = new MinimalClock();
+            int style = Settings.I.ClockStyle;
+            _clock = style == 1 ? (IClockView)new AnalogClock(104)
+                : style == 2 ? (IClockView)new MinimalClock()
+                : style == 5 ? (IClockView)new NeonClock()
+                : style == 3 || style == 4 ? MakeClock(false, 26)   // Flip/Word too tall → Digital fallback
+                : MakeClock(false, 26);
             var stack = new StackPanel { MinWidth = 176 };
             stack.Children.Add(_clock.Root);
             stack.Children.Add(StatusLines());
@@ -419,10 +433,15 @@ namespace DeskMate.UI
         }
 
         /// <summary>Layout 5 — slim horizontal dock pill: time + date on one side,
-        /// labeled tool cells inline.</summary>
+        /// labeled tool cells inline. The clock honours the user's ClockStyle — Analog
+        /// is rendered as a 100-px compact dial, Flip/Word/Neon are honoured as long as
+        /// they fit the strip height, Minimal still fits comfortably.</summary>
         FrameworkElement BuildDock()
         {
-            _clock = new MinimalClock();
+            int style = Settings.I.ClockStyle;
+            _clock = style == 1 ? (IClockView)new AnalogClock(100)
+                : style == 2 ? (IClockView)new MinimalClock()
+                : MakeClock(false, 22);
             var clockCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             clockCol.Children.Add(_clock.Root);
             clockCol.Children.Add(StatusLines());
@@ -452,6 +471,69 @@ namespace DeskMate.UI
             var pill = MakeCardTracked(rowStack, 40);
             Theme.SetCardPadding(pill, new Thickness(18, 10, 18, 10));
             return WithGrip(pill);
+        }
+
+        /// <summary>Build one crystal shard holding 1 or 2 tool glyphs. The shard is a 56px
+        /// rounded square; each glyph is a clickable region that opens its feature panel.
+        /// Tilt is randomised per shard so the cluster feels organic, not regimented.
+        /// (Crystal layout was removed in v1.5.4 after the user reported it was too busy;
+        /// these helpers remain compiled but unused so older call sites — and the WPF
+        /// designer — keep building.)</summary>
+        FrameworkElement MakeShard(Tuple<string, string, Action> first, Tuple<string, string, Action> secondTuple)
+        {
+            var stack = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            var b1 = MakeShardButton(first.Item1, first.Item3);
+            stack.Children.Add(b1);
+            if (secondTuple != null)
+            {
+                var b2 = MakeShardButton(secondTuple.Item1, secondTuple.Item3);
+                stack.Children.Add(b2);
+            }
+            var shard = new Border
+            {
+                Width = secondTuple == null ? 44 : 60,
+                Height = 44,
+                CornerRadius = new CornerRadius(14),
+                Background = Theme.ButtonBg,
+                BorderBrush = Theme.CardBorder,
+                BorderThickness = new Thickness(1),
+                Child = stack,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Effect = Theme.Elevation(2),
+                RenderTransformOrigin = new Point(0.5, 0.5),
+            };
+            // small per-shard tilt. The angle is derived from the shard's hash so it's stable
+            // across rebuilds (no jitter on every settings change) but differs between shards
+            var angle = (shard.GetHashCode() % 7) - 3;   // -3..+3 degrees
+            shard.RenderTransform = new RotateTransform(angle);
+            return shard;
+        }
+
+        FrameworkElement MakeShardButton(string glyph, Action onClick)
+        {
+            var tb = Theme.MakeGlyph(glyph, 14);
+            tb.HorizontalAlignment = HorizontalAlignment.Center;
+            tb.VerticalAlignment = VerticalAlignment.Center;
+            var b = new Border
+            {
+                Width = 28, Height = 28,
+                CornerRadius = new CornerRadius(8),
+                Background = Brushes.Transparent,
+                Child = tb,
+                Cursor = System.Windows.Input.Cursors.Hand,
+            };
+            b.MouseEnter += (s, e) => { tb.Foreground = Theme.Accent; b.Background = Theme.HoverBg; };
+            b.MouseLeave += (s, e) => { tb.Foreground = Theme.Text; b.Background = Brushes.Transparent; };
+            b.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                PanelWindow.PendingAnchor = b;
+                try { onClick(); } catch (Exception ex) { Log.Error("shard", ex); }
+            };
+            b.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
+            return b;
         }
     }
 }

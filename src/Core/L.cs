@@ -196,12 +196,17 @@ namespace DeskMate.Core
             { "wc_here",         new[] { "توقيتك المحلي", "your local time" } },
 
             { "st_auto_theme",   new[] { "ثيم تلقائي (فاتح نهاراً، المختار ليلاً)", "Auto theme (light by day, chosen at night)" } },
+            { "st_day_palette",  new[] { "ثيم النهار", "Day palette" } },
+            { "st_material_you", new[] { "ثيم من الخلفية (Material You)", "Theme from wallpaper (Material You)" } },
 
             { "st_lang",         new[] { "اللغة", "Language" } },
             { "st_clock",        new[] { "شكل الساعة", "Clock style" } },
             { "st_style_digital",new[] { "رقمية", "Digital" } },
             { "st_style_analog", new[] { "عقارب", "Analog" } },
             { "st_style_minimal",new[] { "بسيطة", "Minimal" } },
+            { "st_style_flip",   new[] { "قلابة", "Flip" } },
+            { "st_style_word",   new[] { "كلمات", "Word" } },
+            { "st_style_neon",   new[] { "نيون", "Neon" } },
             { "st_24h",          new[] { "نظام 24 ساعة", "24-hour format" } },
             { "st_seconds",      new[] { "إظهار الثواني", "Show seconds" } },
             { "st_hijri",        new[] { "التاريخ الهجري", "Hijri date" } },
@@ -224,6 +229,7 @@ namespace DeskMate.Core
             { "ly_orbit",        new[] { "مداري", "Orbit" } },
             { "ly_sidebar",      new[] { "قائمة جانبية", "Sidebar" } },
             { "ly_dock",         new[] { "شريط أفقي", "Dock" } },
+            { "ly_crystal",      new[] { "بلوري", "Crystal" } },
 
             { "g_close",         new[] { "إغلاق", "Close" } },
             { "g_ok",            new[] { "موافق", "OK" } },

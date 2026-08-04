@@ -1,5 +1,32 @@
 # سجل التغييرات · Changelog
 
+## v1.5.6 — 2026-08-04 — ClockStyle honoured in every layout
+- **Root cause of the "clock does not change" report.** Tri-panel, Sidebar and Dock were ignoring the user's `ClockStyle = Analog` choice — Tri-panel forced `TimeOnlyClock` and Sidebar/Dock forced `MinimalClock` or `Digital`. Picking Analog in Settings did nothing in those three layouts. All six layouts now honour the chosen style.
+- **`AnalogClock(double size)` constructor.** A new overload accepts the dial diameter so Tri-panel (120 px), Sidebar (104 px) and Dock (100 px) can host a compact analog dial that fits the surrounding card. Hand lengths, tick marks, dot and stroke thickness all scale with `size`. The original 168-px default is preserved.
+- **Layout mapping clarified.** Tri-panel: Analog → compact 120 px dial; Digital/Flip/Word/Neon at default size; Minimal unchanged. Sidebar: Analog → 104 px dial; Flip/Word fall back to Digital (too tall for the strip). Dock: Analog → 100 px dial; Flip/Word/Neon at default; Minimal unchanged.
+- **Tests** — 232 (unchanged: the fix is in the layout builder dispatch, no new logic worth a test).
+
+## v1.5.5 — 2026-08-04 — Clock fix and Sidebar/Dock polish
+- **OnTick Material You loop fix.** `Theme.AppliedIndex` is now set to the effective theme index after `ApplyMaterial`, so the "eff != AppliedIndex" branch does not fire every tick when Material You is on. Without this, every second the visual tree was rebuilt and the clock lost its per-tick state, making the clock face look stuck.
+- **Sidebar and Dock honour ClockStyle.** Both layouts previously hard-coded `MinimalClock`; they now pick the chosen style (with a sensible size/fallback for the narrower strip).
+- **AnalogClock uses RotateTransform.** The hands used to be redrawn by setting `X2`/`Y2` on a `Line`, which WPF sometimes skipped repainting after a Reload. The hands are now `Line` elements with `RenderTransform = new RotateTransform(deg)`, which always invalidates the visual. A small digital readout is shown beneath the dial so the user can confirm `Tick()` is firing.
+- **Tests** — 232 (unchanged: the on-tick bug was a UI-only issue).
+
+## v1.5.4 — 2026-08-04 — Reverts and Material You fix
+- **Removed Crystal layout.** The user reported it was too busy and the Settings icon was hard to reach. Back to 6 layouts (0..5).
+- **Material You light-wallpaper fix.** `BuildPalette` and `ApplyMaterial` now detect a light accent and produce a *light* card with *dark* text, so white text never sits on a white background (the user reported this regression on a light wallpaper). Default: 6 dark palettes still picked for dark wallpapers, no change.
+- **Tests** — 232 (was 229): 3 new for the light-wallpaper path of `BuildPalette`.
+
+## v1.5.3 — 2026-08-04 — Design expansion pack
+- **Themes** — three new palettes: `Sahara` (navy + gold), `Mono Ink` (high-contrast black/white minimalist), `Aurora` (cyan + violet). Total now 8 (0..7).
+- **LightThemeIndex** — separate setting for the day side of AutoTheme (was hard-coded to 4 = Light). Backward-compatible default.
+- **Clocks** — three new styles: `Flip` (split-flap digits with 280 ms rotation), `Word` ("الساعة الثالثة وعشر دقائق" + EN bilingual, 5-min buckets), `Neon` (digit glow matching the accent). Settings.ClockStyle now 0..5.
+- **Layout** — `Crystal Cluster` (index 6): central card + 7 small tool shards scattered around with a per-shard tilt.
+- **Material You** — extract the dominant colour of the current wallpaper and build a custom palette from it. Cached by path + mtime so the per-tick cost is a `File.GetLastWriteTime` call. `Settings.MaterialYou` opt-in, off by default.
+- **Arabic font** — `Tajawal` listed first in the font fallback chain, with `Segoe UI → Tahoma → Arial` after it. Falls back gracefully on systems without Tajawal.
+- **Tests** — 229 (was 217): 4 new for LightThemeIndex, 8 new for Material You.
+- **UiSmoke** — added `widget_layout6_crystal.png` capture step.
+
 ## v1.5.2 — 2026-08-04
 
 الملاحظات صارت **قائمة مهام** مفهومة.

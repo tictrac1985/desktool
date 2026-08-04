@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using DeskMate.Core;
@@ -44,6 +45,7 @@ static class SelfTest
         TestAppScanner();
         TestWeather();
         TestAutoTheme();
+        TestMaterialYou();
         TestFocus();
         TestOccasions();
         TestWorldClocks();
@@ -596,8 +598,60 @@ static class SelfTest
         Check(AutoThemeCore.EffectiveIndex(1, true, 18) == 1, "auto theme boundary 18:00");
         // Regression: an out-of-range ThemeIndex made the effective index differ from the
         // applied one forever — Apply → Reload → tick looped until StackOverflow killed the app
-        Check(AutoThemeCore.EffectiveIndex(7, false, 10) == 0, "out-of-range theme clamps to 0");
+        Check(AutoThemeCore.EffectiveIndex(99, false, 10) == 0, "out-of-range theme clamps to 0");
         Check(AutoThemeCore.EffectiveIndex(-3, true, 22) == 0, "negative theme clamps to 0");
+        // Light index is user-pickable. The 4-arg overload takes the light index explicitly.
+        Check(AutoThemeCore.EffectiveIndex(3, 4, true, 10) == 4, "auto theme day → chosen light (4)");
+        Check(AutoThemeCore.EffectiveIndex(3, 7, true, 10) == 7, "auto theme day → chosen light (7)");
+        Check(AutoThemeCore.EffectiveIndex(3, 99, true, 10) == 4, "out-of-range light falls back to 4");
+        Check(AutoThemeCore.EffectiveIndex(3, 4, false, 10) == 3, "light ignored when auto off");
+    }
+
+    static void TestMaterialYou()
+    {
+        // 1) ExtractDominant on a uniformly-blue bitmap returns a near-blue colour
+        using (var blue = new Bitmap(32, 32))
+        {
+            for (int y = 0; y < 32; y++)
+                for (int x = 0; x < 32; x++)
+                    blue.SetPixel(x, y, Color.FromArgb(0x10, 0x60, 0xE0));
+            var dom = MaterialYouCore.ExtractDominant(blue);
+            // blue channel should dominate; red should be well below it
+            Check(dom.B > dom.R + 40, "blue wallpaper: blue channel dominates");
+            Check(dom.B > 100, "blue wallpaper: blue channel reasonably high");
+        }
+        // 2) ExtractDominant on a near-black bitmap returns a safe value (no crash)
+        using (var dark = new Bitmap(8, 8))
+        {
+            for (int y = 0; y < 8; y++)
+                for (int x = 0; x < 8; x++)
+                    dark.SetPixel(x, y, Color.FromArgb(2, 2, 2));
+            var dom = MaterialYouCore.ExtractDominant(dark);
+            Check(dom.R >= 0 && dom.G >= 0 && dom.B >= 0, "black wallpaper: returns non-negative");
+        }
+        // 3) BuildPalette for a dark accent lifts the accent and keeps the card dark
+        var palDark = MaterialYouCore.BuildPalette(new MaterialYouCore.Rgb(0x10, 0x60, 0xE0));
+        Check(palDark.Accent.R > 0x10 + 50, "BuildPalette: dark accent — red is lifted");
+        Check(palDark.Accent.G > 0x60 + 50, "BuildPalette: dark accent — green is lifted");
+        Check(palDark.CardTop.R < 0x40 && palDark.CardBottom.R < 0x40, "BuildPalette: dark card stays dark");
+        Check(palDark.CardBottom.B > palDark.CardBottom.R, "BuildPalette: dark card keeps blue hue");
+        // 4) BuildPalette for a light accent (white wallpaper) inverts: darkens the accent
+        //    and produces a light card. This is the regression that produced white-on-white
+        //    text on white wallpapers before v1.5.4.
+        var palLight = MaterialYouCore.BuildPalette(new MaterialYouCore.Rgb(0xF8, 0xF2, 0xE8));
+        Check(palLight.Accent.R < 0xF8, "BuildPalette: light wallpaper — accent is darkened");
+        Check(palLight.CardBottom.R > 200, "BuildPalette: light wallpaper — card stays light");
+        Check(palLight.CardTop.R >= palLight.CardBottom.R, "BuildPalette: light card gradient is top-light");
+        // 5) Round-trip: extract from a green bitmap, build palette, green hue is preserved
+        using (var green = new Bitmap(16, 16))
+        {
+            for (int y = 0; y < 16; y++)
+                for (int x = 0; x < 16; x++)
+                    green.SetPixel(x, y, Color.FromArgb(0x30, 0xC0, 0x40));
+            var dom = MaterialYouCore.ExtractDominant(green);
+            var p = MaterialYouCore.BuildPalette(dom);
+            Check(p.Accent.G > p.Accent.R, "green wallpaper: green survives lift");
+        }
     }
 
     static void TestFocus()

@@ -38,11 +38,30 @@ namespace DeskMate.UI
             new Palette { KeyAr = "فاتح", KeyEn = "Light", Light = true,
                 Accent = Color.FromRgb(0xB8, 0x6B, 0x00),
                 CardTop = Color.FromArgb(0xEE, 0xF8, 0xFB, 0xFE), CardBottom = Color.FromArgb(0xF2, 0xE0, 0xE7, 0xF1) },
+            // --- new palettes (indices 5..7). Light=false; same IsLight branch as the
+            //     existing dark themes, so no additional Apply code is needed.
+            new Palette { KeyAr = "صحراء", KeyEn = "Sahara",
+                // navy + gold — the user-told taste (blue + gold), so this one matters
+                Accent = Color.FromRgb(0xE6, 0xC0, 0x6A),
+                CardTop = Color.FromArgb(0xD6, 0x10, 0x1B, 0x33), CardBottom = Color.FromArgb(0xDE, 0x06, 0x0E, 0x1F) },
+            new Palette { KeyAr = "حبري", KeyEn = "Mono Ink",
+                // high-contrast black/white minimalist: deep black + bright accent
+                Accent = Color.FromRgb(0xE0, 0xE0, 0xE0),
+                CardTop = Color.FromArgb(0xD6, 0x14, 0x14, 0x16), CardBottom = Color.FromArgb(0xDE, 0x05, 0x05, 0x07) },
+            new Palette { KeyAr = "شفق", KeyEn = "Aurora",
+                // cool gradient: cyan + violet on a deep teal body
+                Accent = Color.FromRgb(0x7D, 0xF9, 0xFF),
+                CardTop = Color.FromArgb(0xD6, 0x0E, 0x23, 0x34), CardBottom = Color.FromArgb(0xDE, 0x10, 0x07, 0x1B) },
         };
 
         /// <summary>Index of the palette that was actually applied (differs from the chosen
-        /// one when auto day/night theme is active).</summary>
+        /// one when auto day/night theme is active, or when Material You overrides).</summary>
         public static int AppliedIndex { get; private set; }
+
+        /// <summary>True while a Material-You-derived palette is overriding the normal
+        /// palette choice. The widget tree is rebuilt so every control picks up the new
+        /// brushes; the check box in settings reflects this so the user can turn it off.</summary>
+        public static bool MaterialYouActive;
 
         public static bool IsLight;
         public static Color AccentColor;
@@ -55,17 +74,111 @@ namespace DeskMate.UI
         /// <summary>Top-light gradient painted inside cards to fake glass thickness.</summary>
         public static Brush GlassTop;
 
-        public static readonly FontFamily UiFont = new FontFamily("Segoe UI");
-        public static readonly FontFamily LightFont = new FontFamily("Segoe UI Light, Segoe UI");
+        /// <summary>Default UI font. Tajawal is the user-preferred Arabic typeface; we list
+        /// it first so it wins on systems that have it installed. The fallback list
+        /// (Segoe UI → Segoe UI Light → Tahoma → Arial) keeps the widget readable on
+        /// any Windows machine that doesn't have Tajawal — WPF silently drops missing
+        /// families, and the first one that resolves is the one used.</summary>
+        public static readonly FontFamily UiFont = new FontFamily("Tajawal, Segoe UI, Tahoma, Arial");
+        public static readonly FontFamily LightFont = new FontFamily("Tajawal, Segoe UI Light, Segoe UI, Tahoma, Arial");
         public static readonly FontFamily Mdl2 = new FontFamily("Segoe MDL2 Assets");
         public static readonly FontFamily SymbolFont = new FontFamily("Segoe UI Symbol");
 
         static Theme() { Apply(0); }
 
+        /// <summary>Apply a Material-You-derived palette: takes the place of the normal
+        /// palette lookup, and the rest of the brush-assignment code in <see cref="Apply"/>
+        /// is reused so the chrome (text colour, button background, shadows) stays in sync.
+        /// Sets <see cref="MaterialYouActive"/> so the widget knows to re-derive on
+        /// wallpaper change.
+        ///
+        /// Picks dark text on a light card when the extracted card colour is bright
+        /// (e.g. white/cream wallpaper), and white text on a dark card otherwise. The first
+        /// version always assumed a dark card and produced white text — invisible on the
+        /// very wallpapers a "from wallpaper" theme is most likely to match.</summary>
+        public static void ApplyMaterial(Color accent, Color cardTop, Color cardBottom, int markAppliedIndex = 0)
+        {
+            var p = new Palette
+            {
+                KeyAr = "من الخلفية", KeyEn = "From wallpaper",
+                Accent = accent, CardTop = cardTop, CardBottom = cardBottom,
+            };
+            MaterialYouActive = true;
+            // AppliedIndex is left at whatever the previous value was: Material You is a
+            // runtime override, not a "real" palette. The settings panel reads
+            // MaterialYouActive to render the swatch row in its "off / overridden" state.
+            var prev = AppliedIndex;
+            // Perceived brightness of the card body. 0.5 is the boundary between dark and
+            // light text; below it we keep the dark-card look, above it we invert to a
+            // light card so white text never sits on a white background.
+            double lum = (0.2126 * p.CardBottom.R + 0.7152 * p.CardBottom.G + 0.0722 * p.CardBottom.B) / 255.0;
+            bool isLightCard = lum > 0.55;
+            p.Light = isLightCard;
+            IsLight = isLightCard;
+            AccentColor = p.Accent;
+            Accent = Freeze(new SolidColorBrush(p.Accent));
+            AccentSoft = Freeze(new SolidColorBrush(Color.FromArgb(0x24, p.Accent.R, p.Accent.G, p.Accent.B)));
+            if (isLightCard)
+            {
+                // light card branch — mirror the Light palette so the same shadows, borders
+                // and button backgrounds work, but keep the user-chosen accent (lifted in
+                // MaterialYouCore.BuildPalette) for the digits and highlights.
+                Text = Freeze(new SolidColorBrush(Color.FromArgb(0xE8, 0x16, 0x1E, 0x2A)));
+                TextDim = Freeze(new SolidColorBrush(Color.FromArgb(0xAC, 0x16, 0x1E, 0x2A)));
+                TextFaint = Freeze(new SolidColorBrush(Color.FromArgb(0x68, 0x16, 0x1E, 0x2A)));
+                CardBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x2E, 0x10, 0x18, 0x24)));
+                ButtonBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x3C, 0x10, 0x18, 0x24)));
+                HoverBg = Freeze(new SolidColorBrush(Color.FromArgb(0x26, 0x10, 0x18, 0x24)));
+                ButtonBg = Freeze(new SolidColorBrush(Color.FromArgb(0x13, 0x10, 0x18, 0x24)));
+                InputBg = Freeze(new SolidColorBrush(Color.FromArgb(0x14, 0x10, 0x18, 0x24)));
+                DialStroke = Freeze(new SolidColorBrush(Color.FromArgb(0x50, 0x16, 0x1E, 0x2A)));
+                DialFill = Freeze(new SolidColorBrush(Color.FromArgb(0x10, 0x10, 0x18, 0x24)));
+                GlassTop = Freeze(new LinearGradientBrush(
+                    Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF),
+                    new Point(0, 0), new Point(0, 0.42)));
+                var rim = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+                rim.GradientStops.Add(new GradientStop(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF), 0));
+                rim.GradientStops.Add(new GradientStop(Color.FromArgb(0x18, 0x10, 0x18, 0x24), 0.35));
+                rim.GradientStops.Add(new GradientStop(Color.FromArgb(0, 0x10, 0x18, 0x24), 1));
+                RimBrush = Freeze(rim);
+            }
+            else
+            {
+                // dark-card path — original behaviour.
+                Text = Brushes.White;
+                TextDim = Freeze(new SolidColorBrush(Color.FromArgb(0xB8, 0xFF, 0xFF, 0xFF)));
+                TextFaint = Freeze(new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)));
+                CardBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x2C, 0xFF, 0xFF, 0xFF)));
+                ButtonBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x3A, 0xFF, 0xFF, 0xFF)));
+                HoverBg = Freeze(new SolidColorBrush(Color.FromArgb(0x34, 0xFF, 0xFF, 0xFF)));
+                ButtonBg = Freeze(new SolidColorBrush(Color.FromArgb(0x1E, 0xFF, 0xFF, 0xFF)));
+                InputBg = Freeze(new SolidColorBrush(Color.FromArgb(0x2E, 0x00, 0x00, 0x00)));
+                DialStroke = Freeze(new SolidColorBrush(Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF)));
+                DialFill = Freeze(new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)));
+                GlassTop = Freeze(new LinearGradientBrush(
+                    Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF),
+                    new Point(0, 0), new Point(0, 0.42)));
+                var rim = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+                rim.GradientStops.Add(new GradientStop(Color.FromArgb(0x7A, 255, 255, 255), 0));
+                rim.GradientStops.Add(new GradientStop(Color.FromArgb(0x20, 255, 255, 255), 0.35));
+                rim.GradientStops.Add(new GradientStop(Color.FromArgb(0, 255, 255, 255), 1));
+                RimBrush = Freeze(rim);
+            }
+            CardBg = Freeze(new LinearGradientBrush(p.CardTop, p.CardBottom, 90));
+            _elevation = null;
+            ControlStyles.Invalidate();
+            // mark AppliedIndex so the next tick does NOT take the "eff != AppliedIndex"
+            // branch and rebuild the visual tree every second. Without this, every tick
+            // recreated the clock object and froze its display (the user reported that
+            // the clock looked stuck on a single value while Material You was on).
+            AppliedIndex = markAppliedIndex;
+        }
+
         public static void Apply(int index)
         {
             if (index < 0 || index >= Palettes.Length) index = 0;
             AppliedIndex = index;
+            MaterialYouActive = false;   // normal Apply always clears the Material You override
             var p = Palettes[index];
             IsLight = p.Light;
             AccentColor = p.Accent;
