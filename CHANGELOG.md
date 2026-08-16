@@ -1,5 +1,23 @@
 # سجل التغييرات · Changelog
 
+## v1.6.0 — 2026-08-16 — Contextual panel placement, undo, command bar
+- **Panels now open *beside* the tool, themed per layout.** Clicking a tool icon in a vertical layout (Sidebar) used to drop the panel straight under the icon, covering the very tool you were using. `PanelWindow.PlaceNear` now detects vertical strips (Height > Width × 1.25) and places the panel to the side; square widgets get overlap-rescue (if the panel would cover more than 20% of the anchor it shifts away); the caret arrow points in all four directions with RTL mirroring, and the entrance animation plays from the actual opening direction.
+- **Undo for destructive actions.** Deleting a task/note now shows a toast with a «تراجع» button that re-inserts it — a misclick no longer costs data.
+- **Daily progress strip.** Tasks completed today are counted (`NoteItem.DoneAt`, new `"da"` storage key) and a progress bar above the task list shows «أُنجزت اليوم X من Y».
+- **Calculator: Arabic percentages, unit conversion, pinned results.** «20% من 450» now evaluates to 90. A collapsible unit-conversion strip (8 conversions: length, weight, temperature, data…) sits next to the «علمية» toggle. A 📌 pin button floats the result in a small always-on-top glass window (drag/copy/close, cascading multiple pins).
+- **Quick command bar (new tool).** A spotlight-style panel (icon in every layout, toggleable in Settings) parses Arabic and English: «ذكّرني ب… غداً الساعة 9» creates a reminder, «= …» calculates, «افتح …» launches a matching app, and bare text becomes a task — with a live preview line under the input. Arabic-Indic digits (٠-٩) and diacritics are normalised before parsing.
+- **Ramadan mode.** During the Hijri month of Ramadan (Um Al-Qura calendar) the prayer panel shows a warm banner: «باقي على الإفطار H:MM» between Fajr and Maghrib, «باقي على الإمساك» overnight, «تقبّل الله طاعتكم» after Maghrib, then counts down to Eid.
+- **Settings backup.** Export/import buttons in Settings — export snapshots the encrypted settings file; import validates, restores, re-applies the theme and autostart, and reloads. (Same-user only: the file is DPAPI-encrypted.)
+- **Tests** — 260 (was 236): 9 command-parser cases, 6 unit-conversion, 4 Arabic-percent, plus DoneAt/DailyProgress coverage.
+- **UiSmoke** — new captures: `panel_command.png`; a done-today seeded task so the progress strip is exercised.
+
+## v1.5.7 — 2026-08-16 — Tasks no longer vanish, calculator facelift
+- **Root cause of "tasks disappear when clicked".** `PanelWindow` runs `DragMove()` on any unhandled `MouseLeftButtonDown`, and the task row only handled `MouseLeftButtonUp` — so pressing on a task was captured by the window drag and the click never completed (the editor never opened). The one spot in the row that did handle Down was the small completion circle — at the leading (right) edge in Arabic — and it **permanently deleted** the task. The row now handles Down, so clicking a task opens its editor as intended.
+- **Completion is no longer deletion.** `NoteItem.Done` is a real, restorable state: the circle toggles it, done tasks are struck through, dimmed and sunk to the bottom, and their reminders stay quiet (`DueIndices` skips them). The editor's «تم الإنجاز» button marks done instead of removing, and can restore. Only the trash button (and emptying the text) deletes. Storage is backward-compatible (`"d"` key, defaults to false).
+- **Calculator facelift.** Wider panel (340), larger readout (34 pt) with a stable well height, live preview now in the accent colour, taller keys (52 px) with larger glyphs, stronger accent tint and border on operator keys, brighter top-light on digit caps, recessed fill for the utility keys (C / ( ) / ⌫ — they read as holes before), and a stronger glow on the equals key.
+- **Version** — `AppVersion` realigned with the changelog (had drifted to 1.5.2).
+- **Tests** — 236 (was 232): 4 new — done-flag round-trip, done-tasks sink to the bottom, done-task reminders stay quiet, default-not-done.
+
 ## v1.5.6 — 2026-08-04 — ClockStyle honoured in every layout
 - **Root cause of the "clock does not change" report.** Tri-panel, Sidebar and Dock were ignoring the user's `ClockStyle = Analog` choice — Tri-panel forced `TimeOnlyClock` and Sidebar/Dock forced `MinimalClock` or `Digital`. Picking Analog in Settings did nothing in those three layouts. All six layouts now honour the chosen style.
 - **`AnalogClock(double size)` constructor.** A new overload accepts the dial diameter so Tri-panel (120 px), Sidebar (104 px) and Dock (100 px) can host a compact analog dial that fits the surrounding card. Hand lengths, tick marks, dot and stroke thickness all scale with `size`. The original 168-px default is preserved.

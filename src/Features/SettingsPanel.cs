@@ -238,6 +238,7 @@ namespace DeskMate.Features
             AddFeatureCheck(grid, "f_note", Settings.I.ShowNote, v => Settings.I.ShowNote = v);
             AddFeatureCheck(grid, "f_sysmon", Settings.I.ShowSysMon, v => Settings.I.ShowSysMon = v);
             AddFeatureCheck(grid, "f_worldclock", Settings.I.ShowWorldClock, v => Settings.I.ShowWorldClock = v);
+            AddFeatureCheck(grid, "f_command", Settings.I.ShowCommand, v => Settings.I.ShowCommand = v);
             stack.Children.Add(grid);
 
             // ---- location ----
@@ -325,6 +326,74 @@ namespace DeskMate.Features
             };
             doSearchHolder = doSearch;
             cityBox.KeyDown += (s, e) => { if (e.Key == System.Windows.Input.Key.Enter) doSearch(); };
+
+            // ---- backup: export / import the whole settings file ----
+            stack.Children.Add(Theme.SectionTitle(L.T("st_backup")));
+            var backupStatus = Theme.MakeText("", 11.5, Theme.Accent);
+            backupStatus.HorizontalAlignment = HorizontalAlignment.Center;
+            backupStatus.Margin = new Thickness(0, 4, 0, 0);
+
+            var exportBtn = Theme.MakeButton(L.T("st_export"), () =>
+            {
+                var dlg = new Microsoft.Win32.SaveFileDialog
+                {
+                    Filter = "JSON|*.json",
+                    FileName = "DeskMate-settings.json",
+                };
+                host.SuppressAutoClose = true;
+                try
+                {
+                    if (dlg.ShowDialog(host) == true)
+                    {
+                        Settings.I.Save();   // flush first: the file must hold the latest state
+                        System.IO.File.Copy(Settings.DefaultPath, dlg.FileName, true);
+                        backupStatus.Text = L.T("st_exported");
+                    }
+                }
+                catch (Exception ex) { Log.Error("settings export", ex); }
+                finally { host.SuppressAutoClose = false; try { host.Activate(); } catch { } }
+            });
+            exportBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            stack.Children.Add(exportBtn);
+
+            var importBtn = Theme.MakeButton(L.T("st_import"), () =>
+            {
+                var dlg = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = "JSON|*.json",
+                    CheckFileExists = true,
+                };
+                host.SuppressAutoClose = true;
+                try
+                {
+                    if (dlg.ShowDialog(host) == true)
+                    {
+                        // validate before touching the live file: a corrupt or foreign JSON
+                        // must not wipe the user's settings
+                        var parsed = Json.Parse(System.IO.File.ReadAllText(dlg.FileName))
+                            as System.Collections.Generic.Dictionary<string, object>;
+                        if (parsed == null || !parsed.ContainsKey("Lang"))
+                        {
+                            backupStatus.Text = L.T("st_import_bad");
+                            return;
+                        }
+                        System.IO.File.Copy(dlg.FileName, Settings.DefaultPath, true);
+                        Settings.Load();
+                        Theme.Apply(Settings.I.ThemeIndex);
+                        Win32.SetAutoStart(Settings.I.AutoStart);
+                        PrayerFeature.Invalidate();
+                        PanelWindow.CloseCurrent();
+                        if (MainWindow.Instance != null) MainWindow.Instance.Reload();
+                        Toast.Show(L.T("st_imported"), Glyphs.SettingsGear);
+                    }
+                }
+                catch (Exception ex) { Log.Error("settings import", ex); backupStatus.Text = L.T("st_import_bad"); }
+                finally { host.SuppressAutoClose = false; }
+            });
+            importBtn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            importBtn.Margin = new Thickness(3, 4, 3, 0);
+            stack.Children.Add(importBtn);
+            stack.Children.Add(backupStatus);
 
             return scroll;
         }

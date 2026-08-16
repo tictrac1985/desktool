@@ -33,6 +33,7 @@ namespace DeskMate.UI
             if (s.ShowNote) list.Add(Tuple.Create(Glyphs.Note, "f_note", (Action)(() => StickyNoteFeature.Open(this))));
             if (s.ShowSysMon) list.Add(Tuple.Create(Glyphs.SysMon, "f_sysmon", (Action)(() => SysMonFeature.Open(this))));
             if (s.ShowWorldClock) list.Add(Tuple.Create(Glyphs.WorldClock, "f_worldclock", (Action)(() => WorldClocksFeature.Open(this))));
+            if (s.ShowCommand) list.Add(Tuple.Create(Glyphs.Command, "f_command", (Action)(() => CommandBarFeature.Open(this))));
             list.Add(Tuple.Create(Glyphs.SettingsGear, "f_settings", (Action)(() => SettingsFeature.Open(this))));
             return list;
         }

@@ -251,6 +251,8 @@ namespace DeskMate.Features
                 stack.Children.Add(nextCard);
             }
 
+            RamadanBanner(stack, now, times);
+
             if (times != null)
             {
                 for (int i = 0; i < 6; i++)
@@ -315,6 +317,63 @@ namespace DeskMate.Features
             AdjustSection(stack);
 
             return stack;
+        }
+
+        /// <summary>Ramadan mode: while the Hijri month is Ramadan, a warm banner counts
+        /// down to iftar (Maghrib) through the day and to imsak (Fajr) overnight, then
+        /// switches to the Eid countdown once the month's last Maghrib has passed. Outside
+        /// Ramadan nothing is added — the panel stays exactly as it was.</summary>
+        static void RamadanBanner(StackPanel stack, DateTime now, double[] times)
+        {
+            int hijriMonth;
+            try { hijriMonth = new System.Globalization.UmAlQuraCalendar().GetMonth(now); }
+            catch { return; }
+            if (hijriMonth != 9 || times == null) return;
+
+            double h = now.TimeOfDay.TotalHours;
+            double fajr = times[0], maghrib = times[4];
+            string line1, line2 = null;
+            if (!double.IsNaN(maghrib) && h < maghrib && !double.IsNaN(fajr) && h >= fajr)
+            {
+                var left = now.Date.AddHours(maghrib) - now;
+                line1 = L.T("rm_iftar");
+                line2 = string.Format("{0:0}:{1:00}", Math.Floor(left.TotalHours), left.Minutes);
+            }
+            else if (!double.IsNaN(fajr) && h < fajr)
+            {
+                var left = now.Date.AddHours(fajr) - now;
+                line1 = L.T("rm_imsak");
+                line2 = string.Format("{0:0}:{1:00}", Math.Floor(left.TotalHours), left.Minutes);
+            }
+            else
+            {
+                // after Maghrib: tonight is won — look ahead to Eid al-Fitr instead
+                line1 = L.T("rm_taqabbal");
+                var eid = OccasionCore.NextHijri(10, 1, now.Date);
+                if (eid.HasValue)
+                    line2 = string.Format(L.T("rm_eid_in"), OccasionCore.DaysLeft(now, eid.Value));
+            }
+
+            var inner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            var t1 = Theme.MakeText("☪  " + line1, 13.5, Theme.Accent);
+            t1.HorizontalAlignment = HorizontalAlignment.Center;
+            t1.FontWeight = FontWeights.SemiBold;
+            inner.Children.Add(t1);
+            if (line2 != null)
+            {
+                var t2 = Theme.MakeText(line2, 12.5, Theme.TextDim);
+                t2.HorizontalAlignment = HorizontalAlignment.Center;
+                t2.Margin = new Thickness(0, 2, 0, 0);
+                inner.Children.Add(t2);
+            }
+            stack.Children.Add(new Border
+            {
+                Background = Theme.AccentSoft,
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(12, 8, 12, 8),
+                Margin = new Thickness(0, 0, 0, 10),
+                Child = inner,
+            });
         }
 
         /// <summary>Per-prayer correction in minutes, collapsed by default — six more rows

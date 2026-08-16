@@ -29,6 +29,7 @@ namespace DeskMate.UI
         public const string Note = "\uE70F";
         public const string SysMon = "\uE772";
         public const string WorldClock = "\uE774";
+        public const string Command = "\uE721";
     }
 
     /// <summary>The desktop widget shell. Split across:

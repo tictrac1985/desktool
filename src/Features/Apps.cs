@@ -46,6 +46,27 @@ namespace DeskMate.Features
             catch (Exception ex) { Log.Error("app open", ex); }
         }
 
+        /// <summary>Best-match launch for the quick-command bar: exact name first, then a
+        /// name starting with the query, then any substring. Returns false when nothing
+        /// matches so the caller can say so instead of opening the wrong app.</summary>
+        public static bool LaunchBest(string query)
+        {
+            if (string.IsNullOrWhiteSpace(query)) return false;
+            var apps = GetApps();
+            AppEntry best = null;
+            foreach (var a in apps)
+                if (string.Equals(a.Name, query, StringComparison.OrdinalIgnoreCase)) { best = a; break; }
+            if (best == null)
+                foreach (var a in apps)
+                    if (a.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase)) { best = a; break; }
+            if (best == null)
+                foreach (var a in apps)
+                    if (a.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) { best = a; break; }
+            if (best == null) return false;
+            Launch(best);
+            return true;
+        }
+
         public static void Open(Window owner)
         {
             PanelWindow.Toggle(owner, "apps", L.T("f_apps"), Build, 330);

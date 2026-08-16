@@ -60,6 +60,7 @@ static class UiSmoke
             Tuple.Create("power", (Action)(() => PowerFeature.Open(_win)), 900),
             Tuple.Create("clipboard", (Action)(() => ClipboardKeeper.Open(_win)), 900),
             Tuple.Create("focus", (Action)(() => FocusFeature.Open(_win)), 900),
+            Tuple.Create("command", (Action)(() => CommandBarFeature.Open(_win)), 900),
             Tuple.Create("occasions", (Action)(() => OccasionsFeature.Open(_win)), 900),
             // seeded first: an empty list only proves the placeholder renders, not the task row
             Tuple.Create("note", (Action)(() => { SeedTasks(); StickyNoteFeature.Open(_win); }), 900),
@@ -107,6 +108,13 @@ static class UiSmoke
             },
             new DeskMate.Logic.NoteItem { Text = "الاتصال بالصيانة", Pinned = true },
             new DeskMate.Logic.NoteItem { Text = "شراء هدية العيد" },
+            // a task finished today, so the daily progress strip above the list has data to show
+            new DeskMate.Logic.NoteItem
+            {
+                Text = "تسليم عرض التصميم",
+                Done = true,
+                DoneAt = DateTime.Now.Date.AddHours(11),
+            },
         };
         StickyNoteFeature.Save(notes);
     }

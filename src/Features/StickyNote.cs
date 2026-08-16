@@ -22,6 +22,14 @@ namespace DeskMate.Features
         /// redraws instead of showing a reminder that has already fired.</summary>
         public static event Action Changed;
 
+        /// <summary>Redraws any open tasks panel after an out-of-band change (undo from a
+        /// toast).</summary>
+        static void RaiseChanged()
+        {
+            var handler = Changed;
+            if (handler != null) { try { handler(); } catch (Exception ex) { Log.Error("note changed", ex); } }
+        }
+
         static CultureInfo Ci { get { return L.IsAr ? new CultureInfo("ar-EG") : new CultureInfo("en-US"); } }
 
         // ---------------- storage ----------------
@@ -90,8 +98,7 @@ namespace DeskMate.Features
             }
             AlertSound.Play();
             Save(notes);
-            var handler = Changed;
-            if (handler != null) { try { handler(); } catch (Exception ex) { Log.Error("note changed", ex); } }
+            RaiseChanged();
         }
 
         // ---------------- panel ----------------
@@ -129,6 +136,41 @@ namespace DeskMate.Features
             Changed += onChanged;
             host.Closed += (s, e) => Changed -= onChanged;
 
+            // daily progress: a slim accent bar + "done X of Y today" above the list —
+            // finishing tasks should feel like forward motion, not like erasing them
+            int doneToday, totalToday;
+            NoteItem.DailyProgress(Load(), DateTime.Now, out doneToday, out totalToday);
+            if (totalToday > 0)
+            {
+                var barBack = new Border
+                {
+                    Height = 6,
+                    CornerRadius = new CornerRadius(3),
+                    Background = Theme.ButtonBg,
+                    Margin = new Thickness(2, 0, 2, 4),
+                };
+                var fill = new Border
+                {
+                    Height = 6,
+                    CornerRadius = new CornerRadius(3),
+                    Background = Theme.Accent,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Width = 0,
+                };
+                var barGrid = new Grid();
+                barGrid.Children.Add(barBack);
+                barGrid.Children.Add(fill);
+                // fill width resolves once the bar has been measured (it starts at 0/NaN)
+                barGrid.SizeChanged += (s, e) =>
+                    fill.Width = barGrid.ActualWidth * doneToday / Math.Max(1, totalToday);
+                stack.Children.Add(barGrid);
+                var tally = Theme.MakeText(
+                    string.Format(L.T("nt_progress"), doneToday, totalToday), 11, Theme.TextDim);
+                tally.HorizontalAlignment = HorizontalAlignment.Center;
+                tally.Margin = new Thickness(0, 0, 0, 6);
+                stack.Children.Add(tally);
+            }
+
             stack.Children.Add(new ScrollViewer
             {
                 Content = listHost,
@@ -146,23 +188,26 @@ namespace DeskMate.Features
         /// <summary>One task row: a completion circle at the start, the text, its reminder in
         /// words, then postpone / pin / delete. The leading circle is the whole point of the
         /// layout — a to-do list is read as "things to tick off", and a checkbox says that
-        /// without needing a label.</summary>
+        /// without needing a label. Completing marks the task done (struck through, sunk to
+        /// the bottom, restorable); only the trash button deletes for good.</summary>
         static FrameworkElement MakeRow(PanelWindow host, NoteItem note, List<NoteItem> all, Action rebuild)
         {
-            var done = MakeDoneCircle(() =>
+            var done = MakeDoneCircle(note.Done, () =>
             {
-                all.Remove(note);
+                note.Done = !note.Done;
+                note.DoneAt = note.Done ? DateTime.Now : DateTime.MinValue;
                 Save(all);
                 rebuild();
             });
 
             var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            var body = Theme.MakeText(note.Preview(), 12.5, Theme.Text);
+            var body = Theme.MakeText(note.Preview(), 12.5, note.Done ? Theme.TextFaint : Theme.Text);
             body.TextWrapping = TextWrapping.Wrap;
             body.MaxHeight = 34;
+            if (note.Done) body.TextDecorations = TextDecorations.Strikethrough;
             texts.Children.Add(body);
 
-            if (note.HasReminder)
+            if (note.HasReminder && !note.Done)
             {
                 bool overdue = note.RemindAt <= DateTime.Now;
                 var when = Theme.MakeText(DescribeWhen(note.RemindAt), 10.5,
@@ -182,9 +227,20 @@ namespace DeskMate.Features
                 }, 26, 11);
             var del = Theme.MakeIconButton("\uE74D", L.T("nt_delete"), () =>
             {
+                int idx = all.IndexOf(note);
+                var backup = note;
                 all.Remove(note);
                 Save(all);
                 rebuild();
+                // deletion is the one destructive act left — make it refundable: the toast
+                // offers Undo, which re-inserts the task where it was and redraws the panel
+                Toast.Show(L.T("nt_deleted"), Glyphs.Note, L.T("nt_undo"), () =>
+                {
+                    var cur = Load();
+                    cur.Insert(Math.Max(0, Math.Min(idx, cur.Count)), backup);
+                    Save(cur);
+                    RaiseChanged();
+                });
             }, 26, 11);
 
             var btns = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -201,45 +257,52 @@ namespace DeskMate.Features
 
             var row = new Border
             {
-                Background = note.Pinned ? Theme.AccentSoft : Theme.ButtonBg,
+                Background = note.Pinned && !note.Done ? Theme.AccentSoft : Theme.ButtonBg,
                 CornerRadius = new CornerRadius(10),
                 Padding = new Thickness(9, 7, 9, 7),
                 Margin = new Thickness(0, 2, 0, 2),
                 Cursor = Cursors.Hand,
                 Child = dock,
                 ToolTip = L.T("nt_edit"),
+                Opacity = note.Done ? 0.62 : 1.0,
             };
-            Theme.AttachHover(row, note.Pinned ? Theme.AccentSoft : Theme.ButtonBg, Theme.HoverBg);
+            Theme.AttachHover(row, note.Pinned && !note.Done ? Theme.AccentSoft : Theme.ButtonBg, Theme.HoverBg);
+            // Handle Down too — otherwise the panel window's DragMove captures the press and
+            // the Up below never fires, which made clicking a task look like it did nothing
+            row.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
             row.MouseLeftButtonUp += (s, e) => { e.Handled = true; OpenEditor(host, note, rebuild); };
             return row;
         }
 
-        /// <summary>Empty circle that fills with a tick on hover — "click to complete".</summary>
-        static FrameworkElement MakeDoneCircle(Action onDone)
+        /// <summary>Completion circle. Open task: empty ring that fills with a tick on
+        /// hover — "click to complete". Done task: solid accent ring with the tick always
+        /// showing — "click to restore". Toggling never deletes the task.</summary>
+        static FrameworkElement MakeDoneCircle(bool isDone, Action onToggle)
         {
-            var tick = Theme.MakeGlyph("\uE73E", 11, Theme.Accent);
-            tick.Opacity = 0;
+            var tick = Theme.MakeGlyph("\uE73E", 11,
+                isDone ? (Theme.IsLight ? Brushes.White : Brushes.Black) : Theme.Accent);
+            tick.Opacity = isDone ? 1 : 0;
             var circle = new Border
             {
                 Width = 21,
                 Height = 21,
                 CornerRadius = new CornerRadius(11),
-                Background = Brushes.Transparent,
-                BorderBrush = Theme.TextFaint,
+                Background = isDone ? Theme.Accent : Brushes.Transparent,
+                BorderBrush = isDone ? Theme.Accent : Theme.TextFaint,
                 BorderThickness = new Thickness(1.4),
                 Child = tick,
                 Cursor = Cursors.Hand,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 9, 0),
-                ToolTip = L.T("nt_done"),
+                ToolTip = L.T(isDone ? "nt_restore" : "nt_done"),
             };
-            circle.MouseEnter += (s, e) => { tick.Opacity = 1; circle.BorderBrush = Theme.Accent; };
-            circle.MouseLeave += (s, e) => { tick.Opacity = 0; circle.BorderBrush = Theme.TextFaint; };
+            circle.MouseEnter += (s, e) => { tick.Opacity = 1; if (!isDone) circle.BorderBrush = Theme.Accent; };
+            circle.MouseLeave += (s, e) => { if (!isDone) { tick.Opacity = 0; circle.BorderBrush = Theme.TextFaint; } };
             circle.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
             circle.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;   // must not fall through to the row's "open editor"
-                try { onDone(); } catch (Exception ex) { Log.Error("note done", ex); }
+                try { onToggle(); } catch (Exception ex) { Log.Error("note done", ex); }
             };
             return circle;
         }
@@ -267,6 +330,7 @@ namespace DeskMate.Features
             {
                 // Load() returns fresh objects, so edit the copy that is actually in the list
                 var match = all.Find(n => n.Text == existing.Text && n.Pinned == existing.Pinned
+                                          && n.Done == existing.Done
                                           && n.RemindAt == existing.RemindAt);
                 if (match != null) note = match;
                 else all.Insert(0, note);
@@ -485,9 +549,22 @@ namespace DeskMate.Features
             }, accent: true);
             save.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-            var doneBtn = Theme.MakeButton(L.T("nt_done"), () =>
+            var doneBtn = Theme.MakeButton(L.T(note.Done ? "nt_restore" : "nt_done"), () =>
             {
-                all.Remove(note);
+                string text = box.Text.Trim();
+                if (text.Length == 0)
+                {
+                    all.Remove(note);          // an emptied task is a delete, not an error
+                }
+                else
+                {
+                    note.Text = text;
+                    note.Done = !note.Done;
+                    note.DoneAt = note.Done ? DateTime.Now : DateTime.MinValue;
+                    if (note.Done) note.RemindAt = DateTime.MinValue;   // a finished task stops nagging
+                    else note.RemindAt = chosen != DateTime.MinValue && chosen <= DateTime.Now
+                        ? DateTime.MinValue : chosen;                   // no past reminders on restore
+                }
                 Save(all);
                 PanelWindow.CloseCurrent();
                 rebuild();

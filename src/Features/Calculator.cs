@@ -19,6 +19,7 @@ namespace DeskMate.Features
     public static class CalculatorFeature
     {
         static bool _pro;
+        static bool _units;
 
         /// <summary>Recent "expression = result" pairs, newest first. A calculator without any
         /// memory of what you just worked out forces you to retype the number you are building
@@ -36,7 +37,7 @@ namespace DeskMate.Features
 
         public static void Open(Window owner)
         {
-            PanelWindow.Toggle(owner, "calc", L.T("f_calc"), Build, 320);
+            PanelWindow.Toggle(owner, "calc", L.T("f_calc"), Build, 340);
         }
 
         // key tiers: 0 digit · 1 operator · 2 equals · 3 utility ghost · 4 clear · 5 sci-fn
@@ -48,34 +49,51 @@ namespace DeskMate.Features
             var preview = new TextBlock
             {
                 Text = "",
-                FontSize = 12,
+                FontSize = 13,
                 FontFamily = Theme.UiFont,
-                Foreground = Theme.TextFaint,
+                Foreground = Theme.Accent,
                 TextAlignment = TextAlignment.Right,
-                MinHeight = 16,
+                MinHeight = 18,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
-            var placeholder = Theme.MakeText("0", 30, Theme.TextFaint, Theme.LightFont);
+            var placeholder = Theme.MakeText("0", 34, Theme.TextFaint, Theme.LightFont);
             placeholder.HorizontalAlignment = HorizontalAlignment.Right;
             placeholder.IsHitTestVisible = false;
             var display = new TextBox
             {
                 Text = "",
-                FontSize = 30,
+                FontSize = 34,
                 FontFamily = Theme.LightFont,
                 Background = Brushes.Transparent,
                 Foreground = Theme.Text,
                 CaretBrush = Theme.Accent,
                 BorderThickness = new Thickness(0),
                 Padding = new Thickness(0),
+                MinHeight = 44,
                 TextAlignment = TextAlignment.Right,
             };
             // copy sits inside the well, on the result itself — a result you cannot get out of
             // the calculator is only half useful
             var copyBtn = Theme.MakeIconButton("\uE8C8", L.T("calc_copy"), () => { }, 26, 11);
             copyBtn.VerticalAlignment = VerticalAlignment.Bottom;
-            copyBtn.HorizontalAlignment = HorizontalAlignment.Left;
             copyBtn.Opacity = 0.75;
+            // pin the result straight onto the desktop: a number you keep glancing at
+            // (a budget, a total) should not live inside a panel that closes itself
+            var pinBtn = Theme.MakeIconButton("\uE718", L.T("calc_pin"), () =>
+            {
+                string t = display.Text;
+                if (string.IsNullOrEmpty(t) || t == L.T("calc_error")) return;
+                PinnedResult.Show(t);
+            }, 26, 11);
+            pinBtn.VerticalAlignment = VerticalAlignment.Bottom;
+            pinBtn.Opacity = 0.75;
+            var wellBtns = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+            wellBtns.Children.Add(copyBtn);
+            wellBtns.Children.Add(pinBtn);
 
             var displayLayer = new Grid();
             displayLayer.Children.Add(placeholder);
@@ -83,8 +101,8 @@ namespace DeskMate.Features
             var wellInner = new StackPanel();
             wellInner.Children.Add(preview);
             var displayRow = new DockPanel();
-            DockPanel.SetDock(copyBtn, Dock.Left);
-            displayRow.Children.Add(copyBtn);
+            DockPanel.SetDock(wellBtns, Dock.Left);
+            displayRow.Children.Add(wellBtns);
             displayRow.Children.Add(displayLayer);
             wellInner.Children.Add(displayRow);
             // recessed well: inset bevel makes the display look carved into the panel
@@ -110,7 +128,7 @@ namespace DeskMate.Features
                 string expr = display.Text;
                 try
                 {
-                    double v = ExpressionEvaluator.Eval(expr);
+                    double v = ExpressionEvaluator.Eval(ExpressionEvaluator.NormalizePercentPhrase(expr));
                     string result = v.ToString("G12", CultureInfo.InvariantCulture);
                     preview.Text = expr + "  =";
                     display.Text = result;
@@ -137,18 +155,20 @@ namespace DeskMate.Features
                 if (t.IndexOfAny(new[] { '+', '-', '×', '÷', '*', '/', '^', '%' }) < 0) { preview.Text = ""; return; }
                 try
                 {
-                    double v = ExpressionEvaluator.Eval(t);
+                    double v = ExpressionEvaluator.Eval(ExpressionEvaluator.NormalizePercentPhrase(t));
                     preview.Text = "=  " + v.ToString("G12", CultureInfo.InvariantCulture);
                 }
                 catch { preview.Text = ""; }
             };
 
             // ---------------- tiered key factory ----------------
-            var opBg = new SolidColorBrush(Color.FromArgb((byte)(Theme.IsLight ? 0x30 : 0x38),
+            // Operators wear a clearly visible accent tint; the old 0x30/0x38 alphas were so
+            // faint the pad read as one flat grey wall and the user called the look unlovely
+            var opBg = new SolidColorBrush(Color.FromArgb((byte)(Theme.IsLight ? 0x40 : 0x5C),
                 Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
-            var opHover = new SolidColorBrush(Color.FromArgb((byte)(Theme.IsLight ? 0x44 : 0x4E),
+            var opHover = new SolidColorBrush(Color.FromArgb((byte)(Theme.IsLight ? 0x55 : 0x74),
                 Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
-            var opBorder = new SolidColorBrush(Color.FromArgb(0x55,
+            var opBorder = new SolidColorBrush(Color.FromArgb(0x90,
                 Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
             var eqBg = new LinearGradientBrush(
                 Color.FromRgb((byte)Math.Min(255, Theme.AccentColor.R + 26), (byte)Math.Min(255, Theme.AccentColor.G + 22), (byte)Math.Min(255, Theme.AccentColor.B + 20)),
@@ -158,20 +178,23 @@ namespace DeskMate.Features
             var fnHover = new SolidColorBrush(Color.FromArgb((byte)(Theme.IsLight ? 0x38 : 0x40),
                 Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
             var coral = new SolidColorBrush(Theme.IsLight ? Color.FromRgb(0xC8, 0x4A, 0x38) : Color.FromRgb(0xFF, 0x8A, 0x7A));
-            // digit keys are tinted from the shared button colour so they follow every palette
+            // digit keys are tinted from the shared button colour so they follow every palette,
+            // with extra alpha so the pad's main tier never reads as washed-out grey
             var digitFace = ((SolidColorBrush)Theme.ButtonBg).Color;
+            digitFace = Color.FromArgb((byte)Math.Min(255, digitFace.A + (Theme.IsLight ? 0x12 : 0x1A)),
+                digitFace.R, digitFace.G, digitFace.B);
 
             Func<string, Action, int, Border> key = (label, action, kind) =>
             {
                 Brush fg; double size; bool semi = true;
                 switch (kind)
                 {
-                    case 1: fg = Theme.Accent; size = 19; break;
-                    case 2: fg = Theme.IsLight ? Brushes.White : Brushes.Black; size = 19; break;
-                    case 3: fg = Theme.TextDim; size = 16; semi = false; break;
-                    case 4: fg = coral; size = 16; break;
-                    case 5: fg = Theme.Accent; size = 11.5; break;
-                    default: fg = Theme.Text; size = 17; break;
+                    case 1: fg = Theme.Accent; size = 21; break;
+                    case 2: fg = Theme.IsLight ? Brushes.White : Brushes.Black; size = 22; break;
+                    case 3: fg = Theme.TextDim; size = 17; semi = false; break;
+                    case 4: fg = coral; size = 17; break;
+                    case 5: fg = Theme.Accent; size = 12; break;
+                    default: fg = Theme.Text; size = 18; break;
                 }
                 var tb = Theme.MakeText(label, size, fg);
                 tb.HorizontalAlignment = HorizontalAlignment.Center;
@@ -180,16 +203,18 @@ namespace DeskMate.Features
 
                 // Raised keys get a top-lit face rather than one flat colour — a keycap catches
                 // light on its upper curve, and that gradient is most of what sells the depth.
+                // Utility keys (3, 4) get a faint recessed fill of their own: fully transparent
+                // they read as holes punched out of the pad rather than as a calmer third tier.
                 Brush bg, hover, border = null;
                 switch (kind)
                 {
-                    case 1: bg = Theme.KeyFace(opBg.Color, 14); hover = opHover; border = opBorder; break;
+                    case 1: bg = Theme.KeyFace(opBg.Color, 18); hover = opHover; border = opBorder; break;
                     case 2: bg = eqBg; hover = eqHover; break;
-                    case 3: case 4: bg = Brushes.Transparent; hover = Theme.HoverBg; break;
+                    case 3: case 4: bg = Theme.InputBg; hover = Theme.HoverBg; border = Theme.CardBorder; break;
                     case 5: bg = Theme.AccentSoft; hover = fnHover; break;
-                    default: bg = Theme.KeyFace(digitFace, 10); hover = Theme.HoverBg; border = Theme.ButtonBorder; break;
+                    default: bg = Theme.KeyFace(digitFace, 18); hover = Theme.HoverBg; border = Theme.ButtonBorder; break;
                 }
-                double radius = kind == 5 ? 10 : 14;
+                double radius = kind == 5 ? 10 : 15;
                 var keyLayers = new Grid();
                 keyLayers.Children.Add(Theme.Bevel(radius - 1));
                 // keycaps get the same specular edge as the cards; ghost keys (3, 4) stay flat
@@ -202,7 +227,7 @@ namespace DeskMate.Features
                     BorderBrush = border,
                     BorderThickness = border == null ? new Thickness(0) : new Thickness(1),
                     CornerRadius = new CornerRadius(radius),
-                    Height = kind == 5 ? 30 : 48,
+                    Height = kind == 5 ? 34 : 52,
                     Margin = new Thickness(3),
                     Cursor = Cursors.Hand,
                     Child = keyLayers,
@@ -214,8 +239,8 @@ namespace DeskMate.Features
                     // key that should look lit rather than merely raised
                     var glow = new DropShadowEffect
                     {
-                        Color = Theme.AccentColor, BlurRadius = 16, ShadowDepth = 0,
-                        Opacity = Theme.IsLight ? 0.20 : 0.42,
+                        Color = Theme.AccentColor, BlurRadius = 18, ShadowDepth = 0,
+                        Opacity = Theme.IsLight ? 0.28 : 0.5,
                     };
                     glow.Freeze();
                     b.Effect = glow;
@@ -310,6 +335,30 @@ namespace DeskMate.Features
             grid.Children.Add(key("=", equals, 2));
             stack.Children.Add(grid);
 
+            // ---------------- units ribbon (2x4) ----------------
+            // converts the number on the display in place — the everyday "how many pounds
+            // is that?" question, one tap instead of a search engine
+            var unitsGrid = new System.Windows.Controls.Primitives.UniformGrid
+            {
+                Columns = 4,
+                Visibility = _units ? Visibility.Visible : Visibility.Collapsed,
+                Margin = new Thickness(0, 0, 0, 4),
+            };
+            for (int ui = 0; ui < UnitConvert.Labels.Length; ui++)
+            {
+                int idx = ui;
+                unitsGrid.Children.Add(key(UnitConvert.Labels[idx], () =>
+                {
+                    double v;
+                    try { v = ExpressionEvaluator.Eval(ExpressionEvaluator.NormalizePercentPhrase(display.Text)); }
+                    catch { return; }
+                    preview.Text = display.Text + "  " + UnitConvert.Labels[idx];
+                    display.Text = UnitConvert.Apply(idx, v).ToString("G10", CultureInfo.InvariantCulture);
+                    display.CaretIndex = display.Text.Length;
+                }, 5));
+            }
+            stack.Children.Add(unitsGrid);
+
             // ---------------- scientific toggle (ghost pill) ----------------
             var toggleFx = Theme.MakeText("fx", 11.5, Theme.Accent);
             toggleFx.FontWeight = FontWeights.Bold;
@@ -343,7 +392,46 @@ namespace DeskMate.Features
                 proGrid.Visibility = _pro ? Visibility.Visible : Visibility.Collapsed;
                 refreshToggle();
             };
-            stack.Children.Add(toggle);
+
+            // units pill: same ghost style as fx, shares the row so the pad stays compact
+            var unitsFx = Theme.MakeText("<>", 11.5, Theme.Accent);
+            unitsFx.FontWeight = FontWeights.Bold;
+            unitsFx.VerticalAlignment = VerticalAlignment.Center;
+            var unitsLabel = Theme.MakeText(L.T("calc_units"), 11.5, Theme.TextDim);
+            unitsLabel.VerticalAlignment = VerticalAlignment.Center;
+            unitsLabel.Margin = new Thickness(5, 0, 0, 0);
+            var unitsContent = new StackPanel { Orientation = Orientation.Horizontal };
+            unitsContent.Children.Add(unitsFx);
+            unitsContent.Children.Add(unitsLabel);
+            var unitsToggle = new Border
+            {
+                Background = Brushes.Transparent,
+                BorderBrush = Theme.ButtonBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(11, 3.5, 11, 3.5),
+                Margin = new Thickness(8, 7, 0, 0),
+                Cursor = Cursors.Hand,
+                Child = unitsContent,
+            };
+            Theme.AttachHover(unitsToggle, Brushes.Transparent, Theme.HoverBg);
+            unitsToggle.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
+            unitsToggle.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                _units = !_units;
+                unitsGrid.Visibility = _units ? Visibility.Visible : Visibility.Collapsed;
+            };
+
+            var togglesRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            };
+            toggle.Margin = new Thickness(0, 7, 8, 0);
+            togglesRow.Children.Add(toggle);
+            togglesRow.Children.Add(unitsToggle);
+            stack.Children.Add(togglesRow);
 
             // ---------------- history strip ----------------
             var historyRow = new StackPanel { Orientation = Orientation.Horizontal };

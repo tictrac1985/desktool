@@ -13,6 +13,14 @@ namespace DeskMate.UI
     {
         public static void Show(string message, string glyph = "")
         {
+            Show(message, glyph, null, null);
+        }
+
+        /// <summary>Toast with an optional action button (e.g. Undo). The action runs and
+        /// closes the toast; dismissing the toast changes nothing — the action is never
+        /// taken implicitly.</summary>
+        public static void Show(string message, string glyph, string actionLabel, Action onAction)
+        {
             try
             {
                 var w = new Window
@@ -39,6 +47,17 @@ namespace DeskMate.UI
                 text.MaxWidth = 320;
                 text.TextWrapping = TextWrapping.Wrap;
                 row.Children.Add(text);
+                if (!string.IsNullOrEmpty(actionLabel) && onAction != null)
+                {
+                    var btn = Theme.MakeButton(actionLabel, () =>
+                    {
+                        try { onAction(); } catch (Exception ex) { Log.Error("toast action", ex); }
+                        try { w.Close(); } catch { }
+                    }, padding: new Thickness(12, 4, 12, 4));
+                    btn.VerticalAlignment = VerticalAlignment.Center;
+                    btn.Margin = new Thickness(14, 0, 0, 0);
+                    row.Children.Add(btn);
+                }
                 var card = Theme.MakeCard(row, 18);
                 w.Content = card;
                 w.MouseLeftButtonDown += (s, e) => w.Close();

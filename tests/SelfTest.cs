@@ -51,6 +51,9 @@ static class SelfTest
         TestWorldClocks();
         TestChime();
         TestCpuSampler();
+        TestCommands();
+        TestUnitConvert();
+        TestPercentPhrase();
         Console.WriteLine();
         Console.WriteLine("Passed: " + _pass + "   Failed: " + _fail);
         return _fail == 0 ? 0 : 1;
@@ -371,6 +374,25 @@ static class SelfTest
         Check(back.Text == n.Text, "note text survives newlines and Arabic");
         Check(back.Pinned, "note pin survives");
         Check(back.RemindAt == n.RemindAt, "note reminder survives");
+        Check(!back.Done, "note defaults to not done");
+
+        var doneNote = new NoteItem { Text = "finished", Done = true };
+        Check(NoteItem.Parse(doneNote.Write()).Done, "note done flag round-trips");
+
+        var doneStamped = new NoteItem { Text = "stamped", Done = true, DoneAt = new DateTime(2026, 8, 16, 7, 30, 0) };
+        Check(NoteItem.Parse(doneStamped.Write()).DoneAt == doneStamped.DoneAt, "note done-at round-trips");
+        Check(NoteItem.Parse(doneNote.Write()).DoneAt == DateTime.MinValue, "done without stamp stays unknown");
+
+        // daily progress: done today counts, done yesterday falls off, open tasks count
+        int dDone, dTotal;
+        var day = new DateTime(2026, 8, 16);
+        NoteItem.DailyProgress(new List<NoteItem>
+        {
+            new NoteItem { Text = "open" },
+            new NoteItem { Text = "done today", Done = true, DoneAt = day.AddHours(9) },
+            new NoteItem { Text = "done yesterday", Done = true, DoneAt = day.AddDays(-1) },
+        }, day, out dDone, out dTotal);
+        Check(dDone == 1 && dTotal == 2, "daily progress counts today only");
 
         var plain = NoteItem.Parse(new NoteItem { Text = "x" }.Write());
         Check(!plain.HasReminder, "note without reminder reports none");
@@ -387,6 +409,18 @@ static class SelfTest
         Check(sorted.Count == 3 && sorted[0] == b, "pinned notes sort first");
         Check(sorted[1] == a && sorted[2] == c, "unpinned keep their order");
         Check(NoteItem.Sorted(new List<NoteItem> { null, a }).Count == 1, "null entries skipped");
+
+        // completed tasks sink below everything, pinned or not — finishing must never hide
+        // a task mid-list, and restoring it must bring it back where it was
+        var d = new NoteItem { Text = "d", Done = true, Pinned = true };
+        var sorted2 = NoteItem.Sorted(new List<NoteItem> { d, a, b, c });
+        Check(sorted2[0] == b && sorted2[3] == d, "done tasks sink to the bottom");
+
+        // a done task with a due reminder must not fire
+        var t0 = new DateTime(2026, 8, 5, 15, 0, 0);
+        var doneDue = new NoteItem { Text = "done but due", Done = true, RemindAt = t0.AddMinutes(-5) };
+        Check(!NoteItem.DueIndices(new List<NoteItem> { doneDue }, t0).Contains(0),
+              "done task reminders stay quiet");
 
         var now = new DateTime(2026, 8, 5, 15, 0, 0);
         var list = new List<NoteItem>
@@ -746,5 +780,64 @@ static class SelfTest
         CheckNear(CpuSampler.Fraction(50, 60, 40), 0.5, 1e-9, "cpu half busy");
         CheckNear(CpuSampler.Fraction(0, 0, 0), 0, 1e-9, "cpu zero delta safe");
         CheckNear(CpuSampler.Percent(25, 60, 40), 75, 0.2, "cpu percent");
+    }
+
+    static void TestCommands()
+    {
+        var now = new DateTime(2026, 8, 16, 10, 0, 0);   // Sunday 10:00
+
+        var calc = CommandParse.Parse("= 2+3*4", now);
+        Check(calc.Kind == CommandParse.Calc && calc.Text == "2+3*4", "command: calc prefix");
+
+        var open = CommandParse.Parse("افتح كروم", now);
+        Check(open.Kind == CommandParse.OpenApp && open.Text == "كروم", "command: open prefix");
+
+        var task = CommandParse.Parse("ذكّرني بشراء الخبز غداً الساعة 9", now);
+        Check(task.Kind == CommandParse.Task, "command: task prefix");
+        Check(task.Text == "شراء الخبز", "command: time words stripped, got [" + task.Text + "]");
+        Check(task.When == now.Date.AddDays(1).AddHours(9), "command: tomorrow 9 o'clock");
+
+        var rel = CommandParse.Parse("ذكرني بالاتصال بعد 30 دقيقة", now);
+        Check(rel.When == now.AddMinutes(30), "command: after 30 minutes");
+
+        var tonight = CommandParse.Parse("مهمة مراجعة التقرير الساعة 21:30", now);
+        Check(tonight.When == now.Date.AddHours(21).AddMinutes(30), "command: explicit clock time");
+
+        // an hour that already passed today means tomorrow
+        var past = CommandParse.Parse("مهمة سقي الزرع الساعة 8", now);
+        Check(past.When == now.Date.AddDays(1).AddHours(8), "command: past hour rolls to tomorrow");
+
+        // bare text is a reminderless task — the bar's default verb
+        var bare = CommandParse.Parse("شراء حليب", now);
+        Check(bare.Kind == CommandParse.Task && bare.Text == "شراء حليب" && bare.When == DateTime.MinValue,
+              "command: bare text becomes a task");
+
+        // Arabic-Indic digits parse the same as ASCII
+        var indic = CommandParse.Parse("ذكرني بالدواء غداً الساعة ٩", now);
+        Check(indic.When == now.Date.AddDays(1).AddHours(9), "command: Arabic-Indic digits");
+
+        var empty = CommandParse.Parse("", now);
+        Check(empty.Kind == CommandParse.Task && empty.Text == "", "command: empty input tolerated");
+    }
+
+    static void TestUnitConvert()
+    {
+        CheckNear(UnitConvert.Apply(0, 100), 62.1371, 1e-6, "km to mi");
+        CheckNear(UnitConvert.Apply(1, 62.1371), 100, 1e-4, "mi to km round-trip");
+        CheckNear(UnitConvert.Apply(6, 212), 100, 1e-9, "F to C");
+        CheckNear(UnitConvert.Apply(7, 100), 212, 1e-9, "C to F");
+        Check(UnitConvert.Apply(99, 42) == 42, "out-of-range conversion is identity");
+        Check(UnitConvert.Labels.Length == 8, "8 unit chips");
+    }
+
+    static void TestPercentPhrase()
+    {
+        CheckNear(ExpressionEvaluator.Eval(ExpressionEvaluator.NormalizePercentPhrase("20% من 450")),
+                  90, 1e-9, "Arabic percent-of phrase");
+        CheckNear(ExpressionEvaluator.Eval(ExpressionEvaluator.NormalizePercentPhrase("15% of 200")),
+                  30, 1e-9, "English percent-of phrase");
+        // not a phrase: plain expressions and modulo stay untouched
+        Check(ExpressionEvaluator.NormalizePercentPhrase("10%3") == "10%3", "modulo not rewritten");
+        Check(ExpressionEvaluator.NormalizePercentPhrase("2+2") == "2+2", "plain expression untouched");
     }
 }

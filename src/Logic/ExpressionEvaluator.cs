@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace DeskMate.Logic
 {
@@ -9,6 +10,18 @@ namespace DeskMate.Logic
     /// Trig operates in degrees when <c>degrees</c> is true.</summary>
     public static class ExpressionEvaluator
     {
+        /// <summary>"20% من 450" or "20% of 450" → "(20/100)*(450)". The % key is a
+        /// remainder operator, which is never what a person typing "percent of" means —
+        /// without this, the most common everyday percentage question returns nonsense.</summary>
+        public static string NormalizePercentPhrase(string expr)
+        {
+            if (string.IsNullOrWhiteSpace(expr)) return expr;
+            var m = Regex.Match(expr, @"^\s*(\d+(?:\.\d+)?)\s*%\s*(?:من|of)\s+(.+?)\s*$",
+                RegexOptions.IgnoreCase);
+            if (!m.Success) return expr;
+            return "((" + m.Groups[1].Value + ")/100)*(" + m.Groups[2].Value + ")";
+        }
+
         enum TokKind { Num, Op, Func, LParen, RParen }
 
         class Tok

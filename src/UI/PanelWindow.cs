@@ -29,8 +29,28 @@ namespace DeskMate.UI
 
         FrameworkElement _anchor;
         FrameworkElement _caret;
-        /// <summary>True when the panel sits below its anchor, so the caret points up.</summary>
-        bool _caretUp = true;
+        TranslateTransform _slide;
+        /// <summary>Which edge of the card carries the caret: 0 = top edge pointing up
+        /// (panel below the anchor), 1 = bottom edge pointing down, 2 = left edge pointing
+        /// left (panel right of the widget), 3 = right edge pointing right (panel left of
+        /// the widget). Side carets are how panels opened from a vertical sidebar hug the
+        /// widget instead of covering it.</summary>
+        int _caretSide = 0;
+
+        /// <summary>Slides the card in from the anchor's direction. Called by
+        /// <see cref="PlaceNear"/> after <see cref="_caretSide"/> is final.</summary>
+        void PlayEntrance()
+        {
+            if (_slide == null) return;
+            var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
+            var dur = TimeSpan.FromMilliseconds(160);
+            if (_caretSide >= 2)
+                _slide.BeginAnimation(TranslateTransform.XProperty,
+                    new DoubleAnimation(_caretSide == 3 ? -8 : 8, 0, dur) { EasingFunction = ease });
+            else
+                _slide.BeginAnimation(TranslateTransform.YProperty,
+                    new DoubleAnimation(_caretSide == 0 ? 8 : -8, 0, dur) { EasingFunction = ease });
+        }
 
         /// <summary>Set while a modal dialog owned by this panel is open, so losing
         /// activation to the dialog does not auto-close the panel (and kill the dialog).</summary>
@@ -54,6 +74,7 @@ namespace DeskMate.UI
                 case "note": return Glyphs.Note;
                 case "sysmon": return Glyphs.SysMon;
                 case "worldclock": return Glyphs.WorldClock;
+                case "command": return Glyphs.Command;
                 default: return "";
             }
         }
@@ -138,18 +159,15 @@ namespace DeskMate.UI
             root.Children.Add(_caret);   // above the card: it covers the border it grows out of
             Content = root;
 
-            // quick, quiet entrance
+            // quick, quiet entrance — the motion always starts from the icon's side.
+            // Opacity fades in on load; the slide is started by PlaceNear once the caret
+            // side (and therefore the direction) is known.
             Opacity = 0;
-            var slide = new TranslateTransform(0, 8);
-            root.RenderTransform = slide;
+            _slide = new TranslateTransform(0, 0);
+            root.RenderTransform = _slide;
             Loaded += (s, e) =>
             {
                 BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(140)));
-                // rise into place when below the anchor, settle down when above it, so the
-                // motion always starts from the icon's side
-                slide.BeginAnimation(TranslateTransform.YProperty,
-                    new DoubleAnimation(_caretUp ? 8 : -8, 0, TimeSpan.FromMilliseconds(160))
-                    { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
             };
 
             MouseLeftButtonDown += (s, e) => { try { DragMove(); } catch { } };
@@ -224,29 +242,86 @@ namespace DeskMate.UI
                 // anchor to the icon that was clicked; fall back to the whole widget for panels
                 // reopened without one (tray menu, or a settings change re-running Open)
                 Rect a = AnchorRect(owner);
+                Rect wr = new Rect(owner.Left, owner.Top, owner.ActualWidth, owner.ActualHeight);
+
+                double minLeft = wa.Left - CardInset + 4, maxRight = wa.Right + CardInset - 4;
+                double minTop = wa.Top - CardInset + 4, maxBottom = wa.Bottom + CardInset - 4;
+
+                // A tall widget (the Sidebar) owns its strip of screen from top to bottom:
+                // a panel opening above or below the clicked row lands ON the widget and
+                // covers the neighbours the user is about to click. Beside it there is a
+                // whole empty desktop — so side placement is the rule for vertical widgets,
+                // and the rescue for any panel that would otherwise overlap the widget.
+                bool verticalWidget = wr.Height > wr.Width * 1.25;
+                if (verticalWidget && TryBeside(wr, a, w, h, minLeft, maxRight, minTop, maxBottom))
+                {
+                    PlayEntrance();
+                    return;
+                }
 
                 // centre on the anchor, then keep the card fully on screen. The clamp is what
                 // stops a panel opened from an edge icon hanging off the monitor.
                 double left = a.Left + (a.Width - w) / 2;
-                left = Math.Max(wa.Left - CardInset + 4, Math.Min(left, wa.Right - w + CardInset - 4));
+                left = Math.Max(minLeft, Math.Min(left, maxRight - w));
 
                 // prefer below the anchor; flip above when it would not fit
                 double below = a.Bottom - CardInset + 2;
                 double above = a.Top - h + CardInset - 2;
-                _caretUp = true;
+                _caretSide = 0;
                 double top = below;
-                if (below + h > wa.Bottom + CardInset - 4 && above >= wa.Top - CardInset + 4)
+                if (below + h > maxBottom && above >= minTop)
                 {
                     top = above;
-                    _caretUp = false;
+                    _caretSide = 1;
                 }
-                top = Math.Max(wa.Top - CardInset + 4, Math.Min(top, wa.Bottom - h + CardInset - 4));
+                top = Math.Max(minTop, Math.Min(top, maxBottom - h));
 
                 Left = left;
                 Top = top;
-                PlaceCaret(a, left, w, h);
+
+                // overlap rescue: compact widgets (Orbit, or a Classic card with centre-row
+                // icons) can still end up under the panel — slide beside the widget when a
+                // side has room, so the panel never hides the tool row it came from
+                var placed = new Rect(Left, Top, w, h);
+                if (!verticalWidget && OverlapArea(placed, wr) > w * h * 0.2)
+                    TryBeside(wr, a, w, h, minLeft, maxRight, minTop, maxBottom);
+
+                if (_caretSide < 2) PlaceCaret(a, Left, w, h);
+                PlayEntrance();
             }
             catch { }
+        }
+
+        static double OverlapArea(Rect a, Rect b)
+        {
+            double x = Math.Max(0, Math.Min(a.Right, b.Right) - Math.Max(a.Left, b.Left));
+            double y = Math.Max(0, Math.Min(a.Bottom, b.Bottom) - Math.Max(a.Top, b.Top));
+            return x * y;
+        }
+
+        /// <summary>Places the panel beside the widget: the widget's screen-left side when it
+        /// fits there (a sidebar usually hugs the screen's right edge), the right side
+        /// otherwise. The panel's vertical centre follows the clicked icon. Returns false
+        /// when neither side has room — the caller then falls back to below/above.</summary>
+        bool TryBeside(Rect wr, Rect a, double w, double h,
+                       double minLeft, double maxRight, double minTop, double maxBottom)
+        {
+            double top = a.Top + (a.Height - h) / 2;
+            top = Math.Max(minTop, Math.Min(top, maxBottom - h));
+
+            double leftSide = wr.Left - w + CardInset - 6;   // panel's right edge meets the widget
+            double rightSide = wr.Right - CardInset + 6;
+            if (leftSide >= minLeft)
+            {
+                Left = leftSide; Top = top; _caretSide = 3;
+            }
+            else if (rightSide + w <= maxRight)
+            {
+                Left = rightSide; Top = top; _caretSide = 2;
+            }
+            else return false;
+            PlaceCaret(a, Left, w, h);
+            return true;
         }
 
         /// <summary>Screen rect of the clicked icon in the same units as Window.Left/Top.
@@ -276,43 +351,80 @@ namespace DeskMate.UI
         }
 
         /// <summary>Points the caret at the anchor's centre, clamped away from the rounded
-        /// corners so it never straddles one.</summary>
+        /// corners so it never straddles one. Handles all four edges: top/bottom for panels
+        /// above or below the anchor, left/right for panels parked beside a vertical
+        /// widget.</summary>
         void PlaceCaret(Rect anchor, double windowLeft, double w, double h)
         {
             if (_caret == null) return;
             if (_anchor == null) { _caret.Visibility = Visibility.Collapsed; return; }
 
-            const double tw = 17, th = 8;   // tail footprint
-            double centre = anchor.Left + anchor.Width / 2 - windowLeft;
-            double min = CardInset + 22, max = w - CardInset - 22;
-            if (max <= min) { _caret.Visibility = Visibility.Collapsed; return; }
-            centre = Math.Max(min, Math.Min(centre, max));
-
-            // HorizontalAlignment.Left measures from the visual right under RTL, so the offset
-            // is mirrored here rather than by forcing the tree into one direction
-            double fromLeft = centre - tw / 2;
-            double offset = FlowDirection == FlowDirection.RightToLeft ? w - fromLeft - tw : fromLeft;
-
-            // the base overlaps the card by 1px so it hides the border segment it sits on
+            const double tw = 17, th = 8;   // tail footprint (length along the edge × depth)
             var fig = new PathFigure { IsClosed = false, IsFilled = true };
-            if (_caretUp)
+            double offset, top;
+
+            if (_caretSide >= 2)
             {
-                fig.StartPoint = new Point(0, th);
-                fig.Segments.Add(new LineSegment(new Point(tw / 2, 0), true));
-                fig.Segments.Add(new LineSegment(new Point(tw, th), true));
+                // caret on a vertical edge, apex pointing sideways at the widget
+                double centre = anchor.Top + anchor.Height / 2 - Top;
+                double min = CardInset + 22, max = h - CardInset - 22;
+                if (max <= min) { _caret.Visibility = Visibility.Collapsed; return; }
+                centre = Math.Max(min, Math.Min(centre, max));
+                top = centre - tw / 2;
+
+                if (_caretSide == 3)
+                {
+                    // on the screen-right edge, apex pointing right (panel left of widget)
+                    fig.StartPoint = new Point(0, 0);
+                    fig.Segments.Add(new LineSegment(new Point(th, tw / 2), true));
+                    fig.Segments.Add(new LineSegment(new Point(0, tw), true));
+                    double fromLeft = w - CardInset - th + 1;
+                    offset = FlowDirection == FlowDirection.RightToLeft ? w - fromLeft - th : fromLeft;
+                }
+                else
+                {
+                    // on the screen-left edge, apex pointing left (panel right of widget)
+                    fig.StartPoint = new Point(th, 0);
+                    fig.Segments.Add(new LineSegment(new Point(0, tw / 2), true));
+                    fig.Segments.Add(new LineSegment(new Point(th, tw), true));
+                    double fromLeft = CardInset - th + 1;
+                    offset = FlowDirection == FlowDirection.RightToLeft ? w - fromLeft - th : fromLeft;
+                }
             }
             else
             {
-                fig.StartPoint = new Point(0, 0);
-                fig.Segments.Add(new LineSegment(new Point(tw / 2, th), true));
-                fig.Segments.Add(new LineSegment(new Point(tw, 0), true));
+                // caret on a horizontal edge, apex pointing up or down at the anchor
+                double centre = anchor.Left + anchor.Width / 2 - windowLeft;
+                double min = CardInset + 22, max = w - CardInset - 22;
+                if (max <= min) { _caret.Visibility = Visibility.Collapsed; return; }
+                centre = Math.Max(min, Math.Min(centre, max));
+
+                // HorizontalAlignment.Left measures from the visual right under RTL, so the
+                // offset is mirrored here rather than by forcing the tree into one direction
+                double fromLeft = centre - tw / 2;
+                offset = FlowDirection == FlowDirection.RightToLeft ? w - fromLeft - tw : fromLeft;
+
+                if (_caretSide == 0)
+                {
+                    fig.StartPoint = new Point(0, th);
+                    fig.Segments.Add(new LineSegment(new Point(tw / 2, 0), true));
+                    fig.Segments.Add(new LineSegment(new Point(tw, th), true));
+                }
+                else
+                {
+                    fig.StartPoint = new Point(0, 0);
+                    fig.Segments.Add(new LineSegment(new Point(tw / 2, th), true));
+                    fig.Segments.Add(new LineSegment(new Point(tw, 0), true));
+                }
+                top = _caretSide == 0 ? CardInset - th + 1 : h - CardInset - 1;
             }
+
             var geo = new PathGeometry();
             geo.Figures.Add(fig);
             geo.Freeze();
             ((System.Windows.Shapes.Path)_caret).Data = geo;
 
-            double top = _caretUp ? CardInset - th + 1 : h - CardInset - 1;
+            // the base overlaps the card by 1px so it hides the border segment it sits on
             _caret.Margin = new Thickness(offset, top, 0, 0);
             _caret.Visibility = Visibility.Visible;
         }

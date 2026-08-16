@@ -52,6 +52,7 @@ namespace DeskMate.Core
         public bool ShowNote = false;
         public bool ShowSysMon = false;
         public bool ShowWorldClock = false;
+        public bool ShowCommand = true;
 
         // location
         public bool AutoLocation = true;
@@ -265,6 +266,7 @@ namespace DeskMate.Core
             Bit("ShowNote",           s => s.ShowNote,           (s, v) => s.ShowNote = v),
             Bit("ShowSysMon",         s => s.ShowSysMon,         (s, v) => s.ShowSysMon = v),
             Bit("ShowWorldClock",     s => s.ShowWorldClock,     (s, v) => s.ShowWorldClock = v),
+            Bit("ShowCommand",        s => s.ShowCommand,        (s, v) => s.ShowCommand = v),
 
             Bit("AutoLocation",       s => s.AutoLocation,       (s, v) => s.AutoLocation = v),
             Num("Lat",                s => s.Lat,                (s, v) => s.Lat = v),
