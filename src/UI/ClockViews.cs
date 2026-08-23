@@ -957,7 +957,7 @@ namespace DeskMate.UI
     public class DayRingClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-        readonly TextBlock _time, _ampm, _date;
+        readonly TextBlock _time, _ampm, _date, _hijri;
         readonly System.Windows.Media.ArcSegment _arc;
         readonly System.Windows.Shapes.Path _arcPath;
         const double Dial = 168;
@@ -1033,6 +1033,9 @@ namespace DeskMate.UI
             _date.HorizontalAlignment = HorizontalAlignment.Center;
             _date.Margin = new Thickness(0, 6, 0, 0);
             _root.Children.Add(_date);
+            _hijri = Theme.MakeText("", 12, Theme.TextFaint);   // same pattern as DigitalClock
+            _hijri.HorizontalAlignment = HorizontalAlignment.Center;
+            _root.Children.Add(_hijri);
         }
 
         public FrameworkElement Root { get { return _root; } }
@@ -1065,6 +1068,8 @@ namespace DeskMate.UI
                 _arc.IsLargeArc = frac > 0.5;
             }
             _date.Text = DateText.Gregorian(now);
+            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
+            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
         }
     }
 
@@ -1076,7 +1081,7 @@ namespace DeskMate.UI
     public class SunPathClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-        readonly TextBlock _time, _ampm, _date;
+        readonly TextBlock _time, _ampm, _date, _hijri;
         readonly Canvas _sky;
         readonly Path _dayArc;
         readonly Ellipse _sunDot;
@@ -1162,6 +1167,9 @@ namespace DeskMate.UI
             _date.HorizontalAlignment = HorizontalAlignment.Center;
             _date.Margin = new Thickness(0, 4, 0, 0);
             _root.Children.Add(_date);
+            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri.HorizontalAlignment = HorizontalAlignment.Center;
+            _root.Children.Add(_hijri);
         }
 
         static DropShadowEffect MakeSunGlow()
@@ -1219,6 +1227,8 @@ namespace DeskMate.UI
             if (showAmPm) _ampm.Text = ar ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
 
             _date.Text = DateText.Gregorian(now);
+            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
+            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
         }
     }
 
@@ -1230,7 +1240,7 @@ namespace DeskMate.UI
     public class DayStripesClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-        readonly TextBlock _time, _ampm, _date;
+        readonly TextBlock _time, _ampm, _date, _hijri;
         readonly StackPanel _stripesRow;
         readonly Border[] _bars = new Border[24];
 
@@ -1271,6 +1281,9 @@ namespace DeskMate.UI
             _date = Theme.MakeText("", 12.5, Theme.TextDim);
             _date.HorizontalAlignment = HorizontalAlignment.Center;
             _root.Children.Add(_date);
+            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri.HorizontalAlignment = HorizontalAlignment.Center;
+            _root.Children.Add(_hijri);
         }
 
         public FrameworkElement Root { get { return _root; } }
@@ -1310,6 +1323,8 @@ namespace DeskMate.UI
             }
 
             _date.Text = DateText.Gregorian(now);
+            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
+            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
         }
     }
 
