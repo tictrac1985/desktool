@@ -618,52 +618,40 @@ namespace DeskMate.UI
 
             var defs = IconDefs();
             int n = defs.Count;
-            int rightCount = (n + 1) / 2;          // first half goes to the leading column
-            int leftCount = n - rightCount;
+            // ONE column of tools under the clock core instead of two side columns:
+            // the two-column grid made the widget ~3× wider than its own window, so on a
+            // normal screen only one column survived at the screen edge and even Settings
+            // was off-screen. A vertical strip keeps everything inside one narrow window.
+            int perCol = n;
 
-            var colRight = BuildHaloColumn(defs, 0, rightCount);
-            var colLeft = BuildHaloColumn(defs, rightCount, leftCount);
-
-            var grid = new Grid { HorizontalAlignment = HorizontalAlignment.Center };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var colRight = BuildHaloColumn(defs, 0, perCol);
 
             var canvas = new Grid { Width = size + 28, Height = size + 28 };
             Canvas.SetZIndex(halo, 0);
             canvas.Children.Add(halo);
             Canvas.SetLeft(coreCard, 14);
             Canvas.SetTop(coreCard, 14);
-            var coreHost = new Canvas { Width = size + 28, Height = size + 28 };
-            coreHost.Children.Add(canvas);
-            Grid.SetColumn(coreHost, 1);
-            grid.Children.Add(coreHost);
+            // CRITICAL: the core must actually be ADDED to the host — an earlier revision
+            // set its Canvas.Left/Top but never inserted it, so the layout shipped with a
+            // dashed ring and tool columns and NO clock at all (exactly what the user saw).
+            canvas.Children.Add(coreCard);
 
-            colRight.VerticalAlignment = VerticalAlignment.Center;
-            colLeft.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn(colRight, L.IsAr ? 2 : 0);
-            Grid.SetColumn(colLeft, L.IsAr ? 0 : 2);
-            grid.Children.Add(colRight);
-            grid.Children.Add(colLeft);
+            // single centered column: core on top, tool rows beneath it — one narrow
+            // window that always fits the screen and keeps Settings reachable
+            var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            stack.Children.Add(canvas);
+            colRight.HorizontalAlignment = HorizontalAlignment.Stretch;
+            stack.Children.Add(colRight);
 
-            // The layout is a circle floating between two columns — most of its bounding
-            // box is transparent, and WPF only hit-tests painted pixels, so dragging the
-            // "empty" middle did nothing and users could not move the widget to centre it.
-            // A transparent full-bleed background turns the whole grid into one grabbable
-            // surface (Background=null is NOT hit-testable; Transparent IS).
-            var dragSurface = new Grid
-            {
-                Background = Brushes.Transparent,
-                IsHitTestVisible = true,
-            };
-            dragSurface.MouseLeftButtonDown += (s, e) =>
+            // The layout is mostly transparent around the circle, and WPF only hit-tests
+            // painted pixels, so dragging the "empty" middle did nothing. A transparent
+            // full-bleed background turns the whole thing into one grabbable surface.
+            stack.Background = Brushes.Transparent;
+            stack.MouseLeftButtonDown += (s, e) =>
             {
                 if (e.OriginalSource is FrameworkElement) { try { DragMove(); SavePosition(); } catch { } }
             };
-            var root = new Grid();
-            root.Children.Add(dragSurface);   // behind everything, catches all stray clicks
-            root.Children.Add(grid);
-            return WithGrip(root);
+            return WithGrip(stack);
         }
 
         /// <summary>One vertical stack of compact tool rows for the Halo layout.</summary>
