@@ -92,6 +92,8 @@ static class UiSmoke
             Tuple.Create("clock6_binary", (Action)(() => { Settings.I.ClockStyle = 6; SetLayout(0); }), 700),
             Tuple.Create("clock7_dayring", (Action)(() => { Settings.I.ClockStyle = 7; SetLayout(0); }), 700),
             // v1.8: the two newer clock styles + the two new layouts
+            Tuple.Create("clock3_flip", (Action)(() => { Settings.I.ClockStyle = 3; SetLayout(0); }), 700),
+            Tuple.Create("clock4_sidebar_flip", (Action)(() => { SetLayout(4); }), 800),
             Tuple.Create("clock8_sunpath", (Action)(() => { Settings.I.ClockStyle = 8; SetLayout(0); }), 700),
             Tuple.Create("clock9_stripes", (Action)(() => { Settings.I.ClockStyle = 9; SetLayout(0); }), 700),
             Tuple.Create("layout6_monolith", (Action)(() => { Settings.I.ClockStyle = 0; SetLayout(6); }), 800),

@@ -407,6 +407,15 @@ namespace DeskMate.UI
             stack.Children.Add(Hairline(10, 6));
             foreach (var def in IconDefs())
                 stack.Children.Add(MakeSidebarRow(def.Item1, def.Item2, def.Item3));
+
+            // The strip must be at least as wide as the clock actually needs: a digital
+            // time + AM/PM pill is wider than 176px, and squeezing it clipped the pill
+            // instead of growing. Measure the real content and lift the floor to match.
+            _clock.Tick(DateTime.Now);
+            stack.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double need = stack.DesiredSize.Width + 8;    // card padding slack
+            if (need > stack.MinWidth) stack.MinWidth = need;
+
             return WithGrip(MakeCardTracked(stack, 22));
         }
 
@@ -637,7 +646,24 @@ namespace DeskMate.UI
             grid.Children.Add(colRight);
             grid.Children.Add(colLeft);
 
-            return WithGrip(grid);
+            // The layout is a circle floating between two columns — most of its bounding
+            // box is transparent, and WPF only hit-tests painted pixels, so dragging the
+            // "empty" middle did nothing and users could not move the widget to centre it.
+            // A transparent full-bleed background turns the whole grid into one grabbable
+            // surface (Background=null is NOT hit-testable; Transparent IS).
+            var dragSurface = new Grid
+            {
+                Background = Brushes.Transparent,
+                IsHitTestVisible = true,
+            };
+            dragSurface.MouseLeftButtonDown += (s, e) =>
+            {
+                if (e.OriginalSource is FrameworkElement) { try { DragMove(); SavePosition(); } catch { } }
+            };
+            var root = new Grid();
+            root.Children.Add(dragSurface);   // behind everything, catches all stray clicks
+            root.Children.Add(grid);
+            return WithGrip(root);
         }
 
         /// <summary>One vertical stack of compact tool rows for the Halo layout.</summary>
