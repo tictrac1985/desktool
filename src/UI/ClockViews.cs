@@ -746,21 +746,30 @@ namespace DeskMate.UI
         }
     }
 
-    /// <summary>Neon clock — Digital-style digits in a heavy font with a soft accent glow.
-    /// Built from the Digital layout (same AM/PM pill and date rows) plus a per-digit
-    /// outer-glow BlurEffect tuned to the current accent. The glow is a single shared
-    /// frozen effect so rebuilding the tree on a settings change does not multiply the
-    /// per-control cost.</summary>
+    /// <summary>Neon clock — glowing digits inside a living sky: a real sun by day and
+    /// a real moon (at its astronomical phase) by night, each riding its arc behind the
+    /// time text. The digits keep the classic neon glow; the sky gives them a stage.
+    /// The glow is a single shared frozen effect so rebuilding the tree on a settings
+    /// change does not multiply the per-control cost.</summary>
     public class NeonClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
         readonly TextBlock _time;
         readonly TextBlock _ampm, _ampmGlyph;
         readonly TextBlock _date, _hijri;
+        readonly Canvas _sky;
+        readonly Grid _sun;
+        readonly MoonDisc _moon;
+        const double W = 260, H = 128;
         static DropShadowEffect _glow;   // one effect, frozen; rebuilt only on theme change
 
         public NeonClock()
         {
+            // ---- the sky stage behind everything ----
+            _sky = new Canvas { Width = W, Height = H, FlowDirection = FlowDirection.LeftToRight };
+            BuildSky(_sky, out _sun, out _moon);
+
+            // ---- the neon time, centred on top of the sky ----
             _time = Theme.MakeText("", 56, Theme.Accent, Theme.LightFont);
             _time.FontWeight = FontWeights.Bold;
             _time.FlowDirection = FlowDirection.LeftToRight;
@@ -770,7 +779,9 @@ namespace DeskMate.UI
             // recoloured without recreating it.
             _glow = MakeGlow();
             _time.Effect = _glow;
-            _root.Children.Add(_time);
+
+            var centre = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -16, 0, 0) };
+            centre.Children.Add(_time);
 
             // the AM/PM pill uses a translucent accent fill to match the lit digits
             _ampm = Theme.MakeText("", 12.5, Theme.Accent);
@@ -778,14 +789,19 @@ namespace DeskMate.UI
             _ampm.FlowDirection = FlowDirection.LeftToRight;
             _ampm.HorizontalAlignment = HorizontalAlignment.Center;
             _ampm.Margin = new Thickness(0, 4, 0, 0);
-            _root.Children.Add(_ampm);
+            centre.Children.Add(_ampm);
             _ampmGlyph = Theme.MakeText("", 22, Theme.Accent, Theme.SymbolFont);
             _ampmGlyph.FlowDirection = FlowDirection.LeftToRight;
             _ampmGlyph.HorizontalAlignment = HorizontalAlignment.Center;
             _ampmGlyph.Margin = new Thickness(0, 2, 0, 0);
             _ampmGlyph.Visibility = Visibility.Collapsed;
-            _root.Children.Add(_ampmGlyph);
+            centre.Children.Add(_ampmGlyph);
 
+            var dial = new Grid { Width = W, Height = H, FlowDirection = FlowDirection.LeftToRight };
+            dial.Children.Add(_sky);
+            dial.Children.Add(centre);
+
+            _root.Children.Add(dial);
             _date = Theme.MakeText("", 14, Theme.TextDim);
             _date.HorizontalAlignment = HorizontalAlignment.Center;
             _date.Margin = new Thickness(0, 6, 0, 0);
@@ -793,6 +809,71 @@ namespace DeskMate.UI
             _hijri = Theme.MakeText("", 12, Theme.TextFaint);
             _hijri.HorizontalAlignment = HorizontalAlignment.Center;
             _root.Children.Add(_hijri);
+        }
+
+        /// <summary>The sky: a soft radial daylight wash or midnight well depending on the
+        /// hour, a horizon line low in the frame, and the sun/moon riding opposite arcs —
+        /// the sun high through the day hours, the moon skimming the upper sky at night.
+        /// Both stay clear of the centred time text.</summary>
+        static void BuildSky(Canvas sky, out Grid sun, out MoonDisc moon)
+        {
+            var wash = new System.Windows.Shapes.Rectangle { Width = W, Height = H, RadiusX = 18, RadiusY = 18 };
+            var grad = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            grad.GradientStops.Add(new GradientStop(Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF), 0));
+            grad.GradientStops.Add(new GradientStop(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF), 0.55));
+            grad.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0x00, 0x00, 0x00), 1));
+            wash.Fill = grad;
+            wash.IsHitTestVisible = false;
+            sky.Children.Add(wash);
+
+            sun = MakeNeonSun();
+            Canvas.SetZIndex(sun, 1);
+            sky.Children.Add(sun);
+
+            moon = new MoonDisc(15);
+            Canvas.SetZIndex(moon, 1);
+            sky.Children.Add(moon);
+
+            // thin horizon line anchoring the scene
+            var horizon = new System.Windows.Shapes.Rectangle
+            {
+                Width = W - 56, Height = 2,
+                RadiusX = 1, RadiusY = 1,
+                Fill = new SolidColorBrush(Color.FromArgb(0x5C, 0xFF, 0xFF, 0xFF)),
+                IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(horizon, 28);
+            Canvas.SetTop(horizon, H - 26);
+            sky.Children.Add(horizon);
+        }
+
+        /// <summary>The neon-family sun: same layered disc as Sun-path but smaller, its glow
+        /// reading like another lit tube in the sign.</summary>
+        static Grid MakeNeonSun()
+        {
+            var g = new Grid { Width = 62, Height = 62, Visibility = Visibility.Hidden };
+
+            var corona = new Ellipse { Width = 62, Height = 62, IsHitTestVisible = false };
+            var cg = new RadialGradientBrush { Center = new Point(0.5, 0.5), GradientOrigin = new Point(0.5, 0.5) };
+            cg.GradientStops.Add(new GradientStop(Color.FromArgb(0x55, 0xFF, 0xD2, 0x7A), 0));
+            cg.GradientStops.Add(new GradientStop(Color.FromArgb(0x22, 0xFF, 0xB8, 0x5C), 0.45));
+            cg.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+            corona.Fill = cg;
+
+            var body = new Ellipse { Width = 27, Height = 27 };
+            var bg = new RadialGradientBrush { GradientOrigin = new Point(0.35, 0.3), Center = new Point(0.45, 0.42) };
+            bg.GradientStops.Add(new GradientStop(Colors.White, 0));
+            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0xE9, 0xB0), 0.35));
+            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0xC2, 0x66), 0.78));
+            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xF5, 0xA2, 0x4A), 1));
+            body.Fill = bg;
+            var glow = new DropShadowEffect { Color = Color.FromRgb(0xFF, 0xC0, 0x60), BlurRadius = 16, ShadowDepth = 0, Opacity = 0.9 };
+            glow.Freeze();
+            body.Effect = glow;
+
+            g.Children.Add(corona);
+            g.Children.Add(body);
+            return g;
         }
 
         static DropShadowEffect MakeGlow()
@@ -820,6 +901,43 @@ namespace DeskMate.UI
                 _glow = MakeGlow();
                 _time.Effect = _glow;
             }
+
+            // ---- sun & moon ride their arcs ----
+            double sunrise = 6, sunset = 18;
+            double[] times = DeskMate.Features.PrayerFeature.PublicToday();
+            if (times != null && !double.IsNaN(times[1]) && !double.IsNaN(times[4]))
+            {
+                sunrise = times[1];
+                sunset = times[4];
+            }
+            double h = now.TimeOfDay.TotalHours;
+            bool day = h >= sunrise && h <= sunset;
+            if (day)
+            {
+                _sun.Visibility = Visibility.Visible;
+                _moon.Visibility = Visibility.Collapsed;
+                double frac = (h - sunrise) / Math.Max(0.001, sunset - sunrise);
+                double ang = Math.PI * (1 - frac);                    // π → 0 across the day
+                double cx = 46 + Math.Cos(ang) * (W / 2 - 60);
+                double cy = (H - 36) - Math.Sin(ang) * (H - 88);      // apex clears the digits
+                Canvas.SetLeft(_sun, cx - _sun.Width / 2);
+                Canvas.SetTop(_sun, cy - _sun.Height / 2);
+            }
+            else
+            {
+                _sun.Visibility = Visibility.Hidden;
+                _moon.Visibility = Visibility.Visible;
+                double nightStart = h >= sunrise ? sunset : sunset - 24;
+                double nightEnd = nightStart + (24 - (sunset - sunrise));
+                double nf = Math.Max(0, Math.Min(1, (h - nightStart) / Math.Max(0.001, nightEnd - nightStart)));
+                double ang = Math.PI * (1 - nf);
+                double cx = 44 + Math.Cos(ang) * (W / 2 - 58);
+                double cy = (H - 40) - Math.Sin(ang) * (H - 96);
+                Canvas.SetLeft(_moon, cx - _moon.Radius);
+                Canvas.SetTop(_moon, cy - _moon.Radius);
+                _moon.UpdatePhase(now);
+            }
+
             string fmt = s.Use24h
                 ? (s.ShowSeconds ? "HH:mm:ss" : "HH:mm")
                 : (s.ShowSeconds ? "h:mm:ss" : "h:mm");

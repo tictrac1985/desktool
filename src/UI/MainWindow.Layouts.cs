@@ -442,6 +442,7 @@ namespace DeskMate.UI
                 Foreground = Theme.ToolTint(toolSlot),
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
+                FlowDirection = FlowDirection.LeftToRight,   // glyph codepoint, not text
             };
             var glyphHost = new Border { Width = 30, Height = 30, Child = glyphText };
             content.Children.Add(glyphHost);

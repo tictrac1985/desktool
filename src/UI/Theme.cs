@@ -666,6 +666,9 @@ namespace DeskMate.UI
                 FontSize = size,
                 Foreground = brush ?? Text,
                 FontFamily = font ?? UiFont,
+                // Arabic must ALWAYS shape and order RTL regardless of the container's
+                // flow direction — a stray LTR ancestor used to mirror word order
+                FlowDirection = FlowDirection.RightToLeft,
             };
         }
 
@@ -755,7 +758,9 @@ namespace DeskMate.UI
         /// its glow and warms the label.</summary>
         public static FrameworkElement MakeToolCell(string glyph, string label, Action onClick, bool floating, double cellWidth = DefaultCellWidth, int toolSlot = 0)
         {
-            double glyphSize = cellWidth >= 60 ? 24 : 21;
+            // dense single-row layouts (Orbit/Dock) shrink the cell but keep the glyph
+            // readable — colour needs size to be seen at all
+            double glyphSize = cellWidth >= 60 ? 24 : 20;
 
             // coloured glyph: gradient fill via the Foreground brush
             var glyphText = new TextBlock
@@ -818,6 +823,7 @@ namespace DeskMate.UI
                 MaxWidth = cellWidth,
                 MaxHeight = 30,          // two lines at this size; a third would unbalance the row
                 Margin = new Thickness(0, 5, 0, 0),
+                FlowDirection = FlowDirection.RightToLeft,   // Arabic labels shape RTL always
             };
 
             var cell = new StackPanel
@@ -982,7 +988,7 @@ namespace DeskMate.UI
         {
             var cb = new CheckBox
             {
-                Content = new TextBlock { Text = text, Foreground = Text, FontSize = 13, FontFamily = UiFont, TextWrapping = TextWrapping.Wrap },
+                Content = new TextBlock { Text = text, Foreground = Text, FontSize = 13, FontFamily = UiFont, TextWrapping = TextWrapping.Wrap, FlowDirection = FlowDirection.RightToLeft },
                 IsChecked = isChecked,
                 Margin = new Thickness(0, 4, 0, 4),
                 VerticalContentAlignment = VerticalAlignment.Center,
