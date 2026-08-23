@@ -52,6 +52,21 @@ namespace DeskMate.UI
                 // cool gradient: cyan + violet on a deep teal body
                 Accent = Color.FromRgb(0x7D, 0xF9, 0xFF),
                 CardTop = Color.FromArgb(0xD6, 0x0E, 0x23, 0x34), CardBottom = Color.FromArgb(0xDE, 0x10, 0x07, 0x1B) },
+            // --- v1.7 palettes (indices 8..11): four more moods. Dark ones reuse the same
+            //     IsLight=false branch as every other dark theme; Sand rides the existing
+            //     Light branch, so Apply needs no new code.
+            new Palette { KeyAr = "بنفسجي", KeyEn = "Violet",
+                Accent = Color.FromRgb(0xC9, 0xB6, 0xFF),
+                CardTop = Color.FromArgb(0xD6, 0x27, 0x1C, 0x40), CardBottom = Color.FromArgb(0xDE, 0x11, 0x09, 0x21) },
+            new Palette { KeyAr = "نحاسي", KeyEn = "Copper",
+                Accent = Color.FromRgb(0xFF, 0xA5, 0x64),
+                CardTop = Color.FromArgb(0xD6, 0x32, 0x23, 0x1A), CardBottom = Color.FromArgb(0xDE, 0x18, 0x0E, 0x07) },
+            new Palette { KeyAr = "رملي", KeyEn = "Sand", Light = true,
+                Accent = Color.FromRgb(0xA0, 0x65, 0x00),
+                CardTop = Color.FromArgb(0xEE, 0xFB, 0xF6, 0xEC), CardBottom = Color.FromArgb(0xF2, 0xEF, 0xE4, 0xCF) },
+            new Palette { KeyAr = "ياقوتي", KeyEn = "Ruby",
+                Accent = Color.FromRgb(0xFF, 0x8A, 0x96),
+                CardTop = Color.FromArgb(0xD6, 0x31, 0x15, 0x22), CardBottom = Color.FromArgb(0xDE, 0x16, 0x07, 0x0E) },
         };
 
         /// <summary>Index of the palette that was actually applied (differs from the chosen

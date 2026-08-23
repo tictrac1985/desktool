@@ -197,7 +197,9 @@ namespace DeskMate.Features
             clockCombo.Items.Add(L.T("st_style_flip"));
             clockCombo.Items.Add(L.T("st_style_word"));
             clockCombo.Items.Add(L.T("st_style_neon"));
-            clockCombo.SelectedIndex = Math.Max(0, Math.Min(5, Settings.I.ClockStyle));
+            clockCombo.Items.Add(L.T("st_style_binary"));
+            clockCombo.Items.Add(L.T("st_style_dayring"));
+            clockCombo.SelectedIndex = Math.Max(0, Math.Min(7, Settings.I.ClockStyle));
             clockCombo.SelectionChanged += (s, e) =>
             {
                 Settings.I.ClockStyle = clockCombo.SelectedIndex;
@@ -215,6 +217,14 @@ namespace DeskMate.Features
             stack.Children.Add(Theme.MakeCheck(L.T("st_hijri"), Settings.I.ShowHijri, v => { Settings.I.ShowHijri = v; SaveAndReload(); }));
             stack.Children.Add(Theme.MakeCheck(L.T("st_prayer_line"), Settings.I.ShowNextPrayerLine, v => { Settings.I.ShowNextPrayerLine = v; SaveAndReload(); }));
             stack.Children.Add(Theme.MakeCheck(L.T("st_weather_line"), Settings.I.ShowWeatherLine, v => { Settings.I.ShowWeatherLine = v; SaveAndReload(); }));
+            stack.Children.Add(Theme.MakeCheck(L.T("st_panels_pinned"), Settings.I.PanelsPinned, v =>
+            {
+                // live: the panel that is already open follows immediately — its Deactivated
+                // handler reads this flag, and the header pin reflects the new state too
+                Settings.I.PanelsPinned = v;
+                if (PanelWindow.Current is PanelWindow pw && pw.Pinned != v) pw.TogglePin();
+                Settings.I.Save();
+            }));
             stack.Children.Add(Theme.MakeCheck(L.T("st_autostart"), Settings.I.AutoStart, v =>
             {
                 Settings.I.AutoStart = v;

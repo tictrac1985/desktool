@@ -787,6 +787,231 @@ namespace DeskMate.UI
         }
     }
 
+    /// <summary>Binary clock — each digit of HH:MM as a 2×2 grid of glowing dots (BCD):
+    /// the left column carries bits 1 (top) and 2 (bottom), the right column bits 4 and 8.
+    /// A quiet geek classic; the date lines keep it readable for everyone else.</summary>
+    public class BinaryClock : IClockView
+    {
+        readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        readonly TextBlock _date, _hijri;
+        // per-digit dot grids, laid out left→right in the order the digits appear
+        readonly Grid[] _digitGrids = new Grid[4];
+
+        public BinaryClock()
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                FlowDirection = FlowDirection.LeftToRight,
+                Margin = new Thickness(0, 6, 0, 4),
+            };
+            for (int i = 0; i < 4; i++)
+            {
+                var g = new Grid { Margin = new Thickness(5, 0, 5, 0) };
+                // 2 columns (bit 1 | bit 2 on top row, bit 4 | bit 8 below) × 2 rows
+                for (int c = 0; c < 2; c++)
+                    for (int r = 0; r < 2; r++)
+                        g.Children.Add(MakeDot(c, r));
+                _digitGrids[i] = g;
+                row.Children.Add(g);
+                if (i == 1) row.Children.Add(MakeColon());
+            }
+            _root.Children.Add(row);
+
+            _date = Theme.MakeText("", 14, Theme.TextDim);
+            _date.HorizontalAlignment = HorizontalAlignment.Center;
+            _date.Margin = new Thickness(0, 4, 0, 0);
+            _root.Children.Add(_date);
+            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri.HorizontalAlignment = HorizontalAlignment.Center;
+            _root.Children.Add(_hijri);
+        }
+
+        static System.Windows.Shapes.Ellipse MakeDot(int col, int row)
+        {
+            var e = new System.Windows.Shapes.Ellipse
+            {
+                Width = 13, Height = 13,
+                Fill = Theme.TextFaint,
+                Opacity = 0.28,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(col * 19 + 2, row * 19 + 2, 0, 0),
+            };
+            return e;
+        }
+
+        static FrameworkElement MakeColon()
+        {
+            var g = new Grid { Width = 10, Margin = new Thickness(2, 6, 2, 6) };
+            var top = new System.Windows.Shapes.Ellipse
+            {
+                Width = 7, Height = 7, Fill = Theme.Accent,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 8, 0, 0),
+            };
+            var bot = new System.Windows.Shapes.Ellipse
+            {
+                Width = 7, Height = 7, Fill = Theme.Accent,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, 8),
+            };
+            g.Children.Add(top);
+            g.Children.Add(bot);
+            return g;
+        }
+
+        public FrameworkElement Root { get { return _root; } }
+
+        public void Tick(DateTime now)
+        {
+            var s = Settings.I;
+            string t = now.ToString(s.Use24h ? "HHmm" : "hmm", CultureInfo.InvariantCulture);
+            while (t.Length < 4) t = "0" + t;   // 12h "100" → "0100"
+            for (int d = 0; d < 4 && d < t.Length; d++)
+                PaintDigit(_digitGrids[d], t[d] - '0');
+            _date.Text = DateText.Gregorian(now);
+            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
+            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+        }
+
+        /// <summary>Lights the dots encoding <paramref name="value"/> (0..9) in BCD:
+        /// the left column holds bits 1 (top) and 2 (bottom), the right column bits 4
+        /// and 8 — so 9 lights the whole grid, 6 lights everything but the bottom-left.</summary>
+        static void PaintDigit(Grid g, int value)
+        {
+            int bit = 1;
+            foreach (System.Windows.Shapes.Ellipse dot in g.Children)
+            {
+                bool on = (value & bit) != 0;
+                dot.Fill = on ? Theme.Accent : Theme.TextFaint;
+                dot.Opacity = on ? 1.0 : 0.28;
+                dot.Effect = on ? Theme.Elevation(1) : null;
+                bit <<= 1;
+            }
+        }
+    }
+
+    /// <summary>Day-progress ring — an analog-style dial whose single accent arc sweeps from
+    /// midnight to midnight with the sun marker at noon, so one glance answers "how much of
+    /// my day is gone". The centre shows the time; the arc is exact, not decorative.</summary>
+    public class DayRingClock : IClockView
+    {
+        readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        readonly TextBlock _time, _ampm, _date;
+        readonly System.Windows.Media.ArcSegment _arc;
+        readonly System.Windows.Shapes.Path _arcPath;
+        const double Dial = 168;
+
+        public DayRingClock()
+        {
+            double r = Dial / 2 - 9;
+            // faint full circle as the track, then the live accent arc on top
+            var track = new System.Windows.Shapes.Ellipse
+            {
+                Width = Dial - 18, Height = Dial - 18,
+                Stroke = Theme.CardBorder, StrokeThickness = 3,
+            };
+            var fig = new PathFigure { StartPoint = new Point(Dial / 2, 9) };   // 12 o'clock
+            _arc = new System.Windows.Media.ArcSegment
+            {
+                Size = new Size(r, r),
+                SweepDirection = SweepDirection.Clockwise,
+                IsLargeArc = false,
+                Point = new Point(Dial / 2, 9),
+            };
+            fig.Segments.Add(_arc);
+            var geo = new PathGeometry();
+            geo.Figures.Add(fig);
+            _arcPath = new System.Windows.Shapes.Path
+            {
+                Stroke = Theme.Accent,
+                StrokeThickness = 5,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap = PenLineCap.Round,
+                Data = geo,
+            };
+
+            var dial = new Grid { Width = Dial, Height = Dial, FlowDirection = FlowDirection.LeftToRight };
+            dial.Children.Add(track);
+            dial.Children.Add(_arcPath);
+
+            var centre = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            _time = Theme.MakeText("", 34, Theme.Text, Theme.LightFont);
+            _time.HorizontalAlignment = HorizontalAlignment.Center;
+            _time.FlowDirection = FlowDirection.LeftToRight;
+            centre.Children.Add(_time);
+            _ampm = Theme.MakeText("", 12.5, Theme.Accent);
+            _ampm.FontWeight = FontWeights.SemiBold;
+            _ampm.HorizontalAlignment = HorizontalAlignment.Center;
+            _ampm.FlowDirection = FlowDirection.LeftToRight;
+            centre.Children.Add(_ampm);
+            dial.Children.Add(centre);
+
+            // tick marks at 6 / 12 / 18 / 24 h so the sweep has anchors — drawn as straight
+            // lines between two radii (transform origins are relative to the element, so
+            // rotating a small rect about the dial centre needs this explicit geometry)
+            double cx = Dial / 2, cy = Dial / 2;
+            for (int i = 0; i < 4; i++)
+            {
+                double ang = i * Math.PI / 2;
+                var tick = new System.Windows.Shapes.Line
+                {
+                    X1 = cx + 73 * Math.Sin(ang),
+                    Y1 = cy - 73 * Math.Cos(ang),
+                    X2 = cx + 82 * Math.Sin(ang),
+                    Y2 = cy - 82 * Math.Cos(ang),
+                    Stroke = Theme.TextFaint,
+                    StrokeThickness = 2.4,
+                    StrokeStartLineCap = PenLineCap.Round,
+                    StrokeEndLineCap = PenLineCap.Round,
+                };
+                dial.Children.Add(tick);
+            }
+
+            _root.Children.Add(dial);
+            _date = Theme.MakeText("", 12.5, Theme.TextDim);
+            _date.HorizontalAlignment = HorizontalAlignment.Center;
+            _date.Margin = new Thickness(0, 6, 0, 0);
+            _root.Children.Add(_date);
+        }
+
+        public FrameworkElement Root { get { return _root; } }
+
+        public void Tick(DateTime now)
+        {
+            var s = Settings.I;
+            string fmt = s.Use24h ? "HH:mm" : "h:mm";
+            if (s.ShowSeconds) fmt += ":ss";
+            _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
+            bool ar = L.IsAr;
+            _ampm.Visibility = (!s.Use24h) ? Visibility.Visible : Visibility.Collapsed;
+            if (!s.Use24h) _ampm.Text = ar ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
+
+            // fraction of the day elapsed → sweep the arc clockwise from 12 o'clock
+            double frac = (now.Hour * 3600.0 + now.Minute * 60.0 + now.Second) / 86400.0;
+            if (frac <= 0.00001 || frac >= 0.99999)
+            {
+                // degenerate arcs render nothing — hide instead of drawing a zero-length line
+                _arcPath.Visibility = Visibility.Hidden;
+            }
+            else
+            {
+                _arcPath.Visibility = Visibility.Visible;
+                double r = Dial / 2 - 9;
+                double angle = frac * 2 * Math.PI;
+                double x = Dial / 2 + r * Math.Sin(angle);
+                double y = Dial / 2 - r * Math.Cos(angle);   // start at top, sweep clockwise
+                _arc.Point = new Point(x, y);
+                _arc.IsLargeArc = frac > 0.5;
+            }
+            _date.Text = DateText.Gregorian(now);
+        }
+    }
+
     /// <summary>Vector outlines of the isolated ص/م AM/PM markers, extracted from GDI+
     /// (Tahoma Bold at 200px, flattened). The pill draws these instead of shaped text:
     /// on machines where DirectWrite mis-shapes a lone isolated Arabic letter (the

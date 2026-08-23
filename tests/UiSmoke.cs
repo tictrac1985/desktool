@@ -38,6 +38,9 @@ static class UiSmoke
         Settings.Load();
         // never let a capture run repoint the user's autostart at this temporary exe
         Settings.I.AutoStart = false;
+        // nor derive every palette from their wallpaper: Material You overrides Theme.Apply
+        // on the first tick, which would paint every swatch and clock accent wallpaper-grey
+        Settings.I.MaterialYou = false;
         Theme.Apply(DeskMate.Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.AutoTheme, DateTime.Now.Hour));
         _app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         _win = new MainWindow();
@@ -85,6 +88,35 @@ static class UiSmoke
                 PanelWindow.PendingAnchor = FindToolCircle(_win);
                 CalculatorFeature.Open(_win);
             }), 900),
+            // v1.7: the two new clock styles rendered on the classic layout
+            Tuple.Create("clock6_binary", (Action)(() => { Settings.I.ClockStyle = 6; SetLayout(0); }), 700),
+            Tuple.Create("clock7_dayring", (Action)(() => { Settings.I.ClockStyle = 7; SetLayout(0); }), 700),
+            // v1.7: a couple of the new palettes on the widget (Material You is already
+            // forced off for the whole run — see Main — so Theme.Apply sticks)
+            Tuple.Create("theme8_violet", (Action)(() =>
+            {
+                Settings.I.ThemeIndex = 8;
+                Theme.Apply(8);
+                _win.Reload();
+            }), 700),
+            Tuple.Create("theme9_copper", (Action)(() =>
+            {
+                Settings.I.ThemeIndex = 9;
+                Theme.Apply(9);
+                _win.Reload();
+            }), 700),
+            Tuple.Create("theme10_sand", (Action)(() =>
+            {
+                Settings.I.ThemeIndex = 10;
+                Theme.Apply(10);
+                _win.Reload();
+            }), 700),
+            Tuple.Create("theme11_ruby", (Action)(() =>
+            {
+                Settings.I.ThemeIndex = 11;
+                Theme.Apply(11);
+                _win.Reload();
+            }), 700),
         };
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
@@ -182,7 +214,8 @@ static class UiSmoke
             try
             {
                 // a panel still opening under load gets ONE extra beat before it counts as failed
-                bool panelMissing = !prev.StartsWith("layout") && PanelWindow.Current == null;
+                bool widgetStep = prev.StartsWith("layout") || prev.StartsWith("clock") || prev.StartsWith("theme");
+                bool panelMissing = !widgetStep && PanelWindow.Current == null;
                 if (panelMissing && _retried != prev)
                 {
                     _retried = prev;
@@ -190,7 +223,7 @@ static class UiSmoke
                     _timer.Start();
                     return;
                 }
-                if (prev.StartsWith("layout")) CaptureWidget(prev);
+                if (widgetStep) CaptureWidget(prev);
                 else CapturePanel(prev);
             }
             catch (Exception ex)

@@ -233,6 +233,8 @@ namespace DeskMate.Core
             { "st_style_flip",   new[] { "قلابة", "Flip" } },
             { "st_style_word",   new[] { "كلمات", "Word" } },
             { "st_style_neon",   new[] { "نيون", "Neon" } },
+            { "st_style_binary", new[] { "ثنائية (أضواء)", "Binary (dots)" } },
+            { "st_style_dayring",new[] { "حلقة اليوم", "Day ring" } },
             { "st_24h",          new[] { "نظام 24 ساعة", "24-hour format" } },
             { "st_seconds",      new[] { "إظهار الثواني", "Show seconds" } },
             { "st_hijri",        new[] { "التاريخ الهجري", "Hijri date" } },
@@ -259,6 +261,10 @@ namespace DeskMate.Core
 
             { "g_close",         new[] { "إغلاق", "Close" } },
             { "g_ok",            new[] { "موافق", "OK" } },
+
+            { "pn_pin",          new[] { "تثبيت اللوحة (لا تُغلق عند النقر خارجها)", "Pin panel (stays open on outside clicks)" } },
+            { "pn_unpin",        new[] { "إلغاء تثبيت اللوحة (تُغلق عند النقر خارجها)", "Unpin panel (closes on outside clicks)" } },
+            { "st_panels_pinned",new[] { "اللوحات تبقى مفتوحة حتى تغلقها بنفسك", "Panels stay open until you close them" } },
         };
     }
 }

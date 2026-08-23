@@ -24,6 +24,12 @@ namespace DeskMate.Core
         public bool AutoStart = true;
         public double PosX = -1;
         public double PosY = -1;
+        /// <summary>When true (default) feature panels stay open until the user closes them
+        /// with the ✕ button, the pin button or Esc — clicking anywhere outside no longer
+        /// dismisses them. When false, panels auto-close on deactivation (the pre-1.7
+        /// behaviour). Read live by PanelWindow on every Deactivated, so flipping it in
+        /// Settings affects even the panel that is already open.</summary>
+        public bool PanelsPinned = true;
         public int ThemeIndex = 0;
         public bool AutoTheme = false;        // day (06–18) → light palette, night → chosen palette
         public int LayoutIndex = 0;      // 0 classic, 1 connected, 2 tri-panel, 3 orbit, 4 sidebar, 5 dock
@@ -245,6 +251,7 @@ namespace DeskMate.Core
             Bit("AutoStart",          s => s.AutoStart,          (s, v) => s.AutoStart = v),
             Num("PosX",               s => s.PosX,               (s, v) => s.PosX = v),
             Num("PosY",               s => s.PosY,               (s, v) => s.PosY = v),
+            Bit("PanelsPinned",       s => s.PanelsPinned,       (s, v) => s.PanelsPinned = v),
             Int("ThemeIndex",         s => s.ThemeIndex,         (s, v) => s.ThemeIndex = v),
             Bit("AutoTheme",          s => s.AutoTheme,          (s, v) => s.AutoTheme = v),
             Int("LightThemeIndex",    s => s.LightThemeIndex,    (s, v) => s.LightThemeIndex = v),
@@ -306,9 +313,9 @@ namespace DeskMate.Core
             if (AdhanSound < 0 || AdhanSound > 2) AdhanSound = 0;
             // keep in sync with UI.Theme.Palettes.Length — an out-of-range value used to
             // loop Theme.Apply → Reload → tick → Apply until StackOverflow killed the process
-            if (ThemeIndex < 0 || ThemeIndex > 7) ThemeIndex = 0;
-            if (LightThemeIndex < 0 || LightThemeIndex > 7) LightThemeIndex = 4;
-            if (ClockStyle < 0 || ClockStyle > 5) ClockStyle = 0;   // 0..5: digital, analog, minimal, flip, word, neon
+            if (ThemeIndex < 0 || ThemeIndex > 11) ThemeIndex = 0;
+            if (LightThemeIndex < 0 || LightThemeIndex > 11) LightThemeIndex = 4;
+            if (ClockStyle < 0 || ClockStyle > 7) ClockStyle = 0;   // 0..7: digital, analog, minimal, flip, word, neon, binary, day-ring
             if (PrayerAdjust == null || PrayerAdjust.Length != 6) PrayerAdjust = new int[6];
             for (int i = 0; i < PrayerAdjust.Length; i++)
             {

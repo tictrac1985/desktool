@@ -91,6 +91,8 @@ namespace DeskMate.UI
                 case 3: return new FlipClock();
                 case 4: return new WordClock();
                 case 5: return new NeonClock();
+                case 6: return new BinaryClock();
+                case 7: return new DayRingClock();      // 168 px dial — matches Analog sizing
                 default: return new DigitalClock(digitalSize);
             }
         }
@@ -361,10 +363,15 @@ namespace DeskMate.UI
         /// are too tall for the column and fall back to Digital; Minimal and Neon are honoured.</summary>
         FrameworkElement BuildSidebar()
         {
+            // Binary (6) and DayRing (7) are 168-px-class dials: too big for the narrow
+            // strips, so Sidebar falls back to the compact analog dial and Dock to Digital,
+            // exactly like the existing Analog fallbacks.
             int style = Settings.I.ClockStyle;
             _clock = style == 1 ? (IClockView)new AnalogClock(104)
                 : style == 2 ? (IClockView)new MinimalClock()
                 : style == 5 ? (IClockView)new NeonClock()
+                : style == 6 ? (IClockView)new AnalogClock(104)
+                : style == 7 ? (IClockView)new AnalogClock(104)
                 : style == 3 || style == 4 ? MakeClock(false, 26)   // Flip/Word too tall → Digital fallback
                 : MakeClock(false, 26);
             var stack = new StackPanel { MinWidth = 176 };
@@ -438,9 +445,11 @@ namespace DeskMate.UI
         /// they fit the strip height, Minimal still fits comfortably.</summary>
         FrameworkElement BuildDock()
         {
+            // Binary/DayRing are dial-sized: Dock falls back to the compact analog like Analog does.
             int style = Settings.I.ClockStyle;
             _clock = style == 1 ? (IClockView)new AnalogClock(100)
                 : style == 2 ? (IClockView)new MinimalClock()
+                : style == 6 || style == 7 ? (IClockView)new AnalogClock(100)
                 : MakeClock(false, 22);
             var clockCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             clockCol.Children.Add(_clock.Root);

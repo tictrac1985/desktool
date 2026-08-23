@@ -1,5 +1,12 @@
 # سجل التغييرات · Changelog
 
+## v1.7.0 — 2026-08-23 — اللوحات المثبّتة، 4 ثيمات جديدة، نمطا ساعة جديدان
+- **اللوحات لم تعد تُغلق عند النقر خارجها (المطلوب الأهم).** كل لوحة أداة صارت «مثبّتة» افتراضياً: تبقى مفتوحة أثناء عملك في أي برنامج آخر، ولا تُغلق إلا بزر ✕ أو Esc أو زر التثبيت 📌 في الترويسة. زر 📌 بجوار ✕ يقلب الوضع للوحة الحالية ويحفظ اختيارك للوحات القادمة، وخيار «اللوحات تبقى مفتوحة حتى تغلقها بنفسك» في الإعدادات يضبط السلوك العام (ومن ضمنه اللوحة المفتوحة حالياً فوراً). من يفضّل السلوك القديم يعيده من نفس الخيار.
+- **أربعة ثيمات جديدة (المجموع 12):** «بنفسجي» Violet · «نحاسي» Copper · «رملي» Sand (فاتح) · «ياقوتي» Ruby. جميعها تعمل مع الثيم التلقائي (نهار/ليل) و«ثيم من الخلفية» وقائمة ثيم النهار.
+- **نمطا ساعة جديدان (المجموع 8):** «ثنائية» — أضواء BCD لكل رقم مع سطر التاريخ تحتها، و«حلقة اليوم» — قوس لوني يكتمل دورته من منتصف الليل إلى منتصف الليل فتعرف بنظرة كم تبقى من يومك. كلاهما يحترم نظام 12/24 ساعة والثواني والتاريخ الهجري، ويتحول تلقائياً لعقارب مضغوطة في تخطيطي الشريط الجانبي والدوك (مساحة ضيقة).
+- **اختبارات** — +13 (حدود الفهرسة الجديدة، جولة إعدادات كاملة للقيم الجديدة، التثبيت افتراضي).
+- **UiSmoke** — لقطات جديدة: `clock6_binary` · `clock7_dayring` · الثيمات الأربعة على الأداة.
+
 ## v1.6.0 — 2026-08-16 — Contextual panel placement, undo, command bar
 - **Panels now open *beside* the tool, themed per layout.** Clicking a tool icon in a vertical layout (Sidebar) used to drop the panel straight under the icon, covering the very tool you were using. `PanelWindow.PlaceNear` now detects vertical strips (Height > Width × 1.25) and places the panel to the side; square widgets get overlap-rescue (if the panel would cover more than 20% of the anchor it shifts away); the caret arrow points in all four directions with RTL mirroring, and the entrance animation plays from the actual opening direction.
 - **Undo for destructive actions.** Deleting a task/note now shows a toast with a «تراجع» button that re-inserts it — a misclick no longer costs data.

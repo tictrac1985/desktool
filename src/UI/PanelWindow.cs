@@ -10,7 +10,8 @@ using DeskMate.Core;
 namespace DeskMate.UI
 {
     /// <summary>Shared chrome for all feature popups: glass card with a glyph-chip header
-    /// near the widget, topmost while open, closes on deactivate. One panel at a time.</summary>
+    /// near the widget, topmost while open, closes on deactivate unless pinned.
+    /// One panel at a time.</summary>
     public class PanelWindow : Window
     {
         static PanelWindow _current;
@@ -19,8 +20,25 @@ namespace DeskMate.UI
         /// <summary>Currently open panel, if any (used by tests and callers that reposition).</summary>
         public static Window Current { get { return _current; } }
 
+        /// <summary>When true this panel ignores deactivation — the user asked for a panel
+        /// that stays put while they work elsewhere. Set from <see cref="Core.Settings.I"/>.PanelsPinned
+        /// when the panel opens and flipped by the header's pin button.</summary>
+        public bool Pinned;
+
+        /// <summary>Flips the sticky flag of the current panel. Called by the header's pin
+        /// button: a click outside no longer closes a pinned panel; Esc / ✕ always do.</summary>
+        public void TogglePin()
+        {
+            Pinned = !Pinned;
+            RefreshPinButton();
+            // remember the preference: the NEXT panel opens in whichever mode the user chose
+            if (Settings.I.PanelsPinned != Pinned) { Settings.I.PanelsPinned = Pinned; Settings.I.Save(); }
+        }
+
         readonly Grid _contentHost = new Grid();
         Window _owner;
+        Border _pinBtn;
+        TextBlock _pinGlyph;
 
         /// <summary>The icon whose click is about to open a panel. Set by the tool cell right
         /// before it invokes the feature, consumed once by <see cref="Toggle"/>. A field rather
@@ -95,7 +113,7 @@ namespace DeskMate.UI
 
             var stack = new StackPanel { Width = width };
 
-            // header: close circle · glyph chip + title
+            // header: pin circle · close circle · glyph chip + title
             var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
             var close = new Border
             {
@@ -105,13 +123,35 @@ namespace DeskMate.UI
                 Child = Theme.MakeGlyph("\uE711", 10),
                 Cursor = Cursors.Hand,
                 VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 0, 0),
             };
             Theme.AttachHover(close, Theme.ButtonBg, Theme.HoverBg);
             // handle Down too — otherwise the window's DragMove swallows the click before Up fires
             close.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
             close.MouseLeftButtonUp += (s, e) => { e.Handled = true; Close(); };
+            ToolTipService.SetToolTip(close, L.T("g_close"));
             DockPanel.SetDock(close, Dock.Right);
             header.Children.Add(close);
+
+            // pin: keeps the panel open no matter where you click. The state lives in
+            // Settings.PanelsPinned so every panel opens in the mode the user last chose.
+            _pinBtn = new Border
+            {
+                Width = 26, Height = 26,
+                CornerRadius = new CornerRadius(13),
+                Background = Theme.ButtonBg,
+                Child = Theme.MakeGlyph("\uE718", 12),   // E718 Pin (outline); filled when pinned
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+                Opacity = 0.55,
+            };
+            Theme.AttachHover(_pinBtn, Theme.ButtonBg, Theme.HoverBg);
+            _pinBtn.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
+            _pinBtn.MouseLeftButtonUp += (s, e) => { e.Handled = true; TogglePin(); };
+            ToolTipService.SetToolTip(_pinBtn, L.T("pn_pin") + " / " + L.T("pn_unpin"));
+            DockPanel.SetDock(_pinBtn, Dock.Right);
+            header.Children.Add(_pinBtn);
+            _pinGlyph = (TextBlock)_pinBtn.Child;
 
             string glyph = GlyphFor(key);
             if (!string.IsNullOrEmpty(glyph))
@@ -171,7 +211,15 @@ namespace DeskMate.UI
             };
 
             MouseLeftButtonDown += (s, e) => { try { DragMove(); } catch { } };
-            Deactivated += (s, e) => { if (!SuppressAutoClose) { try { Close(); } catch { } } };
+            // A click outside closes the panel ONLY in the unpinned mode. When pinned
+            // (Settings.PanelsPinned, the default) the panel stays open until the user
+            // closes it with ✕ / Esc — that is the whole point of pinning.
+            Deactivated += (s, e) =>
+            {
+                if (SuppressAutoClose) return;                 // a modal dialog owns activation
+                if (Pinned || Settings.I.PanelsPinned) return; // sticky mode: keep it open
+                try { Close(); } catch { }
+            };
             Closed += (s, e) => { if (_current == this) { _current = null; _currentKey = null; } };
             SourceInitialized += (s, e) =>
             {
@@ -179,6 +227,20 @@ namespace DeskMate.UI
                 Win32.MakeToolWindow(h);
             };
             KeyDown += (s, e) => { if (e.Key == Key.Escape) Close(); };
+        }
+
+        /// <summary>Syncs the header pin button with <see cref="Pinned"/>: filled + opaque +
+        /// accent-tinted while pinned, faint outline otherwise.</summary>
+        void RefreshPinButton()
+        {
+            if (_pinBtn == null || _pinGlyph == null) return;
+            _pinBtn.Background = Pinned ? Theme.AccentSoft : Theme.ButtonBg;
+            _pinBtn.BorderBrush = Pinned ? Theme.Accent : Theme.ButtonBorder;
+            _pinBtn.BorderThickness = new Thickness(1);
+            _pinBtn.Opacity = Pinned ? 1.0 : 0.55;
+            _pinGlyph.Text = Pinned ? "\uE841" : "\uE718";   // E841 Pinned (filled), E718 Pin
+            _pinGlyph.FontSize = Pinned ? 11 : 12;
+            _pinGlyph.Foreground = Pinned ? Theme.Accent : Theme.TextDim;
         }
 
         /// <summary>Opens (or toggles) a panel. <paramref name="build"/> receives the panel
@@ -212,6 +274,9 @@ namespace DeskMate.UI
             p._contentHost.Children.Add(content);
             p._owner = owner;
             p._anchor = anchor;
+            // open in the mode the user last chose (pinned by default)
+            p.Pinned = Settings.I.PanelsPinned;
+            p.RefreshPinButton();
             _current = p;
             _currentKey = key;
             p.Loaded += (s, e) => p.PlaceNear(owner);

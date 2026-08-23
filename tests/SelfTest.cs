@@ -46,6 +46,7 @@ static class SelfTest
         TestWeather();
         TestAutoTheme();
         TestMaterialYou();
+        TestV17Additions();
         TestFocus();
         TestOccasions();
         TestWorldClocks();
@@ -639,6 +640,48 @@ static class SelfTest
         Check(AutoThemeCore.EffectiveIndex(3, 7, true, 10) == 7, "auto theme day → chosen light (7)");
         Check(AutoThemeCore.EffectiveIndex(3, 99, true, 10) == 4, "out-of-range light falls back to 4");
         Check(AutoThemeCore.EffectiveIndex(3, 4, false, 10) == 3, "light ignored when auto off");
+        // v1.7: the palette table grew to 12 (0..11) — the clamp must accept the new ones
+        Check(AutoThemeCore.EffectiveIndex(8, false, 10) == 8, "violet (8) accepted");
+        Check(AutoThemeCore.EffectiveIndex(11, 10, true, 22) == 11, "ruby (11) accepted at night");
+        Check(AutoThemeCore.EffectiveIndex(11, 8, true, 10) == 8, "auto theme day → violet (8)");
+        Check(AutoThemeCore.EffectiveIndex(12, false, 10) == 0, "index 12 clamps to 0");
+        Check(AutoThemeCore.EffectiveIndex(-1, false, 10) == 0, "index -1 clamps to 0");
+    }
+
+    /// <summary>v1.7 additions: clock-style bounds and the panels-pinned setting
+    /// round-trip. (Palette-table coverage lives in UiSmoke — SelfTest stays WPF-free.)</summary>
+    static void TestV17Additions()
+    {
+        // settings bounds follow the 12-palette table and the 8 clock styles
+        string tmp = Path.Combine(Path.GetTempPath(), "deskmate_v17_" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            Settings.OverridePath = tmp;
+            var s = new Settings { ThemeIndex = 11, LightThemeIndex = 8, ClockStyle = 7, PanelsPinned = false };
+            s.Save();
+            Settings.Load();
+            Check(Settings.I.ThemeIndex == 11, "theme 11 survives round-trip");
+            Check(Settings.I.LightThemeIndex == 8, "light theme 8 survives round-trip");
+            Check(Settings.I.ClockStyle == 7, "clock style 7 survives round-trip");
+            Check(Settings.I.PanelsPinned == false, "panels-pinned=false survives round-trip");
+
+            // out-of-range values fall back instead of looping Apply→Reload — tested through
+            // the real pipeline: write a corrupt file, load it, read the clamped result
+            var bad = new Settings { ThemeIndex = 99, LightThemeIndex = -5, ClockStyle = 42 };
+            bad.Save();
+            Settings.Load();
+            Check(Settings.I.ThemeIndex == 0, "theme 99 clamps to 0 on load");
+            Check(Settings.I.LightThemeIndex == 4, "light theme -5 clamps to 4 on load");
+            Check(Settings.I.ClockStyle == 0, "clock 42 clamps to 0 on load");
+
+            // default is pinned — the user asked for panels that stay open
+            Check(new Settings().PanelsPinned, "panels pinned by default");
+        }
+        finally
+        {
+            Settings.OverridePath = null;
+            try { File.Delete(tmp); } catch { }
+        }
     }
 
     static void TestMaterialYou()
