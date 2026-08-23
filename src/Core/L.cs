@@ -237,6 +237,7 @@ namespace DeskMate.Core
             { "st_style_dayring",new[] { "حلقة اليوم", "Day ring" } },
             { "st_style_sunpath",new[] { "مسار الشمس", "Sun path" } },
             { "st_style_stripes",new[] { "شرائط اليوم", "Day stripes" } },
+            { "st_style_moonphase", new[] { "طور القمر", "Moon phase" } },
             { "st_24h",          new[] { "نظام 24 ساعة", "24-hour format" } },
             { "st_seconds",      new[] { "إظهار الثواني", "Show seconds" } },
             { "st_hijri",        new[] { "التاريخ الهجري", "Hijri date" } },

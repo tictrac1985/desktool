@@ -96,6 +96,8 @@ static class UiSmoke
             Tuple.Create("clock4_sidebar_flip", (Action)(() => { SetLayout(4); }), 800),
             Tuple.Create("clock8_sunpath", (Action)(() => { Settings.I.ClockStyle = 8; SetLayout(0); }), 700),
             Tuple.Create("clock9_stripes", (Action)(() => { Settings.I.ClockStyle = 9; SetLayout(0); }), 700),
+            // v1.9: the moon-phase dome + the moon-phase clock in the compact sidebar
+            Tuple.Create("clock10_moonphase", (Action)(() => { Settings.I.ClockStyle = 10; SetLayout(0); }), 700),
             Tuple.Create("layout6_monolith", (Action)(() => { Settings.I.ClockStyle = 0; SetLayout(6); }), 800),
             Tuple.Create("layout7_halo", (Action)(() => { SetLayout(7); }), 900),
             // v1.7: a couple of the new palettes on the widget (Material You is already
@@ -196,7 +198,9 @@ static class UiSmoke
         {
             var child = VisualTreeHelper.GetChild(root, i);
             var b = child as System.Windows.Controls.Border;
-            if (b != null && b.Width == 40 && b.Height == 40) return b;
+            // v1.9: tool cells are bare glyph hosts now — a 40×40 Grid, not a circular
+            // Border; find the host by size so anchored panels still have an anchor
+            if (b != null && b.Child is System.Windows.Controls.Grid g && g.Width == 40 && g.Height == 40) return b;
             var found = FindToolCircle(child);
             if (found != null) return found;
         }

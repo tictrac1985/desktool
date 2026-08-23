@@ -1075,17 +1075,18 @@ namespace DeskMate.UI
 
     /// <summary>Sun-path clock — NOT a ring: a half-dome sky over a horizon line, like
     /// looking at the actual sky. The amber arc is only ever the top half (the visible sky),
-    /// with a glowing sun that rises from the left horizon and sets at the right. Night
-    /// shows a moon instead. Deliberately flat-and-wide so it can't be confused with the
-    /// circular Day-ring clock.</summary>
+    /// with a REAL sun — a layered disc (hot core → amber body → soft corona) that rises
+    /// from the left horizon and sets at the right. Night shows the actual moon at its
+    /// true phase (waxing/waning, crescent→full→crescent) computed astronomically.
+    /// Deliberately flat-and-wide so it can't be confused with the circular Day-ring clock.</summary>
     public class SunPathClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
         readonly TextBlock _time, _ampm, _date, _hijri;
         readonly Canvas _sky;
         readonly Path _dayArc;
-        readonly Ellipse _sunDot;
-        readonly StackPanel _moonHost;
+        readonly Grid _sun;                 // layered real sun
+        readonly MoonDisc _moon;            // phase-accurate night moon
         const double W = 240, H = 120;      // wide landscape dome, twice as wide as tall
 
         public SunPathClock()
@@ -1109,26 +1110,10 @@ namespace DeskMate.UI
                 Data = geo,
             };
 
-            _sunDot = new Ellipse
-            {
-                Width = 16, Height = 16,
-                Fill = Theme.Accent,
-                Effect = MakeSunGlow(),
-                Visibility = Visibility.Hidden,
-            };
+            _sun = MakeSun(15);
 
-            // moon for the night hours
-            _moonHost = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Visibility = Visibility.Hidden,
-            };
-            var moon = new TextBlock
-            {
-                Text = "\uE706", FontSize = 18, Foreground = Theme.TextDim,
-                FontFamily = Theme.SymbolFont,
-            };
-            _moonHost.Children.Add(moon);
+            // night moon — drawn at its real astronomical phase
+            _moon = new MoonDisc(13);
 
             // ground: a filled band under the horizon line so the dome reads as "outdoors"
             var ground = new System.Windows.Controls.Border
@@ -1141,10 +1126,10 @@ namespace DeskMate.UI
 
             _sky = new Canvas { Width = W, Height = H };
             _sky.Children.Add(_dayArc);
-            _sky.Children.Add(_sunDot);
-            Canvas.SetLeft(_moonHost, W / 2 - 9);
-            Canvas.SetTop(_moonHost, H - 46);
-            _sky.Children.Add(_moonHost);
+            Canvas.SetZIndex(_sun, 5);
+            _sky.Children.Add(_sun);
+            Canvas.SetZIndex(_moon, 4);
+            _sky.Children.Add(_moon);
 
             var dial = new Grid { Width = W, Height = H, FlowDirection = FlowDirection.LeftToRight };
             dial.Children.Add(_sky);
@@ -1179,6 +1164,34 @@ namespace DeskMate.UI
             return e;
         }
 
+        /// <summary>The real sun: two stacked discs — a white-hot core through amber body,
+        /// and a wide soft corona behind both. Reads as a burning ball, not the flat accent
+        /// dot the old build drew.</summary>
+        Grid MakeSun(double radius)
+        {
+            var g = new Grid { Width = radius * 4.6, Height = radius * 4.6, Visibility = Visibility.Hidden };
+
+            var corona = new Ellipse { Width = radius * 4.6, Height = radius * 4.6, IsHitTestVisible = false };
+            var cg = new RadialGradientBrush { GradientOrigin = new Point(0.5, 0.5), Center = new Point(0.5, 0.5) };
+            cg.GradientStops.Add(new GradientStop(Color.FromArgb(0x66, 0xFF, 0xD2, 0x7A), 0));
+            cg.GradientStops.Add(new GradientStop(Color.FromArgb(0x28, 0xFF, 0xB8, 0x5C), 0.45));
+            cg.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+            corona.Fill = cg;
+
+            var body = new Ellipse { Width = radius * 2, Height = radius * 2 };
+            var bg = new RadialGradientBrush { GradientOrigin = new Point(0.35, 0.3), Center = new Point(0.45, 0.42) };
+            bg.GradientStops.Add(new GradientStop(Colors.White, 0));
+            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0xE9, 0xB0), 0.35));
+            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0xC2, 0x66), 0.78));
+            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xF5, 0xA2, 0x4A), 1));
+            body.Fill = bg;
+            body.Effect = MakeSunGlow();
+
+            g.Children.Add(corona);
+            g.Children.Add(body);
+            return g;
+        }
+
         public FrameworkElement Root { get { return _root; } }
 
         public void Tick(DateTime now)
@@ -1201,21 +1214,37 @@ namespace DeskMate.UI
             bool day = frac >= 0 && frac <= 1;
             if (day)
             {
-                _sunDot.Visibility = Visibility.Visible;
-                _moonHost.Visibility = Visibility.Collapsed;
+                _sun.Visibility = Visibility.Visible;
+                _moon.Visibility = Visibility.Collapsed;
                 _dayArc.Stroke = Theme.Accent;
                 double ang = Math.PI * (1 - frac);         // π → 0 across the day
                 double rr = W / 2 - 8;
                 double cx = W / 2 + rr * Math.Cos(ang);
                 double cy = (H - 14) - rr * Math.Sin(ang); // up from the horizon line
-                Canvas.SetLeft(_sunDot, cx - 8);
-                Canvas.SetTop(_sunDot, cy - 8);
+                Canvas.SetLeft(_sun, cx - _sun.Width / 2);
+                Canvas.SetTop(_sun, cy - _sun.Height / 2);
             }
             else
             {
-                _sunDot.Visibility = Visibility.Hidden;
-                _moonHost.Visibility = Visibility.Visible;   // moon sits on the night ground
-                _dayArc.Stroke = Theme.CardBorder;           // dim arc: the sun is down there
+                _sun.Visibility = Visibility.Hidden;
+                _moon.Visibility = Visibility.Visible;     // moon rides the same dome at night
+                _dayArc.Stroke = Theme.CardBorder;         // dim arc: the sun is down there
+
+                // night fraction: from sunset to tomorrow's sunrise mapped over the dome.
+                // Before midnight use tonight's sunset; after midnight approximate the night
+                // as [sunset−24h → sunrise] so pre-dawn hours still move along the arc.
+                double nightStart = h >= sunrise ? sunset : sunset - 24;
+                double nightEnd = nightStart + (24 - (sunset - sunrise));
+                double nf = (h - nightStart) / Math.Max(0.001, nightEnd - nightStart);
+                nf = Math.Max(0, Math.Min(1, nf));
+                double ang = Math.PI * (1 - nf);
+                // the moon skims LOW above the horizon instead of arcing through the apex:
+                // it never crosses the centred time text, whatever the hour
+                double cx = W / 2 + Math.Cos(ang) * (W / 2 - 28);
+                double cy = (H - 28) - Math.Sin(ang) * 6;
+                Canvas.SetLeft(_moon, cx - _moon.Radius);
+                Canvas.SetTop(_moon, cy - _moon.Radius);
+                _moon.UpdatePhase(now);
             }
 
             string fmt = s.Use24h ? "HH:mm" : "h:mm";
@@ -1226,6 +1255,249 @@ namespace DeskMate.UI
             _ampm.Visibility = showAmPm ? Visibility.Visible : Visibility.Collapsed;
             if (showAmPm) _ampm.Text = ar ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
 
+            _date.Text = DateText.Gregorian(now);
+            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
+            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+        }
+    }
+
+
+    /// <summary>A real moon: a pale disc whose lit share follows the actual astronomical
+    /// phase. Two layered shapes do all eight phases: a bright half-disc on the lit limb,
+    /// plus a terminator half-ellipse that either carries shadow into the lit side
+    /// (crescents) or light across the centre (gibbous/full). Brushes are cached static —
+    /// this repaints every second inside the sun-path night.</summary>
+    public class MoonDisc : Canvas
+    {
+        static readonly Brush ShadowFill = Mk(Color.FromRgb(0x8E, 0x93, 0xA4), 0x38);
+        static readonly Brush LightFill = Mk(Color.FromRgb(0xF2, 0xF0, 0xE4), 0xFF);
+        static readonly Brush DarkFill = Mk(Color.FromRgb(0x8E, 0x93, 0xA4), 0x30);
+        static readonly Brush RimStroke = Mk(Color.FromRgb(0xC9, 0xCE, 0xDC), 0x50);
+
+        static Brush Mk(Color c, byte a)
+        {
+            var b = new SolidColorBrush(Color.FromArgb(a, c.R, c.G, c.B));
+            b.Freeze();
+            return b;
+        }
+
+        readonly Path _litLimb = new Path { Fill = LightFill };
+        readonly Path _terminator = new Path { Fill = ShadowFill };
+        readonly double _r;
+
+        /// <summary>Pixel radius of the disc — callers offset by this when placing on a Canvas.</summary>
+        public double Radius { get { return _r; } }
+
+        public MoonDisc(double radius)
+        {
+            _r = radius;
+            Width = Height = radius * 2;
+
+            // base disc: shadow tone + faint earthshine rim keeps new-moon visible
+            var dark = new Ellipse { Width = radius * 2, Height = radius * 2, Fill = DarkFill };
+            var rim = new Ellipse { Width = radius * 2, Height = radius * 2, Stroke = RimStroke, StrokeThickness = 1 };
+            Children.Add(dark);
+            Children.Add(rim);
+            Children.Add(_litLimb);
+            Children.Add(_terminator);
+        }
+
+        /// <summary>Repaints the phase. Waxing lights the right limb (northern-hemisphere
+        /// view), waning the left. cos(phase) signs the terminator: positive near new →
+        /// shadow bites the lit limb; negative near full → light spills across the centre.
+        /// A soft dark edge on the shadow side keeps the disc readable against stars.</summary>
+        public void UpdatePhase(DateTime now)
+        {
+            double f = DeskMate.Logic.MoonPhase.AgeFraction(now);
+            bool waxing = f < 0.5;
+            double k = Math.Cos(2 * Math.PI * f);          // +1 new … −1 full … +
+            double ax = Math.Max(0.01, _r * Math.Abs(k));  // terminator semi-axis
+
+            _litLimb.Data = LimbGeo(waxing);
+            _terminator.Fill = k > 0 ? ShadowFill : LightFill;
+            // crescent (k>0): shadow carves the LIT side; gibbous (k<0): light spills onto
+            // the DARK side. Either way the bulge points lit-side when k>0, dark-side when k<0.
+            var term = TermGeo(ax, (k > 0) == waxing);
+            _terminator.Data = term;
+            _terminator.Visibility = term == null ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        /// <summary>Bright semicircle: vertical diameter chord, arc through the lit side.
+        /// On screen (Y-down) top→right→bottom is Clockwise.</summary>
+        Geometry LimbGeo(bool rightSide)
+        {
+            var fig = new PathFigure { StartPoint = new Point(_r, 0) };
+            fig.Segments.Add(new ArcSegment
+            {
+                Size = new Size(_r, _r),
+                SweepDirection = rightSide ? SweepDirection.Clockwise : SweepDirection.Counterclockwise,
+                IsLargeArc = false,
+                Point = new Point(_r, 2 * _r),
+            });
+            var geo = new PathGeometry(); geo.Figures.Add(fig); geo.Freeze();
+            return geo;
+        }
+
+        /// <summary>The terminator half-ellipse from top-centre to bottom-centre; the implicit
+        /// closing chord makes its fill exactly the half-disc it bulges into.</summary>
+        Geometry TermGeo(double ax, bool bulgeRight)
+        {
+            if (ax >= _r - 0.01) return null;   // full moon: no shadow half to paint
+            var fig = new PathFigure { StartPoint = new Point(_r, 0) };
+            fig.Segments.Add(new ArcSegment
+            {
+                Size = new Size(ax, _r),
+                SweepDirection = bulgeRight ? SweepDirection.Clockwise : SweepDirection.Counterclockwise,
+                IsLargeArc = false,
+                Point = new Point(_r, 2 * _r),
+            });
+            var geo = new PathGeometry(); geo.Figures.Add(fig); geo.Freeze();
+            return geo;
+        }
+    }
+
+    /// <summary>Moon-phase clock (style 10) — a night-sky dome that is NOT a sun-path clone:
+    /// a deep navy well with scattered stars, the moon at its true phase floating above a
+    /// thin horizon, the phase name beneath the dial, and time/date lines like every other
+    /// style. Wide landscape shape so it can't be confused with the round dials.</summary>
+    public class MoonPhaseClock : IClockView
+    {
+        readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        readonly TextBlock _time, _ampm, _date, _hijri, _phaseName;
+        readonly MoonDisc _moon;
+        const double W = 240, H = 118;
+        readonly Canvas _sky;
+
+        public MoonPhaseClock()
+        {
+            _sky = BuildNightSky(W, H);
+
+            // the moon lives on its OWN overlay canvas so Canvas.SetLeft/Top work
+            // (a Grid parent ignores them and would stretch the disc across the dial)
+            var moonLayer = new Canvas { Width = W, Height = H, IsHitTestVisible = false };
+            _moon = new MoonDisc(17);
+            moonLayer.Children.Add(_moon);
+
+            var dial = new Grid { Width = W, Height = H, FlowDirection = FlowDirection.LeftToRight };
+            dial.Children.Add(_sky);
+            dial.Children.Add(moonLayer);
+
+            var centre = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -10, 0, 0) };
+            _time = Theme.MakeText("", 30, Theme.Text, Theme.LightFont);
+            _time.HorizontalAlignment = HorizontalAlignment.Center;
+            _time.FlowDirection = FlowDirection.LeftToRight;
+            centre.Children.Add(_time);
+            _ampm = Theme.MakeText("", 12, Theme.Accent);
+            _ampm.FontWeight = FontWeights.SemiBold;
+            _ampm.HorizontalAlignment = HorizontalAlignment.Center;
+            _ampm.FlowDirection = FlowDirection.LeftToRight;
+            centre.Children.Add(_ampm);
+            dial.Children.Add(centre);
+
+            _root.Children.Add(dial);
+            _phaseName = Theme.MakeText("", 12, Theme.Accent);
+            _phaseName.HorizontalAlignment = HorizontalAlignment.Center;
+            _root.Children.Add(_phaseName);
+            _date = Theme.MakeText("", 12.5, Theme.TextDim);
+            _date.HorizontalAlignment = HorizontalAlignment.Center;
+            _root.Children.Add(_date);
+            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri.HorizontalAlignment = HorizontalAlignment.Center;
+            _root.Children.Add(_hijri);
+        }
+
+        /// <summary>The night dome: radial midnight gradient, ~26 deterministic stars
+        /// (hash-seeded so they don't jump every rebuild), horizon line at the base and the
+        /// phase-true moon floating upper-right of the time text. The moon is added to the
+        /// DIAL grid (not this canvas) by the constructor, so nothing here is parented twice.</summary>
+        static Canvas BuildNightSky(double w, double h)
+        {
+            var sky = new Canvas { Width = w, Height = h };
+
+            var dome = new System.Windows.Shapes.Path { Stretch = Stretch.None };
+            double r = w / 2 - 6;
+            var fig = new PathFigure { StartPoint = new Point(6, h - 10) };
+            fig.Segments.Add(new ArcSegment
+            {
+                Size = new Size(r, r), SweepDirection = SweepDirection.Clockwise,
+                IsLargeArc = false, Point = new Point(w - 6, h - 10),
+            });
+            var domeGeo = new PathGeometry(); domeGeo.Figures.Add(fig); domeGeo.Freeze();
+            var domeFill = new RadialGradientBrush { Center = new Point(0.5, 0.85), GradientOrigin = new Point(0.5, 0.85) };
+            domeFill.GradientStops.Add(new GradientStop(Color.FromRgb(0x14, 0x1D, 0x3A), 0));
+            domeFill.GradientStops.Add(new GradientStop(Color.FromRgb(0x08, 0x0C, 0x1E), 1));
+            dome.Data = domeGeo;
+            dome.Fill = domeFill;
+            dome.Stroke = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
+            dome.StrokeThickness = 1;
+            sky.Children.Add(dome);
+
+            // stars — positions derived from a stable hash so each rebuild draws the same sky
+            var starBrush = new SolidColorBrush(Color.FromArgb(0xB8, 0xFF, 0xFF, 0xFF)); starBrush.Freeze();
+            var dimStar = new SolidColorBrush(Color.FromArgb(0x54, 0xD8, 0xE4, 0xFF)); dimStar.Freeze();
+            for (int i = 0; i < 26; i++)
+            {
+                int hash = (int)((i * 2654435761L) & 0x7FFFFFFF);
+                double fx = (hash % 1000) / 1000.0;
+                int h2 = (i * 40503 + 97) & 0x7FFFFFFF;
+                double fy = (h2 % 1000) / 1000.0;
+                // keep stars inside the dome and off the very edges
+                double x = 16 + fx * (w - 32);
+                double yTop = h - 18;
+                double y = 8 + fy * (yTop - 14);
+                double dx = x - w / 2, dy = y - (h - 10);
+                if (dx * dx / (r * r) + dy * dy / (r * r) > 0.82) continue;   // outside dome → skip
+                bool big = i % 6 == 0;
+                var s = new System.Windows.Shapes.Rectangle
+                {
+                    Width = big ? 2.2 : 1.4, Height = big ? 2.2 : 1.4,
+                    RadiusX = 1, RadiusY = 1,
+                    Fill = big ? starBrush : dimStar,
+                };
+                Canvas.SetLeft(s, x);
+                Canvas.SetTop(s, y);
+                sky.Children.Add(s);
+            }
+
+            // thin ground line inside the same canvas — a second parent would throw
+            // "element is already the logical child of another element"
+            var ground = new System.Windows.Shapes.Rectangle
+            {
+                Width = w - 60, Height = 6,
+                RadiusX = 3, RadiusY = 3,
+                Fill = new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)),
+                Opacity = 0.8,
+            };
+            Canvas.SetLeft(ground, 30);
+            Canvas.SetTop(ground, h - 9);
+            sky.Children.Add(ground);
+            return sky;
+        }
+
+        public FrameworkElement Root { get { return _root; } }
+
+        public void Tick(DateTime now)
+        {
+            var s = Settings.I;
+
+            // moon parked in the dome's upper-right sky: clear of the centred time text at
+            // any hour, and the phase repaint is the live element here — not a position race
+            double mx = W - 44;
+            double my = 20;
+            Canvas.SetLeft(_moon, mx - _moon.Radius);
+            Canvas.SetTop(_moon, my - _moon.Radius);
+            _moon.UpdatePhase(now);
+
+            string fmt = s.Use24h ? "HH:mm" : "h:mm";
+            if (s.ShowSeconds) fmt += ":ss";
+            _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
+            bool ar = L.IsAr;
+            bool showAmPm = !s.Use24h && s.Scale >= 0.85;
+            _ampm.Visibility = showAmPm ? Visibility.Visible : Visibility.Collapsed;
+            if (showAmPm) _ampm.Text = ar ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
+
+            _phaseName.Text = ar ? DeskMate.Logic.MoonPhase.NameAr(now)
+                                 : "☾ " + DeskMate.Logic.MoonPhase.NameEn(now);
             _date.Text = DateText.Gregorian(now);
             _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
             if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);

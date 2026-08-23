@@ -56,6 +56,7 @@ static class SelfTest
         TestUnitConvert();
         TestPercentPhrase();
         TestOccasionsSeasonal();
+        TestMoonPhase();
         Console.WriteLine();
         Console.WriteLine("Passed: " + _pass + "   Failed: " + _fail);
         return _fail == 0 ? 0 : 1;
@@ -942,5 +943,43 @@ static class SelfTest
         // HijriMonth/HijriDay sane for today
         Check(OccasionCore.HijriMonth(today) >= 1 && OccasionCore.HijriMonth(today) <= 12, "hijri month in range");
         Check(OccasionCore.HijriDay(today) >= 1 && OccasionCore.HijriDay(today) <= 30, "hijri day in range");
+    }
+
+    static void TestMoonPhase()
+    {
+        // Known full moon: 2026-01-03 10:03 UTC (Wolf Moon) — must land in the Full bucket
+        // with near-total illumination.
+        var full = new DateTime(2026, 1, 3, 13, 3, 0, DateTimeKind.Utc);
+        Check(MoonPhase.PhaseIndex(full) == MoonPhase.FullMoon, "known full moon buckets as full");
+        Check(MoonPhase.Illumination(full) > 0.93, "full moon illumination ~1 (" + MoonPhase.Illumination(full).ToString("0.00") + ")");
+        Check(MoonPhase.NameEn(full).Contains("Full"), "full moon name en");
+        Check(!string.IsNullOrEmpty(MoonPhase.NameAr(full)), "phase has an arabic name");
+
+        // Known new moon: 2026-01-18 19:52 UTC — dark disc, new bucket.
+        var newm = new DateTime(2026, 1, 18, 22, 52, 0, DateTimeKind.Utc);
+        Check(MoonPhase.PhaseIndex(newm) == MoonPhase.NewMoon, "known new moon buckets as new");
+        Check(MoonPhase.Illumination(newm) < 0.07, "new moon illumination ~0");
+
+        // A week after the new moon the moon is a waxing crescent ~half lit at first quarter.
+        var firstQ = newm.AddDays(7.38);   // quarter cycle later
+        Check(MoonPhase.IsWaxing(firstQ), "first-quarter moon is waxing");
+        Check(MoonPhase.Illumination(firstQ) > 0.35 && MoonPhase.Illumination(firstQ) < 0.65,
+              "quarter moon roughly half lit");
+
+        // A week before the next new moon it is waning.
+        var wane = newm.AddDays(-7.38);
+        Check(!MoonPhase.IsWaxing(wane), "last-quarter moon is waning");
+
+        // AgeFraction stays in [0,1) across a whole year of daily samples.
+        bool inRange = true;
+        for (int d = 0; d < 365; d++)
+        {
+            double f = MoonPhase.AgeFraction(new DateTime(2026, 6, 1).AddDays(d));
+            if (f < 0 || f >= 1) { inRange = false; break; }
+        }
+        Check(inRange, "age fraction always within [0,1)");
+
+        // Phase names differ between the known full and new moons in both languages.
+        Check(MoonPhase.NameEn(newm) != MoonPhase.NameEn(full), "names distinguish phases en");
     }
 }

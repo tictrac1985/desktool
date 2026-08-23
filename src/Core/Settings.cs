@@ -315,7 +315,7 @@ namespace DeskMate.Core
             // loop Theme.Apply → Reload → tick → Apply until StackOverflow killed the process
             if (ThemeIndex < 0 || ThemeIndex > 11) ThemeIndex = 0;
             if (LightThemeIndex < 0 || LightThemeIndex > 11) LightThemeIndex = 4;
-            if (ClockStyle < 0 || ClockStyle > 9) ClockStyle = 0;   // 0..9: digital, analog, minimal, flip, word, neon, binary, day-ring, sun-path, day-stripes
+            if (ClockStyle < 0 || ClockStyle > 10) ClockStyle = 0;   // 0..10: digital, analog, minimal, flip, word, neon, binary, day-ring, sun-path, day-stripes, moon-phase
             if (PrayerAdjust == null || PrayerAdjust.Length != 6) PrayerAdjust = new int[6];
             for (int i = 0; i < PrayerAdjust.Length; i++)
             {

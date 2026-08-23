@@ -38,12 +38,14 @@ namespace DeskMate.UI
             return list;
         }
 
-        /// <summary>Tool cells with permanently visible names under each icon.</summary>
+        /// <summary>Tool cells with permanently visible names under each icon. Each cell gets
+        /// its registry slot so the new v1.9 bare-glyph cells pick their identity colour.</summary>
         List<FrameworkElement> BuildIcons(bool floating, double cellWidth = 58)
         {
             var list = new List<FrameworkElement>();
-            foreach (var def in IconDefs())
-                list.Add(Theme.MakeToolCell(def.Item1, L.T(def.Item2), def.Item3, floating, cellWidth));
+            var defs = IconDefs();
+            for (int i = 0; i < defs.Count; i++)
+                list.Add(Theme.MakeToolCell(defs[i].Item1, L.T(defs[i].Item2), defs[i].Item3, floating, cellWidth, i));
             return list;
         }
 

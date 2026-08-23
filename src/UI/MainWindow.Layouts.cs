@@ -120,6 +120,7 @@ namespace DeskMate.UI
                 case 7: return new DayRingClock();      // 168 px dial — matches Analog sizing
                 case 8: return new SunPathClock();      // real sunrise→sunset arc from location
                 case 9: return new DayStripesClock();
+                case 10: return new MoonPhaseClock();   // night dome + real moon phase
                 default: return new DigitalClock(digitalSize);
             }
         }
@@ -390,14 +391,14 @@ namespace DeskMate.UI
         /// are too tall for the column and fall back to Digital; Minimal and Neon are honoured.</summary>
         FrameworkElement BuildSidebar()
         {
-            // Binary (6) and DayRing (7) are 168-px-class dials: too big for the narrow
-            // strips, so Sidebar falls back to the compact analog dial; SunPath (8) is a
-            // dial too, Stripes (9) is wide — both fall back like the others.
+            // Binary (6), DayRing (7), SunPath (8) are 168-px-class dials: too big for the
+            // narrow strips, so Sidebar falls back to the compact analog dial; Stripes (9)
+            // is wide and MoonPhase (10) is a wide dome — both fall back like the others.
             int style = Settings.I.ClockStyle;
             _clock = style == 1 || style == 6 || style == 7 ? (IClockView)new AnalogClock(104)
                 : style == 2 ? (IClockView)new MinimalClock()
                 : style == 5 ? (IClockView)new NeonClock()
-                : style == 8 ? (IClockView)new AnalogClock(104)
+                : style == 8 || style == 10 ? (IClockView)new AnalogClock(104)
                 : style == 9 ? (IClockView)new MinimalClock()
                 : style == 3 || style == 4 ? MakeClock(false, 26)   // Flip/Word too tall → Digital fallback
                 : MakeClock(false, 26);
@@ -405,8 +406,9 @@ namespace DeskMate.UI
             stack.Children.Add(_clock.Root);
             stack.Children.Add(StatusLines());
             stack.Children.Add(Hairline(10, 6));
-            foreach (var def in IconDefs())
-                stack.Children.Add(MakeSidebarRow(def.Item1, def.Item2, def.Item3));
+            var allDefs = IconDefs();
+            for (int i = 0; i < allDefs.Count; i++)
+                stack.Children.Add(MakeSidebarRow(allDefs[i].Item1, allDefs[i].Item2, allDefs[i].Item3, i));
 
             // The strip must be at least as wide as the clock actually needs: a digital
             // time + AM/PM pill is wider than 176px, and squeezing it clipped the pill
@@ -419,7 +421,7 @@ namespace DeskMate.UI
             return WithGrip(MakeCardTracked(stack, 22));
         }
 
-        FrameworkElement MakeSidebarRow(string glyph, string titleKey, Action onClick)
+        FrameworkElement MakeSidebarRow(string glyph, string titleKey, Action onClick, int toolSlot = 0)
         {
             var row = new Border
             {
@@ -431,17 +433,18 @@ namespace DeskMate.UI
                 RenderTransform = new TranslateTransform(0, 0),
             };
             var content = new StackPanel { Orientation = Orientation.Horizontal };
-            var circle = new Border
+            // v1.9: bare coloured glyph — same identity tint as the icon rows, no circle
+            var glyphText = new TextBlock
             {
-                Width = 30,
-                Height = 30,
-                CornerRadius = new CornerRadius(15),
-                Background = Theme.ButtonBg,
-                BorderBrush = Theme.ButtonBorder,
-                BorderThickness = new Thickness(1),
-                Child = Theme.MakeGlyph(glyph, 13),
+                Text = glyph,
+                FontSize = 17,
+                FontFamily = Theme.Mdl2,
+                Foreground = Theme.ToolTint(toolSlot),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
             };
-            content.Children.Add(circle);
+            var glyphHost = new Border { Width = 30, Height = 30, Child = glyphText };
+            content.Children.Add(glyphHost);
             var name = Theme.MakeText(L.T(titleKey), 12.5, Theme.TextDim);
             name.VerticalAlignment = VerticalAlignment.Center;
             name.Margin = new Thickness(10, 0, 4, 0);
@@ -452,7 +455,6 @@ namespace DeskMate.UI
             row.MouseEnter += (s, e) =>
             {
                 row.Background = Theme.HoverBg;
-                circle.BorderBrush = Theme.Accent;
                 name.Foreground = Theme.Text;
                 slide.BeginAnimation(TranslateTransform.XProperty,
                     new System.Windows.Media.Animation.DoubleAnimation(L.IsAr ? -4 : 4, TimeSpan.FromMilliseconds(130)));
@@ -460,7 +462,6 @@ namespace DeskMate.UI
             row.MouseLeave += (s, e) =>
             {
                 row.Background = Brushes.Transparent;
-                circle.BorderBrush = Theme.ButtonBorder;
                 name.Foreground = Theme.TextDim;
                 slide.BeginAnimation(TranslateTransform.XProperty,
                     new System.Windows.Media.Animation.DoubleAnimation(0, TimeSpan.FromMilliseconds(130)));
@@ -469,7 +470,7 @@ namespace DeskMate.UI
             row.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
-                PanelWindow.PendingAnchor = circle;   // open attached to this row's icon
+                PanelWindow.PendingAnchor = glyphHost;   // open attached to this row's icon
                 try { onClick(); } catch (Exception ex) { Log.Error("sidebar", ex); }
             };
             return row;
@@ -481,9 +482,10 @@ namespace DeskMate.UI
         /// they fit the strip height, Minimal still fits comfortably.</summary>
         FrameworkElement BuildDock()
         {
-            // Binary/DayRing/SunPath are dial-sized, Stripes is wide: Dock falls back like Analog does.
+            // Binary/DayRing/SunPath/MoonPhase are dial-sized or domed, Stripes is wide:
+            // Dock falls back like Analog does.
             int style = Settings.I.ClockStyle;
-            _clock = style == 1 || style == 6 || style == 7 || style == 8 ? (IClockView)new AnalogClock(100)
+            _clock = style == 1 || style == 6 || style == 7 || style == 8 || style == 10 ? (IClockView)new AnalogClock(100)
                 : style == 2 || style == 9 ? (IClockView)new MinimalClock()
                 : MakeClock(false, 22);
             var clockCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -654,12 +656,13 @@ namespace DeskMate.UI
             return WithGrip(stack);
         }
 
-        /// <summary>One vertical stack of compact tool rows for the Halo layout.</summary>
+        /// <summary>One vertical stack of compact tool rows for the Halo layout. Slots stay
+        /// aligned with the global registry so identity colours match every other layout.</summary>
         StackPanel BuildHaloColumn(List<Tuple<string, string, Action>> defs, int start, int count)
         {
             var col = new StackPanel { MinWidth = 132 };
             for (int i = start; i < start + count && i < defs.Count; i++)
-                col.Children.Add(MakeSidebarRow(defs[i].Item1, defs[i].Item2, defs[i].Item3));
+                col.Children.Add(MakeSidebarRow(defs[i].Item1, defs[i].Item2, defs[i].Item3, i));
             return col;
         }
 

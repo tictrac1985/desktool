@@ -203,7 +203,8 @@ namespace DeskMate.Features
             clockCombo.Items.Add(L.T("st_style_dayring"));
             clockCombo.Items.Add(L.T("st_style_sunpath"));
             clockCombo.Items.Add(L.T("st_style_stripes"));
-            clockCombo.SelectedIndex = Math.Max(0, Math.Min(9, Settings.I.ClockStyle));
+            clockCombo.Items.Add(L.T("st_style_moonphase"));
+            clockCombo.SelectedIndex = Math.Max(0, Math.Min(10, Settings.I.ClockStyle));
             clockCombo.SelectionChanged += (s, e) =>
             {
                 Settings.I.ClockStyle = clockCombo.SelectedIndex;

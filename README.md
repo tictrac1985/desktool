@@ -20,7 +20,7 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 
 | | الأداة | Tool |
 |---|---|---|
-| 🕐 | ساعة وتاريخ (رقمية / عقارب / بسيطة) + التاريخ الهجري | Clock & date (digital / analog / minimal) + Hijri date |
+| 🕐 | ساعة وتاريخ (رقمية / عقارب / بسيطة / قلابة / ثنائية / مسار الشمس / شرائط اليوم / طور القمر) + التاريخ الهجري | Clock & date — 11 styles incl. real sun-path and moon-phase + Hijri date |
 | 🗑 | تنظيف سريع لمخلفات ويندوز مع خيار إفراغ سلة المحذوفات | Quick clean of Windows leftovers + optional Recycle Bin |
 | 🧮 | آلة حاسبة بسيطة تتحول لعلمية بزر واحد | Calculator, one click switches to scientific |
 | 🖼 | تغيير خلفية سطح المكتب مع طريقة العرض | Wallpaper changer with fit style |

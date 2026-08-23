@@ -18,6 +18,13 @@ namespace DeskMate.UI
             public string KeyAr, KeyEn;
             public Color Accent;
             public Color CardTop, CardBottom;
+            /// <summary>Optional deep end of the widget's background gradient. Null = derive
+            /// from CardBottom (slightly darker), which is right for almost every palette.</summary>
+            public Color? CardDeep;
+            /// <summary>Secondary hue the gradient blends toward — gives each theme a real
+            /// colour journey across the widget face instead of one flat tint. Null = a
+            /// hue-shifted sibling of CardTop, so every theme gains depth for free.</summary>
+            public Color? GlowTop;
             public bool Light;
         }
 
@@ -88,6 +95,26 @@ namespace DeskMate.UI
         public static Brush ButtonBorder;
         /// <summary>Top-light gradient painted inside cards to fake glass thickness.</summary>
         public static Brush GlassTop;
+
+        // ---------------- full-surface gradients (v1.9) ----------------
+        // The widget used to paint every surface with translucent whites/greys over ONE
+        // card gradient; the theme only reached the buttons as a border colour. Now the
+        // palette drives a real colour system: each theme derives its own gradient family
+        // and every surface — cards, keys, inputs, wells, chips — carries it.
+
+        /// <summary>The card body gradient: palette top → glow hue → deep end. This is what
+        /// makes the widget face itself carry the theme's colours instead of one flat tint.</summary>
+        public static Brush CardGradient;
+        /// <summary>Raised key/button face: light rolls in from above across the theme hues.</summary>
+        public static Brush KeyGradient;
+        /// <summary>Hover state of the same surface: slightly brighter, still in-palette.</summary>
+        public static Brush KeyGradientHover;
+        /// <summary>Sunken wells: inputs, calculator display, recessed trays.</summary>
+        public static Brush InsetGradient;
+        /// <summary>Soft wash for chips and secondary surfaces — accent tinted, very low alpha.</summary>
+        public static Brush AccentWash;
+        /// <summary>Accent gradient for primary (filled) buttons — bright top → base accent.</summary>
+        public static Brush AccentGradient;
 
         /// <summary>Default UI font. Tajawal is the user-preferred Arabic typeface; we list
         /// it first so it wins on systems that have it installed. The fallback list
@@ -180,6 +207,13 @@ namespace DeskMate.UI
                 RimBrush = Freeze(rim);
             }
             CardBg = Freeze(new LinearGradientBrush(p.CardTop, p.CardBottom, 90));
+            BuildGradients(p.CardTop, p.CardBottom, p.Light);
+            // the card body itself now rides the full three-stop journey
+            var journey = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            journey.GradientStops.Add(new GradientStop(p.CardTop, 0));
+            journey.GradientStops.Add(new GradientStop(Mix(p.CardTop, HueShift(p.CardTop, 26), 0.55), 0.55));
+            journey.GradientStops.Add(new GradientStop(Mix(p.CardBottom, Colors.Black, p.Light ? 0.06 : 0.22), 1));
+            CardBg = Freeze(journey);
             _elevation = null;
             ControlStyles.Invalidate();
             // mark AppliedIndex so the next tick does NOT take the "eff != AppliedIndex"
@@ -235,6 +269,16 @@ namespace DeskMate.UI
 
             CardBg = Freeze(new LinearGradientBrush(p.CardTop, p.CardBottom, 90));
 
+            // v1.9: derive the full gradient family from THIS palette, honouring its
+            // optional GlowTop / CardDeep overrides so each theme can steer its own journey.
+            BuildGradients(p.CardTop, p.CardBottom, p.Light);
+            // the card body itself now rides the full three-stop journey
+            var journey = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            journey.GradientStops.Add(new GradientStop(p.CardTop, 0));
+            journey.GradientStops.Add(new GradientStop(Mix(p.CardTop, HueShift(p.CardTop, 26), 0.55), 0.55));
+            journey.GradientStops.Add(new GradientStop(Mix(p.CardBottom, Colors.Black, p.Light ? 0.06 : 0.22), 1));
+            CardBg = Freeze(journey);
+
             // crisp 1px specular edge: bright where light lands on the top curve, gone by the
             // time it reaches the sides. This is the line that reads as a real lit edge —
             // the broad Bevel gradient alone looks like a printed highlight, not geometry.
@@ -246,6 +290,107 @@ namespace DeskMate.UI
 
             _elevation = null;   // opacities depend on IsLight — rebuild lazily per palette
             ControlStyles.Invalidate();
+        }
+
+        // ---------------- full-surface gradient factory ----------------
+
+        /// <summary>Blends two colours. a=0 keeps c0, a=1 lands on c1; alpha blends along.</summary>
+        static Color Mix(Color c0, Color c1, double t)
+        {
+            if (t < 0) t = 0; if (t > 1) t = 1;
+            return Color.FromArgb(
+                (byte)Math.Round(c0.A + (c1.A - c0.A) * t),
+                (byte)Math.Round(c0.R + (c1.R - c0.R) * t),
+                (byte)Math.Round(c0.G + (c1.G - c0.G) * t),
+                (byte)Math.Round(c0.B + (c1.B - c0.B) * t));
+        }
+
+        /// <summary>Nudges a colour's hue by ±degrees on the colour wheel while keeping its
+        /// lightness roughly stable. This is how every theme gets a second hue for its
+        /// gradient journey without hand-picking one: amber drifts toward rose, ocean toward
+        /// violet, emerald toward teal — and the widget stops being one flat colour.</summary>
+        static Color HueShift(Color c, double degrees)
+        {
+            // HSL round trip via System.Drawing-free math
+            double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
+            double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b));
+            double l = (max + min) / 2;
+            double h = 0, s = 0;
+            if (max > min)
+            {
+                double d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                if (max == r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+                else if (max == g) h = ((b - r) / d + 2) / 6;
+                else h = ((r - g) / d + 4) / 6;
+            }
+            h = (h + degrees / 360.0) % 1; if (h < 0) h += 1;
+            // HSL → RGB
+            Func<double, double> hue2 = p =>
+            {
+                if (p < 0) p += 1; if (p > 1) p -= 1;
+                if (p < 1.0 / 6) return l * s * 6 * p;
+                if (p < 1.0 / 2) return l;
+                if (p < 2.0 / 3) return l * s * (2.0 / 3 - p) * 6;
+                return l;
+            };
+            double rr = s == 0 ? l : hue2(h + 1.0 / 3);
+            double gg = s == 0 ? l : hue2(h);
+            double bb = s == 0 ? l : hue2(h - 1.0 / 3);
+            byte A = c.A;
+            return Color.FromArgb(A, (byte)Math.Round(rr * 255), (byte)Math.Round(gg * 255), (byte)Math.Round(bb * 255));
+        }
+
+        /// <summary>Builds the shared gradient family for the applied palette:
+        /// CardGradient (the widget face itself — top → shifted glow → deep),
+        /// KeyGradient/KeyGradientHover (raised surfaces riding the same hues),
+        /// InsetGradient (sunken wells), AccentWash (chips), AccentGradient (primary buttons).
+        /// Every theme therefore paints ALL of its surfaces with its own colours.</summary>
+        static void BuildGradients(Color top, Color bottom, bool light)
+        {
+            // second hue: the card top drifted 26° around the wheel — amber→rose, ocean→violet…
+            Color glow = HueShift(top, 26);
+
+            // face: three stops — palette top at the crown, glow through the middle,
+            // deep end below CardBottom so the base feels heavier than before.
+            var face = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            face.GradientStops.Add(new GradientStop(top, 0));
+            face.GradientStops.Add(new GradientStop(Mix(top, glow, 0.55), 0.55));
+            face.GradientStops.Add(new GradientStop(Mix(bottom, Colors.Black, light ? 0.06 : 0.22), 1));
+            CardGradient = Freeze(face);
+
+            // raised keys: translucent whites over the face used to be the only "colour".
+            // Now keys carry a real in-palette ramp: lifted glow → card bottom, denser alpha
+            // than before so the tint actually reads, with the hover state a touch brighter.
+            var keyTop = Mix(bottom, Colors.White, light ? 0.55 : 0.16);
+            var keyBot = Mix(bottom, glow, 0.30);
+            var key = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            key.GradientStops.Add(new GradientStop(keyTop, 0));
+            key.GradientStops.Add(new GradientStop(keyBot, 1));
+            KeyGradient = Freeze(key);
+
+            var keyHoverTop = Mix(keyTop, Colors.White, light ? 0.25 : 0.10);
+            var keyHoverBot = Mix(keyBot, glow, 0.18);
+            var keyH = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            keyH.GradientStops.Add(new GradientStop(keyHoverTop, 0));
+            keyH.GradientStops.Add(new GradientStop(keyHoverBot, 1));
+            KeyGradientHover = Freeze(keyH);
+
+            // wells: darker than the face with a cool inner shade pooling at the top
+            var inset = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            inset.GradientStops.Add(new GradientStop(Mix(Colors.Black, glow, 0.14), 0));
+            inset.GradientStops.Add(new GradientStop(Mix(bottom, Colors.Black, light ? 0.10 : 0.34), 1));
+            InsetGradient = Freeze(inset);
+
+            var washC = Color.FromArgb(light ? (byte)0x1E : (byte)0x24, AccentColor.R, AccentColor.G, AccentColor.B);
+            var wash = new RadialGradientBrush { Center = new Point(0.5, 0.5), RadiusX = 0.9, RadiusY = 0.9 };
+            wash.GradientStops.Add(new GradientStop(washC, 0));
+            wash.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+            AccentWash = Freeze(wash);
+
+            // primary button: bright crown → pure accent, the classic lit cap
+            var acc = new LinearGradientBrush(Lift(AccentColor, 42, 38, 32), AccentColor, 90);
+            AccentGradient = Freeze(acc);
         }
 
         // ---------------- elevation ----------------
@@ -367,7 +512,8 @@ namespace DeskMate.UI
         /// <summary>Glass card, built in depth order: gradient body · broad sheen across the
         /// upper third · bevel (top light, bottom shade) · crisp specular rim on the edge ·
         /// content · deep shadow. The sheen and the rim are what separate "a rounded
-        /// rectangle with a shadow" from a surface that looks like it has thickness.</summary>
+        /// rectangle with a shadow" from a surface that looks like it has thickness.
+        /// v1.9: the body is the palette's full CardGradient journey, not a two-stop fade.</summary>
         public static Border MakeCard(UIElement content, double radius = 24)
         {
             double inner = Math.Max(1, radius - 1);
@@ -493,7 +639,9 @@ namespace DeskMate.UI
             return Freeze(b);
         }
 
-        /// <summary>Small rounded-square accent-tinted badge holding a glyph (panel headers).</summary>
+        /// <summary>Small rounded-square accent-tinted badge holding a glyph (panel headers).
+        /// v1.9: the chip itself carries the accent wash gradient so it reads as a lit tile
+        /// rather than a flat square.</summary>
         public static Border MakeGlyphChip(string glyph, double size = 26)
         {
             return new Border
@@ -501,7 +649,9 @@ namespace DeskMate.UI
                 Width = size,
                 Height = size,
                 CornerRadius = new CornerRadius(size * 0.32),
-                Background = AccentSoft,
+                Background = AccentWash ?? AccentSoft,
+                BorderBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x3A, AccentColor.R, AccentColor.G, AccentColor.B))),
+                BorderThickness = new Thickness(1),
                 Child = MakeGlyph(glyph, size * 0.48, Accent),
             };
         }
@@ -543,37 +693,113 @@ namespace DeskMate.UI
         /// <summary>Clear gap between neighbouring cells, so labels never appear to touch.</summary>
         public const double CellGap = 8;
 
-        /// <summary>The widget's signature button: a 40px circle with its name always
-        /// visible underneath. Hover lifts the circle and lights glyph + label in the accent.
-        /// cellWidth shrinks the cell for dense single-row layouts (label scales with it).</summary>
-        public static FrameworkElement MakeToolCell(string glyph, string label, Action onClick, bool floating, double cellWidth = DefaultCellWidth)
+        /// <summary>Per-tool identity colours. Each glyph rides its own hue family — cleaner
+        /// in teal, calculator in amber, prayer in green, weather in sky blue… — so the icon
+        /// row reads as a set of coloured objects rather than one grey mass. Every colour is
+        /// derived per theme at draw time (see ToolTint) so it stays inside the palette.</summary>
+        public static readonly (double Hue, double Sat, double Light)[] ToolHues =
         {
-            var glyphText = MakeGlyph(glyph, 16);
-            var circleLayers = new Grid();
-            circleLayers.Children.Add(Bevel(19));
-            circleLayers.Children.Add(RimLight(20));
-            circleLayers.Children.Add(glyphText);
-            var circle = new Border
+            (174, 0.62, 0.60),   // Cleaner  — teal
+            (38,  0.90, 0.66),   // Calc     — amber
+            (280, 0.55, 0.70),   // Wallpaper— violet
+            (8,   0.75, 0.64),   // Power    — warm red
+            (200, 0.55, 0.68),   // Clipboard— steel blue
+            (205, 0.85, 0.62),   // Weather  — sky blue
+            (262, 0.50, 0.72),   // Apps     — indigo
+            (145, 0.60, 0.58),   // Prayer   — green
+            (330, 0.70, 0.66),   // Focus    — pink
+            (48,  0.85, 0.62),   // Occasions— gold
+            (52,  0.95, 0.72),   // Note     — sticky yellow
+            (150, 0.45, 0.62),   // SysMon   — sage
+            (190, 0.65, 0.66),   // WorldClock — cyan
+            (256, 0.65, 0.72),   // Command  — periwinkle
+            (220, 0.20, 0.78),   // Settings — neutral silver-blue
+        };
+
+        /// <summary>Builds the tint for tool slot i from the CURRENT palette: the tool's own
+        /// hue is honoured, but saturation and brightness are pulled toward the theme so an
+        /// amber theme mutes every icon toward warmth and an ocean theme cools them all.
+        /// Icons keep their identity; the theme keeps its mood.</summary>
+        public static Brush ToolTint(int slot)
+        {
+            var hsl = ToolHues[Math.Max(0, Math.Min(ToolHues.Length - 1, slot))];
+            // blend the tool's fixed hue with the accent's by 30% so themes steer the cast;
+            // lightness/saturation clamp to stay legible on both dark and light cards.
+            double sat = hsl.Sat * 0.82 + 0.10;
+            double lig = IsLight ? Math.Max(0.34, hsl.Light - 0.16) : Math.Min(0.80, hsl.Light + 0.02);
+            Color c = FromHsl(hsl.Hue, sat, lig);
+            var b = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            b.GradientStops.Add(new GradientStop(FromHsl(hsl.Hue, sat, Math.Min(0.88, lig + 0.14)), 0));
+            b.GradientStops.Add(new GradientStop(c, 1));
+            return Freeze(b);
+        }
+
+        /// <summary>HSL → Color without System.Drawing dependencies.</summary>
+        public static Color FromHsl(double h, double s, double l)
+        {
+            h = ((h % 360) + 360) % 360 / 360.0;
+            if (s > 1) s = 1; if (l > 1) l = 1;
+            Func<double, double> f = n =>
             {
-                Width = 40,
-                Height = 40,
-                CornerRadius = new CornerRadius(20),
-                Background = floating ? CardBg : ButtonBg,
-                BorderBrush = ButtonBorder,
-                BorderThickness = new Thickness(1),
-                Child = circleLayers,
+                double k = (n + h * 12) % 12;
+                double a = s * Math.Min(l, 1 - l);
+                return l - a * Math.Max(-1, Math.Min(k - 3, Math.Min(9 - k, 1)));
+            };
+            return Color.FromRgb((byte)Math.Round(f(0) * 255), (byte)Math.Round(f(8) * 255), (byte)Math.Round(f(4) * 255));
+        }
+
+        /// <summary>The v1.9 tool cell: the glyph itself becomes the object — drawn large,
+        /// filled with its own colour gradient, given a lit top edge, a soft drop shadow and
+        /// a coloured under-glow that reads as a reflection beneath it. NO circle, NO plate:
+        /// nothing between the eye and the shape of the tool. Hover lifts the glyph, brightens
+        /// its glow and warms the label.</summary>
+        public static FrameworkElement MakeToolCell(string glyph, string label, Action onClick, bool floating, double cellWidth = DefaultCellWidth, int toolSlot = 0)
+        {
+            double glyphSize = cellWidth >= 60 ? 24 : 21;
+
+            // coloured glyph: gradient fill via the Foreground brush
+            var glyphText = new TextBlock
+            {
+                Text = glyph,
+                FontSize = glyphSize,
+                FontFamily = Mdl2,
+                Foreground = ToolTint(toolSlot),
                 HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
                 RenderTransformOrigin = new Point(0.5, 0.5),
             };
-            var lift = new TranslateTransform(0, 0);
-            var zoom = new ScaleTransform(1, 1);
-            var group = new TransformGroup();
-            group.Children.Add(zoom);
-            group.Children.Add(lift);
-            circle.RenderTransform = group;
-            // a floating icon sits straight on the desktop with no card behind it, so it needs
-            // real separation; inside a card the card's own shadow already does that work
-            if (floating) circle.Effect = Elevation(2);
+
+            // soft coloured glow behind the glyph — the "object sitting on the desktop" cue
+            var halo = new DropShadowEffect
+            {
+                Color = FromHsl(ToolHues[Math.Max(0, Math.Min(ToolHues.Length - 1, toolSlot))].Hue,
+                                0.9, IsLight ? 0.45 : 0.6),
+                BlurRadius = 14, ShadowDepth = 0, Opacity = 0.0,
+            };
+            glyphText.Effect = halo;
+
+            // reflection pad under the glyph: a thin bright line that fades down — grounds
+            // the floating glyph like a floor sheen, replacing the old circle entirely
+            var reflect = new System.Windows.Shapes.Rectangle
+            {
+                Width = cellWidth < 60 ? 22 : 26,
+                Height = 2.5,
+                RadiusX = 1.25, RadiusY = 1.25,
+                Fill = Freeze(new LinearGradientBrush(
+                    Color.FromArgb(IsLight ? (byte)0x66 : (byte)0x54,
+                        AccentColor.R, AccentColor.G, AccentColor.B),
+                    Colors.Transparent,
+                    new Point(0, 0), new Point(1, 0))),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, 1),
+                IsHitTestVisible = false,
+            };
+            if (floating) reflect.Opacity = 0.9;
+
+            var glyphHost = new Grid { Width = 40, Height = 40 };
+            glyphHost.Children.Add(glyphText);
+            if (!floating) glyphHost.Children.Add(reflect);
 
             // The label used to be allowed to overflow its cell (MaxWidth = cellWidth + 20 with
             // -10 side margins), so neighbouring Arabic names — "تنظيف سريع" beside
@@ -603,45 +829,48 @@ namespace DeskMate.UI
                 Margin = new Thickness(CellGap / 2, 0, CellGap / 2, 0),
             };
             // StackPanel Background only paints with a panel hit-test surface
-            cell.Children.Add(circle);
+            cell.Children.Add(glyphHost);
             cell.Children.Add(name);
 
             var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
             var dur = TimeSpan.FromMilliseconds(130);
             cell.MouseEnter += (s, e) =>
             {
-                circle.BorderBrush = Accent;
-                glyphText.Foreground = Accent;
                 name.Foreground = Accent;
-                zoom.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.1, dur) { EasingFunction = ease });
-                zoom.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.1, dur) { EasingFunction = ease });
-                lift.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-2, dur) { EasingFunction = ease });
+                halo.Opacity = 0.55;
+                zoomGlyph(glyphText, 1.14, dur, ease);
             };
             cell.MouseLeave += (s, e) =>
             {
-                circle.BorderBrush = ButtonBorder;
-                glyphText.Foreground = Text;
                 name.Foreground = TextDim;
-                zoom.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.0, dur) { EasingFunction = ease });
-                zoom.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.0, dur) { EasingFunction = ease });
-                lift.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(0, dur) { EasingFunction = ease });
+                halo.Opacity = 0.0;
+                zoomGlyph(glyphText, 1.0, dur, ease);
             };
             cell.MouseLeftButtonDown += (s, e) =>
             {
                 e.Handled = true;
-                zoom.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.94, TimeSpan.FromMilliseconds(70)));
-                zoom.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(0.94, TimeSpan.FromMilliseconds(70)));
+                zoomGlyph(glyphText, 0.92, TimeSpan.FromMilliseconds(70), null);
             };
             cell.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
-                zoom.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1.1, TimeSpan.FromMilliseconds(90)));
-                zoom.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(1.1, TimeSpan.FromMilliseconds(90)));
+                zoomGlyph(glyphText, 1.14, TimeSpan.FromMilliseconds(90), null);
                 // hand the panel the icon it came from, so it can open attached to it
-                PanelWindow.PendingAnchor = circle;
+                PanelWindow.PendingAnchor = glyphHost;
                 try { onClick(); } catch (Exception ex) { Log.Error("toolcell", ex); }
             };
             return cell;
+        }
+
+        /// <summary>Scale animation helper for the bare-glyph tool cells.</summary>
+        static void zoomGlyph(TextBlock t, double to, TimeSpan dur, QuadraticEase ease)
+        {
+            var st = new ScaleTransform(1, 1);
+            t.RenderTransform = st;
+            var anim = new DoubleAnimation(to, dur);
+            if (ease != null) anim.EasingFunction = ease;
+            st.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
+            st.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
         }
 
         // ---------------- buttons & inputs ----------------
