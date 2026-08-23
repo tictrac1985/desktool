@@ -235,6 +235,8 @@ namespace DeskMate.Core
             { "st_style_neon",   new[] { "نيون", "Neon" } },
             { "st_style_binary", new[] { "ثنائية (أضواء)", "Binary (dots)" } },
             { "st_style_dayring",new[] { "حلقة اليوم", "Day ring" } },
+            { "st_style_sunpath",new[] { "مسار الشمس", "Sun path" } },
+            { "st_style_stripes",new[] { "شرائط اليوم", "Day stripes" } },
             { "st_24h",          new[] { "نظام 24 ساعة", "24-hour format" } },
             { "st_seconds",      new[] { "إظهار الثواني", "Show seconds" } },
             { "st_hijri",        new[] { "التاريخ الهجري", "Hijri date" } },
@@ -257,6 +259,8 @@ namespace DeskMate.Core
             { "ly_orbit",        new[] { "مداري", "Orbit" } },
             { "ly_sidebar",      new[] { "قائمة جانبية", "Sidebar" } },
             { "ly_dock",         new[] { "شريط أفقي", "Dock" } },
+            { "ly_monolith",     new[] { "مجسم", "Monolith" } },
+            { "ly_halo",         new[] { "هالة", "Halo" } },
             { "ly_crystal",      new[] { "بلوري", "Crystal" } },
 
             { "g_close",         new[] { "إغلاق", "Close" } },

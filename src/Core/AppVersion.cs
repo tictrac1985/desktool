@@ -6,7 +6,7 @@ namespace DeskMate.Core
     /// shipped 1.4 binaries that registered themselves as 1.2.0).</summary>
     public static class AppVersion
     {
-        public const string Text = "1.7.0";
-        public const string FourPart = "1.7.0.0";
+        public const string Text = "1.8.0";
+        public const string FourPart = "1.8.0.0";
     }
 }

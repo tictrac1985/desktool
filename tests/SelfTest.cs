@@ -55,6 +55,7 @@ static class SelfTest
         TestCommands();
         TestUnitConvert();
         TestPercentPhrase();
+        TestOccasionsSeasonal();
         Console.WriteLine();
         Console.WriteLine("Passed: " + _pass + "   Failed: " + _fail);
         return _fail == 0 ? 0 : 1;
@@ -882,5 +883,64 @@ static class SelfTest
         // not a phrase: plain expressions and modulo stay untouched
         Check(ExpressionEvaluator.NormalizePercentPhrase("10%3") == "10%3", "modulo not rewritten");
         Check(ExpressionEvaluator.NormalizePercentPhrase("2+2") == "2+2", "plain expression untouched");
+    }
+
+    /// <summary>v1.8 seasonal occasion line: nearest-occasion ordering, Ramadan windows
+    /// and Eid greetings. Uses fixed dates with known Hijri months via UmAlQura.</summary>
+    static void TestOccasionsSeasonal()
+    {
+        bool ar = true;
+
+        // NextLine: always names one of the builtins, never throws, format has the separator
+        var today = DateTime.Today;
+        string line = OccasionCore.NextLine(today, ar);
+        Check(!string.IsNullOrEmpty(line) && line.Contains("·"), "NextLine returns a formatted line");
+
+        // English variant differs
+        string lineEn = OccasionCore.NextLine(today, false);
+        Check(!string.IsNullOrEmpty(lineEn) && !lineEn.Contains("باقي"), "NextLine english variant");
+
+        // SeasonalLine outside Ramadan/Eid falls back to the nearest-occasion countdown
+        var info = OccasionCore.SeasonalLine(today, null, ar, true);
+        Check(info != null && !string.IsNullOrEmpty(info.Text), "seasonal default = nearest occasion");
+
+        // occasions off → nothing
+        Check(OccasionCore.SeasonalLine(today, null, ar, false) == null, "seasonal respects ShowOccasions=false");
+
+        // Eid al-Fitr greeting window (Shawwal 1..3): find a real Shawwal day this year
+        DateTime? eidDay = OccasionCore.NextHijri(10, 1, today);
+        if (eidDay != null)
+        {
+            var g = OccasionCore.SeasonalLine(eidDay.Value, null, ar, true);
+            Check(g != null && g.Text.Contains("عيد"), "Eid greeting on Shawwal 1");
+            // day+1 still inside the 3-day window
+            if (OccasionCore.HijriMonth(eidDay.Value.AddDays(1)) == 10)
+            {
+                var g2 = OccasionCore.SeasonalLine(eidDay.Value.AddDays(1), null, ar, true);
+                Check(g2 != null && g2.Text.Contains("عيد"), "Eid greeting on Shawwal 2");
+            }
+        }
+
+        // Ramadan iftar countdown needs prayer times: craft synthetic ones (fajr 4.5h, maghrib 18.2h)
+        var ramadanStart = OccasionCore.NextHijri(9, 1, today);
+        if (ramadanStart != null)
+        {
+            double[] fake = { 4.5, 6.0, 12.0, 15.5, 18.2, 19.7 };
+            var noon = ramadanStart.Value.Date.AddHours(12);   // fasting hours
+            var r = OccasionCore.SeasonalLine(noon, fake, ar, true);
+            Check(r != null && r.IsRamadan && r.Text.Contains("الإفطار"), "ramadan iftar countdown at noon");
+
+            var night = ramadanStart.Value.Date.AddHours(2);   // before fajr
+            var r2 = OccasionCore.SeasonalLine(night, fake, ar, true);
+            Check(r2 != null && r2.IsRamadan && r2.Text.Contains("الإمساك"), "ramadan imsak countdown overnight");
+
+            // no location → generic Ramadan greeting instead of a wrong countdown
+            var r3 = OccasionCore.SeasonalLine(noon, null, ar, true);
+            Check(r3 != null && r3.IsRamadan, "ramadan without location still greets");
+        }
+
+        // HijriMonth/HijriDay sane for today
+        Check(OccasionCore.HijriMonth(today) >= 1 && OccasionCore.HijriMonth(today) <= 12, "hijri month in range");
+        Check(OccasionCore.HijriDay(today) >= 1 && OccasionCore.HijriDay(today) <= 30, "hijri day in range");
     }
 }

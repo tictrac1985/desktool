@@ -44,6 +44,23 @@ namespace DeskMate.UI
             _weatherLine.Children.Add(_weatherGlyph);
             _weatherLine.Children.Add(_weatherText);
 
+            // seasonal occasion line (Ramadan/Eid/nearest occasion) — same pattern as weather
+            _occasionGlyph = Theme.MakeText("", 13, Theme.Accent, Theme.SymbolFont);
+            _occasionGlyph.VerticalAlignment = VerticalAlignment.Center;
+            _occasionGlyph.Margin = new Thickness(0, 0, 5, 0);
+            _occasionText = Theme.MakeText("", 12.5, Theme.TextDim);
+            _occasionText.VerticalAlignment = VerticalAlignment.Center;
+            _occasionLine = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 4, 0, 0),
+                Visibility = Visibility.Collapsed,
+                FlowDirection = FlowDirection.RightToLeft,   // Arabic-first reading for the text
+            };
+            _occasionLine.Children.Add(_occasionGlyph);
+            _occasionLine.Children.Add(_occasionText);
+
             switch (Settings.I.LayoutIndex)
             {
                 case 1: _rootEl = BuildConnected(); break;
@@ -51,6 +68,8 @@ namespace DeskMate.UI
                 case 3: _rootEl = BuildOrbit(); break;
                 case 4: _rootEl = BuildSidebar(); break;
                 case 5: _rootEl = BuildDock(); break;
+                case 6: _rootEl = BuildMonolith(); break;
+                case 7: _rootEl = BuildHalo(); break;
                 default: _rootEl = BuildClassic(); break;
             }
             _rootEl.LayoutTransform = new ScaleTransform(Settings.I.Scale, Settings.I.Scale);
@@ -70,14 +89,20 @@ namespace DeskMate.UI
             ScheduleConnectorDraw();
         }
 
-        /// <summary>The two optional lines under the clock (next prayer, current weather),
-        /// grouped so every layout has a single insertion point and both stay collapsed —
-        /// taking no vertical space — until they actually have something to say.</summary>
+        /// <summary>The optional lines under the clock (next prayer, current weather, the
+        /// seasonal occasion line), grouped so every layout has a single insertion point and
+        /// all stay collapsed — taking no vertical space — until they actually have something
+        /// to say. Density rule: below scale 0.85 only the prayer line survives, so the tiny
+        /// widget stays clean; above it, weather and occasions join in order.</summary>
         StackPanel StatusLines()
         {
             var s = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
             s.Children.Add(_prayerLine);
-            s.Children.Add(_weatherLine);
+            if (Settings.I.Scale >= 0.85)
+            {
+                s.Children.Add(_weatherLine);
+                s.Children.Add(_occasionLine);
+            }
             return s;
         }
 
@@ -93,6 +118,8 @@ namespace DeskMate.UI
                 case 5: return new NeonClock();
                 case 6: return new BinaryClock();
                 case 7: return new DayRingClock();      // 168 px dial — matches Analog sizing
+                case 8: return new SunPathClock();      // real sunrise→sunset arc from location
+                case 9: return new DayStripesClock();
                 default: return new DigitalClock(digitalSize);
             }
         }
@@ -364,14 +391,14 @@ namespace DeskMate.UI
         FrameworkElement BuildSidebar()
         {
             // Binary (6) and DayRing (7) are 168-px-class dials: too big for the narrow
-            // strips, so Sidebar falls back to the compact analog dial and Dock to Digital,
-            // exactly like the existing Analog fallbacks.
+            // strips, so Sidebar falls back to the compact analog dial; SunPath (8) is a
+            // dial too, Stripes (9) is wide — both fall back like the others.
             int style = Settings.I.ClockStyle;
-            _clock = style == 1 ? (IClockView)new AnalogClock(104)
+            _clock = style == 1 || style == 6 || style == 7 ? (IClockView)new AnalogClock(104)
                 : style == 2 ? (IClockView)new MinimalClock()
                 : style == 5 ? (IClockView)new NeonClock()
-                : style == 6 ? (IClockView)new AnalogClock(104)
-                : style == 7 ? (IClockView)new AnalogClock(104)
+                : style == 8 ? (IClockView)new AnalogClock(104)
+                : style == 9 ? (IClockView)new MinimalClock()
                 : style == 3 || style == 4 ? MakeClock(false, 26)   // Flip/Word too tall → Digital fallback
                 : MakeClock(false, 26);
             var stack = new StackPanel { MinWidth = 176 };
@@ -445,11 +472,10 @@ namespace DeskMate.UI
         /// they fit the strip height, Minimal still fits comfortably.</summary>
         FrameworkElement BuildDock()
         {
-            // Binary/DayRing are dial-sized: Dock falls back to the compact analog like Analog does.
+            // Binary/DayRing/SunPath are dial-sized, Stripes is wide: Dock falls back like Analog does.
             int style = Settings.I.ClockStyle;
-            _clock = style == 1 ? (IClockView)new AnalogClock(100)
-                : style == 2 ? (IClockView)new MinimalClock()
-                : style == 6 || style == 7 ? (IClockView)new AnalogClock(100)
+            _clock = style == 1 || style == 6 || style == 7 || style == 8 ? (IClockView)new AnalogClock(100)
+                : style == 2 || style == 9 ? (IClockView)new MinimalClock()
                 : MakeClock(false, 22);
             var clockCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             clockCol.Children.Add(_clock.Root);
@@ -480,6 +506,147 @@ namespace DeskMate.UI
             var pill = MakeCardTracked(rowStack, 40);
             Theme.SetCardPadding(pill, new Thickness(18, 10, 18, 10));
             return WithGrip(pill);
+        }
+
+        /// <summary>Layout 6 — MONOLITH: a standing glass slab with real 3D depth —
+        /// a thick extruded base, an inner glow well behind the clock, and the tool icons
+        /// as floating chips on a pedestal row. The whole widget reads as one moulded
+        /// object rather than flat cards.</summary>
+        FrameworkElement BuildMonolith()
+        {
+            _clock = MakeClock(false, 52);
+            var inner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            inner.Children.Add(_clock.Root);
+            inner.Children.Add(StatusLines());
+
+            var face = new Border
+            {
+                Background = Theme.MakeInnerGlow(),
+                CornerRadius = new CornerRadius(20, 20, 8, 8),
+                Padding = new Thickness(24, 18, 24, 14),
+                Child = inner,
+            };
+
+            // pedestal: darker band under the face, giving the slab its thickness
+            var pedestal = new Border
+            {
+                Height = 16,
+                CornerRadius = new CornerRadius(0, 0, 18, 18),
+                Background = Theme.PedestalBrush(),
+                Margin = new Thickness(6, 0, 6, 0),
+                IsHitTestVisible = false,
+            };
+
+            var body = new StackPanel();
+            body.Children.Add(face);
+            body.Children.Add(pedestal);
+
+            // icon chips on a floating shelf beneath the monolith. Cells are capped well
+            // below the normal width AND the shelf gets generous side padding: eleven
+            // two-line Arabic labels need real room or the end ones kiss the rounded edge.
+            double cw = Math.Min(CellWidthFor(IconDefs().Count, RowBudget()), 62);
+            var shelfRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 8, 0, 2),
+            };
+            foreach (var ic in BuildIcons(false, cw))
+            {
+                ic.Margin = new Thickness(2, 0, 2, 0);
+                shelfRow.Children.Add(ic);
+            }
+            var shelf = new Border
+            {
+                Background = Theme.ButtonBg,
+                CornerRadius = new CornerRadius(18),
+                Padding = new Thickness(22, 5, 22, 4),
+                Effect = Theme.Elevation(2),
+                Child = shelfRow,
+            };
+
+            var root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            root.Children.Add(MakeCardTracked(body, 22));
+            root.Children.Add(WithGrip(shelf));
+            return root;
+        }
+
+        /// <summary>Layout 7 — HALO: a glowing ring around a circular clock core with the
+        /// tools in two side columns (right column in RTL). The halo is a dashed accent
+        /// ellipse that slowly rotates via RenderTransform — alive without being loud.</summary>
+        FrameworkElement BuildHalo()
+        {
+            _clock = MakeClock(false, 44);
+            var inner = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            inner.Children.Add(_clock.Root);
+            inner.Children.Add(StatusLines());
+            var coreCard = MakeCardTracked(inner);
+            coreCard.Margin = new Thickness(0);
+            Theme.SetCardPadding(coreCard, new Thickness(20));
+
+            // measure for a circular core like Orbit does
+            _clock.Tick(DateTime.Now);
+            coreCard.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double mw = coreCard.DesiredSize.Width, mh = coreCard.DesiredSize.Height;
+            double size = Math.Sqrt(mw * mw + mh * mh) + 10;
+            coreCard.Width = size;
+            coreCard.Height = size;
+            Theme.SetCardRadius(coreCard, size / 2);
+
+            // rotating dashed halo just outside the core
+            double haloR = size / 2 + 12;
+            var halo = new Ellipse
+            {
+                Width = 2 * haloR, Height = 2 * haloR,
+                Stroke = new SolidColorBrush(Color.FromArgb(0x66,
+                    Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B)),
+                StrokeThickness = 1.6,
+                StrokeDashArray = new DoubleCollection { 4, 7 },
+                IsHitTestVisible = false,
+            };
+            halo.RenderTransform = new RotateTransform(0);
+            HaloBrushes.Halo = halo;
+
+            var defs = IconDefs();
+            int n = defs.Count;
+            int rightCount = (n + 1) / 2;          // first half goes to the leading column
+            int leftCount = n - rightCount;
+
+            var colRight = BuildHaloColumn(defs, 0, rightCount);
+            var colLeft = BuildHaloColumn(defs, rightCount, leftCount);
+
+            var grid = new Grid { HorizontalAlignment = HorizontalAlignment.Center };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var canvas = new Grid { Width = size + 28, Height = size + 28 };
+            Canvas.SetZIndex(halo, 0);
+            canvas.Children.Add(halo);
+            Canvas.SetLeft(coreCard, 14);
+            Canvas.SetTop(coreCard, 14);
+            var coreHost = new Canvas { Width = size + 28, Height = size + 28 };
+            coreHost.Children.Add(canvas);
+            Grid.SetColumn(coreHost, 1);
+            grid.Children.Add(coreHost);
+
+            colRight.VerticalAlignment = VerticalAlignment.Center;
+            colLeft.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(colRight, L.IsAr ? 2 : 0);
+            Grid.SetColumn(colLeft, L.IsAr ? 0 : 2);
+            grid.Children.Add(colRight);
+            grid.Children.Add(colLeft);
+
+            return WithGrip(grid);
+        }
+
+        /// <summary>One vertical stack of compact tool rows for the Halo layout.</summary>
+        StackPanel BuildHaloColumn(List<Tuple<string, string, Action>> defs, int start, int count)
+        {
+            var col = new StackPanel { MinWidth = 132 };
+            for (int i = start; i < start + count && i < defs.Count; i++)
+                col.Children.Add(MakeSidebarRow(defs[i].Item1, defs[i].Item2, defs[i].Item3));
+            return col;
         }
 
         /// <summary>Build one crystal shard holding 1 or 2 tool glyphs. The shard is a 56px

@@ -51,6 +51,13 @@ namespace DeskMate.Features
         /// <summary>Invalidate cached times after settings change.</summary>
         public static void Invalidate() { _today = null; }
 
+        /// <summary>Read-only access for other UI (SunPathClock): today's adjusted times at
+        /// the user's location, or null when no location is set. Cached per day.</summary>
+        public static double[] PublicToday()
+        {
+            return Today(DateTime.Now);
+        }
+
         /// <summary>Next prayer (skips sunrise): returns index and DateTime, or -1 when unknown.</summary>
         public static int Next(DateTime now, out DateTime at)
         {

@@ -61,6 +61,19 @@ namespace DeskMate.UI
         readonly List<FrameworkElement> _floatIcons = new List<FrameworkElement>();
         System.Windows.Controls.TextBlock _gregText, _hijriText;  // tri-panel side cards
         string _dateKey;
+        // seasonal occasion line on the widget face (Ramadan countdown / Eid greeting /
+        // nearest occasion) — glyph and text split like the weather line so the emoji
+        // can render in the symbol font while the text stays in the UI font
+        System.Windows.Controls.StackPanel _occasionLine;
+        System.Windows.Controls.TextBlock _occasionGlyph, _occasionText;
+        int _lastOccasionMin = -1;
+
+        /// <summary>State shared with the Halo layout: its dashed ring is rotated a step on
+        /// every tick so the halo slowly revolves. Null in every other layout.</summary>
+        static class HaloBrushes
+        {
+            public static System.Windows.Shapes.Ellipse Halo;
+        }
 
         public MainWindow()
         {
@@ -231,6 +244,11 @@ namespace DeskMate.UI
             }
             if (_clock != null && IsVisible) _clock.Tick(now);
 
+            // Halo layout: revolve the dashed ring one step per tick (1°/s = 6 min/rev —
+            // a slow drift you only notice glancing back after a while)
+            if (HaloBrushes.Halo != null && HaloBrushes.Halo.RenderTransform is RotateTransform rt)
+                rt.Angle = (rt.Angle + 1.0) % 360.0;
+
             // tri-panel side dates — refresh when the day or language changes
             if (_gregText != null)
             {
@@ -265,6 +283,40 @@ namespace DeskMate.UI
                 WeatherFeature.EnsureFresh();   // no-op unless enabled, located and stale
                 UpdateWeatherLine();
             }
+
+            // seasonal occasion line — refresh per minute: during Ramadan it carries a
+            // live H:MM countdown that must tick along like the weather line
+            if (now.Minute != _lastOccasionMin)
+            {
+                _lastOccasionMin = now.Minute;
+                UpdateOccasionLine(now);
+            }
+        }
+
+        /// <summary>Paints the widget's occasion line from OccasionCore.SeasonalLine:
+        /// Ramadan countdown when in season, Eid greeting on the days themselves, else the
+        /// nearest builtin occasion. Collapsed entirely when occasions are off or there is
+        /// genuinely nothing to say.</summary>
+        void UpdateOccasionLine(DateTime now)
+        {
+            if (_occasionLine == null) return;
+            if (!Settings.I.ShowOccasions) { _occasionLine.Visibility = Visibility.Collapsed; return; }
+            var times = DeskMate.Features.PrayerFeature.PublicToday();
+            var info = Logic.OccasionCore.SeasonalLine(now, times, L.IsAr, Settings.I.ShowOccasions);
+            if (info == null || string.IsNullOrEmpty(info.Text))
+            {
+                _occasionLine.Visibility = Visibility.Collapsed;
+                return;
+            }
+            // split leading emoji/glyph (🌙 ☪ 🕋 …) into the symbol-font run
+            string text = info.Text.TrimStart();
+            int split = 0;
+            while (split < text.Length && !char.IsLetterOrDigit(text[split]) && text[split] != '٪')
+                split++;
+            _occasionGlyph.Text = split > 0 ? text.Substring(0, split).Trim() : "";
+            _occasionGlyph.Visibility = split > 0 ? Visibility.Visible : Visibility.Collapsed;
+            _occasionText.Text = split > 0 ? text.Substring(split).TrimStart() : text;
+            _occasionLine.Visibility = Visibility.Visible;
         }
 
         /// <summary>Repaints the next-prayer line immediately. Called when a per-prayer

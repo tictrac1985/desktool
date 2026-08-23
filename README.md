@@ -36,6 +36,8 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 | ◎ | ساعات عالمية لمدن تختارها مع فرق اليوم | World clocks for your cities, with day-offset badges |
 | ⚙ | إعدادات: اللغة، شكل الساعة، إظهار/إخفاء كل أداة، التشغيل مع ويندوز | Settings: language, clock style, show/hide any tool, autostart |
 | 🎨 | 12 ثيماً + ثيم تلقائي اختياري (فاتح نهاراً والمختار ليلاً) + ثيم من خلفية الشاشة + شفافية قابلة للضبط + تكبير/تصغير بمقبض الزاوية | 12 themes + optional auto theme (light by day) + wallpaper theme + adjustable transparency + corner-grip resizing |
+| 🧊 | 8 أشكال للأداة — منها «مجسم» بعمق ثلاثي الأبعاد و«هالة» بحلقة دوّارة | 8 widget shapes — incl. the 3D «Monolith» slab and the revolving-ring «Halo» |
+| ✦ | سطر موسمي تحت الساعة: اقتراب المناسبات، وعدّاد إفطار حي في رمضان، وتهانئ العيد — يظهر ويختفي مع حجم الأداة تلقائياً | Seasonal line under the clock: occasion countdowns, live Ramadan iftar timer, Eid greetings — appears/hides with widget size automatically |
 | 📌 | اللوحات مثبّتة افتراضياً: تبقى مفتوحة أثناء عملك ولا تُغلق إلا أنت — أو أعد السلوك القديم من الإعدادات | Panels are pinned by default: they stay open while you work and only you close them — or restore the old behaviour in Settings |
 
 كل أيقونة يظهر اسم أداتها تحتها دائماً — لا حاجة للتخمين. · Every icon shows its tool's name beneath it — no guessing.
@@ -54,9 +56,9 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل 273 اختباراً ذاتياً للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
+يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل 284 اختباراً ذاتياً للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
 
-Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs 273 logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
+Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs 284 logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
 
 ```powershell
 # لقطات معاينة لكل التخطيطات واللوحات في obj\uishots · render every layout & panel to obj\uishots

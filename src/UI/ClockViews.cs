@@ -1012,6 +1012,249 @@ namespace DeskMate.UI
         }
     }
 
+    /// <summary>Sun-path clock — a real horizon arc computed from the user's location:
+    /// the amber portion of the ring is daytime (sunrise → sunset), the dim portion night.
+    /// A small sun dot rides the arc at the current moment. Needs a location; without one
+    /// it falls back to a 6am–6pm reference day so the style still renders.</summary>
+    public class SunPathClock : IClockView
+    {
+        readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        readonly TextBlock _time, _ampm, _date;
+        readonly Path _dayArc;
+        readonly Ellipse _nightArc, _sunDot;
+        const double Dial = 176;
+
+        public SunPathClock()
+        {
+            double r = Dial / 2 - 10;
+            // night half first (dim full circle), then the day arc painted over it
+            _nightArc = new Ellipse
+            {
+                Width = Dial - 20, Height = Dial - 20,
+                Stroke = Theme.CardBorder, StrokeThickness = 4,
+            };
+
+            var fig = new PathFigure { StartPoint = new Point(Dial / 2 - r, Dial / 2) };  // 06:00 point
+            var arc = new ArcSegment
+            {
+                Size = new Size(r, r),
+                SweepDirection = SweepDirection.Clockwise,
+                IsLargeArc = true,                       // sunrise → sunset over the TOP half+
+                Point = new Point(Dial / 2 + r, Dial / 2),  // 18:00 point
+            };
+            fig.Segments.Add(arc);
+            var geo = new PathGeometry(); geo.Figures.Add(fig); geo.Freeze();
+            _dayArc = new Path
+            {
+                Stroke = Theme.Accent, StrokeThickness = 4.5,
+                StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round,
+                Data = geo,
+            };
+
+            _sunDot = new Ellipse
+            {
+                Width = 13, Height = 13,
+                Fill = Theme.Accent,
+                Effect = MakeSunGlow(),
+                Visibility = Visibility.Hidden,
+            };
+
+            // Canvas so the sun dot can be positioned by absolute coordinates each tick
+            var dialCanvas = new Canvas { Width = Dial, Height = Dial };
+            dialCanvas.Children.Add(_nightArc);
+            dialCanvas.Children.Add(_dayArc);
+            dialCanvas.Children.Add(_sunDot);
+
+            // horizon line: makes the "above/below" reading instant
+            var horizon = new System.Windows.Controls.Border
+            {
+                Height = 1,
+                Background = Theme.CardBorder,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var dial = new Grid { Width = Dial, Height = Dial, FlowDirection = FlowDirection.LeftToRight };
+            dial.Children.Add(dialCanvas);
+            dial.Children.Add(horizon);
+
+            var centre = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            _time = Theme.MakeText("", 30, Theme.Text, Theme.LightFont);
+            _time.HorizontalAlignment = HorizontalAlignment.Center;
+            _time.FlowDirection = FlowDirection.LeftToRight;
+            centre.Children.Add(_time);
+            _ampm = Theme.MakeText("", 12, Theme.Accent);
+            _ampm.FontWeight = FontWeights.SemiBold;
+            _ampm.HorizontalAlignment = HorizontalAlignment.Center;
+            _ampm.FlowDirection = FlowDirection.LeftToRight;
+            centre.Children.Add(_ampm);
+            dial.Children.Add(centre);
+
+            _root.Children.Add(dial);
+            _date = Theme.MakeText("", 12.5, Theme.TextDim);
+            _date.HorizontalAlignment = HorizontalAlignment.Center;
+            _date.Margin = new Thickness(0, 5, 0, 0);
+            _root.Children.Add(_date);
+        }
+
+        static DropShadowEffect MakeSunGlow()
+        {
+            var e = new DropShadowEffect { Color = Theme.AccentColor, BlurRadius = 14, ShadowDepth = 0, Opacity = 0.9 };
+            e.Freeze();
+            return e;
+        }
+
+        public FrameworkElement Root { get { return _root; } }
+
+        public void Tick(DateTime now)
+        {
+            var s = Settings.I;
+
+            // real sunrise/sunset when a location exists; otherwise a reference day.
+            // PrayerFeature caches per-day internally, so calling this each tick is cheap.
+            double sunrise = 6, sunset = 18;
+            double[] times = DeskMate.Features.PrayerFeature.PublicToday();
+            if (times != null && !double.IsNaN(times[1]) && !double.IsNaN(times[4]))
+            {
+                sunrise = times[1];
+                sunset = times[4];
+            }
+
+            double h = now.TimeOfDay.TotalHours;
+
+            // rotate BOTH arcs so the day arc always starts exactly at today's sunrise:
+            // the geometry is drawn for a 6→18 reference day, the transform maps it onto
+            // the real one (e.g. sunrise 05:24 shifts everything −36°).
+            double shiftDeg = (sunrise - 6) * 15.0;   // 15° per hour of clock rotation
+            var rot = new RotateTransform(shiftDeg, Dial / 2, Dial / 2);
+            _dayArc.RenderTransform = rot;
+            _dayArc.Stroke = h >= sunrise && h < sunset ? Theme.Accent : Theme.TextFaint;
+
+            // sun position on the circle: fraction of the CURRENT daylight, mapped onto the
+            // day half of the dial (so it rises at the sunrise point and sets at sunset)
+            double frac = (h - sunrise) / Math.Max(0.001, sunset - sunrise);   // 0..1 through the day
+            if (frac < 0 || frac > 1)
+            {
+                _sunDot.Visibility = Visibility.Hidden;   // night: the sun is below the horizon
+            }
+            else
+            {
+                _sunDot.Visibility = Visibility.Visible;
+                // angle from the 9 o'clock start of the day arc, sweeping over the top
+                double ang = Math.PI + frac * Math.PI;    // π..2π in standard orientation
+                double rr = Dial / 2 - 10;
+                double cx = Dial / 2 + rr * Math.Cos(ang);
+                double cy = Dial / 2 + rr * Math.Sin(ang);
+                // apply the same rotation as the arc around the dial centre
+                double rad = shiftDeg * Math.PI / 180.0;
+                double rx = cx - Dial / 2, ry = cy - Dial / 2;
+                double x = Dial / 2 + rx * Math.Cos(rad) - ry * Math.Sin(rad);
+                double y = Dial / 2 + rx * Math.Sin(rad) + ry * Math.Cos(rad);
+                Canvas.SetLeft(_sunDot, x - 6.5);
+                Canvas.SetTop(_sunDot, y - 6.5);
+            }
+
+            string fmt = s.Use24h ? "HH:mm" : "h:mm";
+            if (s.ShowSeconds) fmt += ":ss";
+            _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
+            bool ar = L.IsAr;
+            bool showAmPm = !s.Use24h && s.Scale >= 0.85;   // density rule: tiny widget hides ص/م
+            _ampm.Visibility = showAmPm ? Visibility.Visible : Visibility.Collapsed;
+            if (showAmPm) _ampm.Text = ar ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
+
+            _date.Text = DateText.Gregorian(now);
+        }
+    }
+
+    /// <summary>Day-stripes clock — 24 slim vertical bars, one per hour; past hours glow in
+    /// the accent, the current hour pulses brighter with the minutes shown beneath, and the
+    /// rest stay faint. Reads like a wall of tally marks: how much day is spent, how much
+    /// is left.</summary>
+    public class DayStripesClock : IClockView
+    {
+        readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        readonly TextBlock _time, _ampm, _date;
+        readonly StackPanel _stripesRow;
+        readonly Border[] _bars = new Border[24];
+
+        public DayStripesClock()
+        {
+            _time = Theme.MakeText("", 40, Theme.Text, Theme.LightFont);
+            _time.HorizontalAlignment = HorizontalAlignment.Center;
+            _time.FlowDirection = FlowDirection.LeftToRight;
+            _root.Children.Add(_time);
+
+            _ampm = Theme.MakeText("", 12.5, Theme.Accent);
+            _ampm.FontWeight = FontWeights.SemiBold;
+            _ampm.HorizontalAlignment = HorizontalAlignment.Center;
+            _ampm.FlowDirection = FlowDirection.LeftToRight;
+            _root.Children.Add(_ampm);
+
+            var stripesHost = new Grid { Width = 312, Height = 34, Margin = new Thickness(0, 8, 0, 2), FlowDirection = FlowDirection.LeftToRight };
+            _stripesRow = new StackPanel { Orientation = Orientation.Horizontal };
+            stripesHost.Children.Add(_stripesRow);
+            for (int i = 0; i < 24; i++)
+            {
+                var b = new Border
+                {
+                    Width = 8,
+                    Height = 26,
+                    CornerRadius = new CornerRadius(3),
+                    Background = Theme.CardBorder,
+                    Opacity = 0.55,
+                    Margin = new Thickness(2.5, 4, 2.5, 4),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Child = null,
+                };
+                _bars[i] = b;
+                _stripesRow.Children.Add(b);
+            }
+            _root.Children.Add(stripesHost);
+
+            _date = Theme.MakeText("", 12.5, Theme.TextDim);
+            _date.HorizontalAlignment = HorizontalAlignment.Center;
+            _root.Children.Add(_date);
+        }
+
+        public FrameworkElement Root { get { return _root; } }
+
+        public void Tick(DateTime now)
+        {
+            var s = Settings.I;
+            string fmt = s.Use24h ? "HH:mm" : "h:mm";
+            if (s.ShowSeconds) fmt += ":ss";
+            _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
+            bool ar = L.IsAr;
+            bool showAmPm = !s.Use24h && s.Scale >= 0.85;
+            _ampm.Visibility = showAmPm ? Visibility.Visible : Visibility.Collapsed;
+            if (showAmPm) _ampm.Text = ar ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
+
+            int hr = now.Hour;
+            for (int i = 0; i < 24; i++)
+            {
+                if (i < hr)          // spent hours: solid accent
+                {
+                    _bars[i].Background = Theme.Accent;
+                    _bars[i].Opacity = 0.85;
+                    _bars[i].Height = 26;
+                }
+                else if (i == hr)    // current hour: tallest, brightest
+                {
+                    _bars[i].Background = Theme.Accent;
+                    _bars[i].Opacity = 1.0;
+                    _bars[i].Height = 34;
+                }
+                else                 // remaining: faint
+                {
+                    _bars[i].Background = Theme.CardBorder;
+                    _bars[i].Opacity = 0.55;
+                    _bars[i].Height = 22;
+                }
+            }
+
+            _date.Text = DateText.Gregorian(now);
+        }
+    }
+
     /// <summary>Vector outlines of the isolated ص/م AM/PM markers, extracted from GDI+
     /// (Tahoma Bold at 200px, flattened). The pill draws these instead of shaped text:
     /// on machines where DirectWrite mis-shapes a lone isolated Arabic letter (the

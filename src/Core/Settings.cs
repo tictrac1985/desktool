@@ -307,7 +307,7 @@ namespace DeskMate.Core
         /// Applied after every load; never trust the file to be sane.</summary>
         void Normalize()
         {
-            if (LayoutIndex < 0 || LayoutIndex > 5) LayoutIndex = 0;
+            if (LayoutIndex < 0 || LayoutIndex > 7) LayoutIndex = 0;   // 0..7: classic, connected, tri-panel, orbit, sidebar, dock, monolith, halo
             if (Scale < 0.6 || Scale > 1.8) Scale = 1.0;
             if (BgOpacity < 0.3 || BgOpacity > 1.0) BgOpacity = 1.0;
             if (AdhanSound < 0 || AdhanSound > 2) AdhanSound = 0;
@@ -315,7 +315,7 @@ namespace DeskMate.Core
             // loop Theme.Apply → Reload → tick → Apply until StackOverflow killed the process
             if (ThemeIndex < 0 || ThemeIndex > 11) ThemeIndex = 0;
             if (LightThemeIndex < 0 || LightThemeIndex > 11) LightThemeIndex = 4;
-            if (ClockStyle < 0 || ClockStyle > 7) ClockStyle = 0;   // 0..7: digital, analog, minimal, flip, word, neon, binary, day-ring
+            if (ClockStyle < 0 || ClockStyle > 9) ClockStyle = 0;   // 0..9: digital, analog, minimal, flip, word, neon, binary, day-ring, sun-path, day-stripes
             if (PrayerAdjust == null || PrayerAdjust.Length != 6) PrayerAdjust = new int[6];
             for (int i = 0; i < PrayerAdjust.Length; i++)
             {

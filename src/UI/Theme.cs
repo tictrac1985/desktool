@@ -267,8 +267,10 @@ namespace DeskMate.UI
                 _elevation = new[]
                 {
                     MakeShadow(6, 1.5, IsLight ? 0.20 : 0.32),
-                    MakeShadow(14, 3, IsLight ? 0.24 : 0.42),
-                    MakeShadow(30, 7, IsLight ? 0.30 : 0.55),
+                    // raised surface: a second offset layer is faked by a deeper blur+depth
+                    // so cards visibly "sit" on the desktop instead of printing onto it
+                    MakeShadow(16, 4, IsLight ? 0.26 : 0.48),
+                    MakeShadow(34, 9, IsLight ? 0.34 : 0.62),
                 };
             }
             return _elevation[Math.Max(1, Math.Min(3, level)) - 1];
@@ -450,6 +452,45 @@ namespace DeskMate.UI
                 Background = CardBorder,
                 Margin = new Thickness(0, topMargin, 0, bottomMargin),
             };
+        }
+
+        // ---------------- 3D monolith helpers ----------------
+
+        /// <summary>Radial inner glow for the Monolith face: bright accent-tinted light
+        /// pooling behind the clock centre, fading to transparent — reads as a lit well
+        /// inside the slab rather than a flat fill.</summary>
+        public static Brush MakeInnerGlow()
+        {
+            var b = new RadialGradientBrush
+            {
+                GradientOrigin = new Point(0.5, 0.32),
+                Center = new Point(0.5, 0.38),
+                RadiusX = 0.85, RadiusY = 0.7,
+            };
+            b.GradientStops.Add(new GradientStop(Color.FromArgb(0x2E,
+                AccentColor.R, AccentColor.G, AccentColor.B), 0));
+            b.GradientStops.Add(new GradientStop(Color.FromArgb(0x10,
+                AccentColor.R, AccentColor.G, AccentColor.B), 0.45));
+            b.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+            return Freeze(b);
+        }
+
+        /// <summary>The extruded side of the Monolith: a vertical shade from the card's
+        /// bottom colour down to near-black, faking a thick edge catching little light.</summary>
+        public static Brush PedestalBrush()
+        {
+            var b = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            if (IsLight)
+            {
+                b.GradientStops.Add(new GradientStop(Color.FromArgb(0xFF, 0xD9, 0xE2, 0xEC), 0));
+                b.GradientStops.Add(new GradientStop(Color.FromArgb(0xFF, 0xB4, 0xC0, 0xCE), 1));
+            }
+            else
+            {
+                b.GradientStops.Add(new GradientStop(Color.FromArgb(0xE8, 0x08, 0x0B, 0x12), 0));
+                b.GradientStops.Add(new GradientStop(Colors.Black, 1));
+            }
+            return Freeze(b);
         }
 
         /// <summary>Small rounded-square accent-tinted badge holding a glyph (panel headers).</summary>

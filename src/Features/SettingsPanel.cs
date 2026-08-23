@@ -64,7 +64,9 @@ namespace DeskMate.Features
             layoutCombo.Items.Add(L.T("ly_orbit"));
             layoutCombo.Items.Add(L.T("ly_sidebar"));
             layoutCombo.Items.Add(L.T("ly_dock"));
-            layoutCombo.SelectedIndex = Math.Max(0, Math.Min(5, Settings.I.LayoutIndex));
+            layoutCombo.Items.Add(L.T("ly_monolith"));
+            layoutCombo.Items.Add(L.T("ly_halo"));
+            layoutCombo.SelectedIndex = Math.Max(0, Math.Min(7, Settings.I.LayoutIndex));
             layoutCombo.SelectionChanged += (s, e) =>
             {
                 Settings.I.LayoutIndex = layoutCombo.SelectedIndex;
@@ -199,7 +201,9 @@ namespace DeskMate.Features
             clockCombo.Items.Add(L.T("st_style_neon"));
             clockCombo.Items.Add(L.T("st_style_binary"));
             clockCombo.Items.Add(L.T("st_style_dayring"));
-            clockCombo.SelectedIndex = Math.Max(0, Math.Min(7, Settings.I.ClockStyle));
+            clockCombo.Items.Add(L.T("st_style_sunpath"));
+            clockCombo.Items.Add(L.T("st_style_stripes"));
+            clockCombo.SelectedIndex = Math.Max(0, Math.Min(9, Settings.I.ClockStyle));
             clockCombo.SelectionChanged += (s, e) =>
             {
                 Settings.I.ClockStyle = clockCombo.SelectedIndex;

@@ -91,6 +91,11 @@ static class UiSmoke
             // v1.7: the two new clock styles rendered on the classic layout
             Tuple.Create("clock6_binary", (Action)(() => { Settings.I.ClockStyle = 6; SetLayout(0); }), 700),
             Tuple.Create("clock7_dayring", (Action)(() => { Settings.I.ClockStyle = 7; SetLayout(0); }), 700),
+            // v1.8: the two newer clock styles + the two new layouts
+            Tuple.Create("clock8_sunpath", (Action)(() => { Settings.I.ClockStyle = 8; SetLayout(0); }), 700),
+            Tuple.Create("clock9_stripes", (Action)(() => { Settings.I.ClockStyle = 9; SetLayout(0); }), 700),
+            Tuple.Create("layout6_monolith", (Action)(() => { Settings.I.ClockStyle = 0; SetLayout(6); }), 800),
+            Tuple.Create("layout7_halo", (Action)(() => { SetLayout(7); }), 900),
             // v1.7: a couple of the new palettes on the widget (Material You is already
             // forced off for the whole run — see Main — so Theme.Apply sticks)
             Tuple.Create("theme8_violet", (Action)(() =>
