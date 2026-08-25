@@ -9,12 +9,33 @@ namespace DeskMate.Core
     {
         public const int WM_WINDOWPOSCHANGING = 0x0046;
         public const int WM_CLIPBOARDUPDATE = 0x031D;
+        public const int WM_HOTKEY = 0x0312;
 
         const int GWL_EXSTYLE = -20;
         const int WS_EX_TOOLWINDOW = 0x00000080;
         const int WS_EX_APPWINDOW = 0x00040000;
         static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
         const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOACTIVATE = 0x0010, SWP_NOZORDER = 0x0004;
+
+        // global hotkey modifiers (Win+Alt+D summons the command bar)
+        public const uint MOD_ALT = 0x0001, MOD_WIN = 0x0008, MOD_NOREPEAT = 0x4000;
+
+        [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+        [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        /// <summary>Registers Win+Alt+D (VK_D = 0x44) on the widget window. False when the
+        /// combo is already claimed by another app — the bar then stays reachable by icon,
+        /// and the failure is logged rather than thrown at startup.</summary>
+        public static bool RegisterSummonHotKey(IntPtr hwnd, int id)
+        {
+            try { return RegisterHotKey(hwnd, id, MOD_WIN | MOD_ALT | MOD_NOREPEAT, 0x44); }
+            catch (Exception ex) { Log.Error("RegisterHotKey", ex); return false; }
+        }
+
+        public static void UnregisterSummonHotKey(IntPtr hwnd, int id)
+        {
+            try { UnregisterHotKey(hwnd, id); } catch { }
+        }
 
         [StructLayout(LayoutKind.Sequential)]
         public struct WINDOWPOS

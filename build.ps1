@@ -12,15 +12,40 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$csc  = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\Roslyn\csc.exe"
+
+# Roslyn csc lives in different spots per VS edition — probe the usual suspects, then
+# fall back to vswhere so the build survives a BuildTools→Community/Pro/Enterprise switch.
+$cscCandidates = @(
+    "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\Roslyn\csc.exe",
+    "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\Roslyn\csc.exe",
+    "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\Roslyn\csc.exe",
+    "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\Roslyn\csc.exe",
+    "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\Roslyn\csc.exe",
+    "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\Roslyn\csc.exe"
+)
+$csc = $cscCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $csc) {
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $vswhere) {
+        $csc = & $vswhere -latest -find "MSBuild\**\Bin\Roslyn\csc.exe" | Select-Object -First 1
+    }
+}
 $fw   = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319"
-if (-not (Test-Path $csc)) { throw "csc not found: $csc" }
+if (-not $csc -or -not (Test-Path $csc)) { throw "csc (Roslyn) not found - install VS 2022 BuildTools" }
+Write-Host "csc: $csc"
 
 $dist = Join-Path $root "dist"
 $obj  = Join-Path $root "obj"
 New-Item -ItemType Directory -Force $dist | Out-Null
 New-Item -ItemType Directory -Force $obj  | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $root "assets") | Out-Null
+
+# Clean-slate rule: stale intermediates from previous runs (old test exes, abandoned
+# outputs) must never leak into a new delivery. Wipe obj except uishots — the smoke
+# run rewrites that folder itself when -UiSmoke is on.
+Get-ChildItem $obj -Force -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne "uishots" } |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 # ---------------- Icon generation ----------------
 function New-AppIcon([string]$icoPath) {
@@ -195,6 +220,22 @@ if ($UiSmoke -and (Test-Path $uiSmokeSrc)) {
     & $smokeExe $shots | Out-Host
     # the smoke run now reports every swallowed failure through its exit code
     if ($LASTEXITCODE -ne 0) { throw "UiSmoke FAILED ($LASTEXITCODE) - see FAIL lines above" }
+}
+
+# ---------------- Delivery folder ----------------
+# The user-facing contract: a full build ships exactly two files in finish\ — the
+# portable app and the installer, both version-named. Anything older or unrelated
+# from previous deliveries is removed first.
+if (-not $SkipInstaller) {
+    $verLine = Select-String -Path (Join-Path $root "src\Core\AppVersion.cs") -Pattern 'Text = "([\d.]+)"'
+    $ver = $verLine.Matches[0].Groups[1].Value
+    $finish = Join-Path $root "finish"
+    New-Item -ItemType Directory -Force $finish | Out-Null
+    Get-ChildItem $finish -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    Copy-Item $appExe (Join-Path $finish "DeskMate-Portable-$ver.exe")
+    $setupExe = Join-Path $dist "DeskMateSetup.exe"
+    if (Test-Path $setupExe) { Copy-Item $setupExe (Join-Path $finish "DeskMate-Setup-$ver.exe") }
+    Write-Host "Delivered -> finish\DeskMate-Portable-$ver.exe + finish\DeskMate-Setup-$ver.exe" -ForegroundColor Green
 }
 
 Write-Host "Build complete." -ForegroundColor Green

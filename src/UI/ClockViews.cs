@@ -520,7 +520,7 @@ namespace DeskMate.UI
 
             public FlipCard()
             {
-                const double w = 54, h = 72, mid = h / 2;
+                const double w = 54, h = 72;
                 var root = new Grid { Width = w + 4, Height = h + 4, Margin = new Thickness(3, 0, 3, 0) };
 
                 var tile = new Border
@@ -847,33 +847,11 @@ namespace DeskMate.UI
             sky.Children.Add(horizon);
         }
 
-        /// <summary>The neon-family sun: same layered disc as Sun-path but smaller, its glow
-        /// reading like another lit tube in the sign.</summary>
+        /// <summary>The neon-family sun: the same real layered sun as Sun-path, sized down —
+        /// its rays and glow reading like another lit tube in the sign.</summary>
         static Grid MakeNeonSun()
         {
-            var g = new Grid { Width = 62, Height = 62, Visibility = Visibility.Hidden };
-
-            var corona = new Ellipse { Width = 62, Height = 62, IsHitTestVisible = false };
-            var cg = new RadialGradientBrush { Center = new Point(0.5, 0.5), GradientOrigin = new Point(0.5, 0.5) };
-            cg.GradientStops.Add(new GradientStop(Color.FromArgb(0x55, 0xFF, 0xD2, 0x7A), 0));
-            cg.GradientStops.Add(new GradientStop(Color.FromArgb(0x22, 0xFF, 0xB8, 0x5C), 0.45));
-            cg.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
-            corona.Fill = cg;
-
-            var body = new Ellipse { Width = 27, Height = 27 };
-            var bg = new RadialGradientBrush { GradientOrigin = new Point(0.35, 0.3), Center = new Point(0.45, 0.42) };
-            bg.GradientStops.Add(new GradientStop(Colors.White, 0));
-            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0xE9, 0xB0), 0.35));
-            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0xC2, 0x66), 0.78));
-            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xF5, 0xA2, 0x4A), 1));
-            body.Fill = bg;
-            var glow = new DropShadowEffect { Color = Color.FromRgb(0xFF, 0xC0, 0x60), BlurRadius = 16, ShadowDepth = 0, Opacity = 0.9 };
-            glow.Freeze();
-            body.Effect = glow;
-
-            g.Children.Add(corona);
-            g.Children.Add(body);
-            return g;
+            return SkyBodies.BuildSun(13.5, true);
         }
 
         static DropShadowEffect MakeGlow()
@@ -1275,39 +1253,9 @@ namespace DeskMate.UI
             _root.Children.Add(_hijri);
         }
 
-        static DropShadowEffect MakeSunGlow()
-        {
-            var e = new DropShadowEffect { Color = Theme.AccentColor, BlurRadius = 16, ShadowDepth = 0, Opacity = 0.95 };
-            e.Freeze();
-            return e;
-        }
-
-        /// <summary>The real sun: two stacked discs — a white-hot core through amber body,
-        /// and a wide soft corona behind both. Reads as a burning ball, not the flat accent
-        /// dot the old build drew.</summary>
         Grid MakeSun(double radius)
         {
-            var g = new Grid { Width = radius * 4.6, Height = radius * 4.6, Visibility = Visibility.Hidden };
-
-            var corona = new Ellipse { Width = radius * 4.6, Height = radius * 4.6, IsHitTestVisible = false };
-            var cg = new RadialGradientBrush { GradientOrigin = new Point(0.5, 0.5), Center = new Point(0.5, 0.5) };
-            cg.GradientStops.Add(new GradientStop(Color.FromArgb(0x66, 0xFF, 0xD2, 0x7A), 0));
-            cg.GradientStops.Add(new GradientStop(Color.FromArgb(0x28, 0xFF, 0xB8, 0x5C), 0.45));
-            cg.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
-            corona.Fill = cg;
-
-            var body = new Ellipse { Width = radius * 2, Height = radius * 2 };
-            var bg = new RadialGradientBrush { GradientOrigin = new Point(0.35, 0.3), Center = new Point(0.45, 0.42) };
-            bg.GradientStops.Add(new GradientStop(Colors.White, 0));
-            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0xE9, 0xB0), 0.35));
-            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0xC2, 0x66), 0.78));
-            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xF5, 0xA2, 0x4A), 1));
-            body.Fill = bg;
-            body.Effect = MakeSunGlow();
-
-            g.Children.Add(corona);
-            g.Children.Add(body);
-            return g;
+            return SkyBodies.BuildSun(radius, true);
         }
 
         public FrameworkElement Root { get { return _root; } }
@@ -1381,16 +1329,22 @@ namespace DeskMate.UI
 
 
     /// <summary>A real moon: a pale disc whose lit share follows the actual astronomical
-    /// phase. Two layered shapes do all eight phases: a bright half-disc on the lit limb,
-    /// plus a terminator half-ellipse that either carries shadow into the lit side
-    /// (crescents) or light across the centre (gibbous/full). Brushes are cached static —
-    /// this repaints every second inside the sun-path night.</summary>
+    /// phase, with a cratered surface that shows only where sunlight falls. Two layered
+    /// shapes do all eight phases: a bright half-disc on the lit limb, plus a terminator
+    /// half-ellipse that either carries shadow into the lit side (crescents) or light
+    /// across the centre (gibbous/full). v1.10: the lit face is limb-darkened (brighter
+    /// toward the Sun side, dimmer at the edge — real lunar scattering), seven fixed
+    /// craters ride the lit region, a thin atmosphere glow halos the disc, and the old
+    /// full-moon seam (a hard half-dark line at 100% phase) is gone: at fullness the whole
+    /// disc lights. Brushes are cached static — this repaints every second at night.</summary>
     public class MoonDisc : Canvas
     {
         static readonly Brush ShadowFill = Mk(Color.FromRgb(0x8E, 0x93, 0xA4), 0x38);
-        static readonly Brush LightFill = Mk(Color.FromRgb(0xF2, 0xF0, 0xE4), 0xFF);
         static readonly Brush DarkFill = Mk(Color.FromRgb(0x8E, 0x93, 0xA4), 0x30);
         static readonly Brush RimStroke = Mk(Color.FromRgb(0xC9, 0xCE, 0xDC), 0x50);
+        // limb-darkened lit faces: the Sun-side limb is brightest, the far edge falls off
+        static readonly Brush LitWax = LitBrush(0.78);
+        static readonly Brush LitWane = LitBrush(0.22);
 
         static Brush Mk(Color c, byte a)
         {
@@ -1399,8 +1353,24 @@ namespace DeskMate.UI
             return b;
         }
 
-        readonly Path _litLimb = new Path { Fill = LightFill };
+        static Brush LitBrush(double originX)
+        {
+            var b = new RadialGradientBrush
+            {
+                GradientOrigin = new Point(originX, 0.42),
+                Center = new Point(0.5, 0.5),
+                RadiusX = 0.75, RadiusY = 0.75,
+            };
+            b.GradientStops.Add(new GradientStop(Color.FromRgb(0xFD, 0xFC, 0xF4), 0));
+            b.GradientStops.Add(new GradientStop(Color.FromRgb(0xE9, 0xE7, 0xD9), 0.6));
+            b.GradientStops.Add(new GradientStop(Color.FromRgb(0xC9, 0xC7, 0xB8), 1));
+            b.Freeze();
+            return b;
+        }
+
+        readonly Path _litLimb = new Path();
         readonly Path _terminator = new Path { Fill = ShadowFill };
+        readonly Canvas _craters = new Canvas { IsHitTestVisible = false };
         readonly double _r;
 
         /// <summary>Pixel radius of the disc — callers offset by this when placing on a Canvas.</summary>
@@ -1411,33 +1381,104 @@ namespace DeskMate.UI
             _r = radius;
             Width = Height = radius * 2;
 
+            // atmosphere glow: a cold halo that makes the disc read as hanging in a sky
+            var glow = new Ellipse
+            {
+                Width = radius * 3, Height = radius * 3,
+                IsHitTestVisible = false,
+            };
+            var gb = new RadialGradientBrush { GradientOrigin = new Point(0.5, 0.5), Center = new Point(0.5, 0.5) };
+            gb.GradientStops.Add(new GradientStop(Color.FromArgb(0x40, 0xC9, 0xD8, 0xFF), 0.55));
+            gb.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+            glow.Fill = gb;
+            Canvas.SetLeft(glow, -radius * 0.5);
+            Canvas.SetTop(glow, -radius * 0.5);
+            Children.Add(glow);
+
             // base disc: shadow tone + faint earthshine rim keeps new-moon visible
             var dark = new Ellipse { Width = radius * 2, Height = radius * 2, Fill = DarkFill };
-            var rim = new Ellipse { Width = radius * 2, Height = radius * 2, Stroke = RimStroke, StrokeThickness = 1 };
             Children.Add(dark);
-            Children.Add(rim);
             Children.Add(_litLimb);
             Children.Add(_terminator);
+
+            // craters — fixed positions (a real surface, not noise), clipped to the lit
+            // region each repaint so the dark side stays smooth earthshine
+            BuildCraters(radius);
+            Children.Add(_craters);
+
+            var rim = new Ellipse { Width = radius * 2, Height = radius * 2, Stroke = RimStroke, StrokeThickness = 1 };
+            Children.Add(rim);
+        }
+
+        /// <summary>Seven craters at hand-tuned unit positions (fractions of the disc),
+        /// each a soft dark pool with a brighter far rim — the way low sun angle carves
+        /// real relief. Deterministic: the moon must not rearrange its face every rebuild.</summary>
+        void BuildCraters(double r)
+        {
+            double[,] craters =
+            {   //  x,     y,     size   (unit fractions of the radius)
+                { 0.52, 0.34, 0.30 },
+                { 0.86, 0.62, 0.24 },
+                { 0.38, 0.88, 0.18 },
+                { 1.02, 0.30, 0.17 },
+                { 0.30, 0.58, 0.14 },
+                { 0.68, 1.05, 0.13 },
+                { 0.95, 0.92, 0.10 },
+            };
+            for (int i = 0; i < craters.GetLength(0); i++)
+            {
+                double d = craters[i, 2] * r * 2;
+                var fill = new RadialGradientBrush { GradientOrigin = new Point(0.42, 0.4), Center = new Point(0.5, 0.5) };
+                fill.GradientStops.Add(new GradientStop(Color.FromArgb(0x59, 0x8A, 0x87, 0x7A), 0));
+                fill.GradientStops.Add(new GradientStop(Color.FromArgb(0x30, 0x9A, 0x97, 0x8A), 0.7));
+                fill.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+                fill.Freeze();
+                var e = new Ellipse { Width = d, Height = d, Fill = fill, IsHitTestVisible = false };
+                Canvas.SetLeft(e, craters[i, 0] * r * 2 - d / 2 + r * 0.0);
+                Canvas.SetTop(e, craters[i, 1] * r * 2 - d / 2);
+                _craters.Children.Add(e);
+            }
+            _craters.Width = _craters.Height = r * 2;
         }
 
         /// <summary>Repaints the phase. Waxing lights the right limb (northern-hemisphere
         /// view), waning the left. cos(phase) signs the terminator: positive near new →
         /// shadow bites the lit limb; negative near full → light spills across the centre.
-        /// A soft dark edge on the shadow side keeps the disc readable against stars.</summary>
+        /// The crater layer is clipped to the sunlit region, so relief lives only in the
+        /// light. Near-full phases light the ENTIRE disc — the old build left a dark
+        /// half-disc seam at 100%, which read as a bug against the phase name «بدر».</summary>
         public void UpdatePhase(DateTime now)
         {
             double f = DeskMate.Logic.MoonPhase.AgeFraction(now);
             bool waxing = f < 0.5;
             double k = Math.Cos(2 * Math.PI * f);          // +1 new … −1 full … +
             double ax = Math.Max(0.01, _r * Math.Abs(k));  // terminator semi-axis
+            var litFace = waxing ? LitWax : LitWane;
+            _litLimb.Fill = litFace;
 
-            _litLimb.Data = LimbGeo(waxing);
-            _terminator.Fill = k > 0 ? ShadowFill : LightFill;
-            // crescent (k>0): shadow carves the LIT side; gibbous (k<0): light spills onto
-            // the DARK side. Either way the bulge points lit-side when k>0, dark-side when k<0.
-            var term = TermGeo(ax, (k > 0) == waxing);
-            _terminator.Data = term;
-            _terminator.Visibility = term == null ? Visibility.Collapsed : Visibility.Visible;
+            Geometry lit;
+            if (k <= -0.985)
+            {
+                // (near) full: one lit disc, no terminator
+                lit = new EllipseGeometry(new Point(_r, _r), _r, _r);
+                _litLimb.Data = lit;
+                _terminator.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                var limb = LimbGeo(waxing);
+                _litLimb.Data = limb;
+                _terminator.Fill = k > 0 ? ShadowFill : litFace;
+                // crescent (k>0): shadow carves the LIT side; gibbous (k<0): light spills onto
+                // the DARK side. Either way the bulge points lit-side when k>0, dark-side when k<0.
+                var term = TermGeo(ax, (k > 0) == waxing);
+                _terminator.Data = term;
+                _terminator.Visibility = term == null ? Visibility.Collapsed : Visibility.Visible;
+                if (term == null) lit = limb;
+                else if (k < 0) lit = new CombinedGeometry(GeometryCombineMode.Union, limb, term);
+                else lit = new CombinedGeometry(GeometryCombineMode.Exclude, limb, term);
+            }
+            _craters.Clip = lit;
         }
 
         /// <summary>Bright semicircle: vertical diameter chord, arc through the lit side.
@@ -1727,5 +1768,87 @@ namespace DeskMate.UI
 public static readonly StreamGeometry Sad = (StreamGeometry)Geometry.Parse("F1 M 232.9,159.2 L 238.2,156.5 L 242.1,153.2 L 244.4,149.8 L 245.1,146 L 244,140.5 L 240.6,135.6 L 235.2,132.2 L 228,131.1 L 218.9,132 L 210.4,134.5 L 202.5,138.4 L 195.1,143.1 L 183.1,154.1 L 178.2,159.9 L 174,165 L 192.5,165 L 205.4,164.6 L 216.5,163.5 L 225.6,161.6 L 232.9,159.2 Z M 75.5,241.6 L 61.8,240.5 L 49.4,237.2 L 38.5,231.9 L 29.1,224.2 L 21.6,214.8 L 16.2,203.9 L 13.1,191.4 L 12,177.4 L 12.4,163.9 L 13.6,152 L 14.5,147.1 L 15,143.6 L 15.4,141.1 L 15.6,140 L 43.4,140 L 43.4,141.1 L 42,147.8 L 40.6,156.9 L 39.1,176.9 L 39.8,183 L 41.6,188.6 L 44.9,193.6 L 49.4,198 L 54.9,201.5 L 61.1,204.1 L 68,205.6 L 75.5,206.1 L 83.1,205.5 L 90.4,203.8 L 97,200.9 L 102.4,197 L 107.5,191.6 L 111.1,185.2 L 113.4,177.9 L 114.1,169.8 L 114.1,163.4 L 114,157.8 L 113.8,153 L 113.5,149.1 L 113,143.4 L 112.5,140 L 140.4,140 L 141,143.8 L 142.2,156.1 L 143,161.2 L 144.8,163.8 L 151.5,154.4 L 158,145.8 L 164.2,138 L 170.1,131.2 L 175.8,125.2 L 181,120 L 186,115.8 L 190.6,112.2 L 199.8,107 L 209,103.2 L 218.4,100.9 L 227.8,100.1 L 236.9,101 L 245.2,103.4 L 252.8,107.5 L 259.5,113.4 L 265,120.4 L 269,128.5 L 271.4,137.5 L 272.1,147.5 L 270.9,158.1 L 266.9,168 L 260.6,177 L 252.2,184.8 L 241.9,191.1 L 229.8,196 L 216.2,199.1 L 201.1,200.1 L 139.1,200.1 L 135.1,209.4 L 129.9,217.6 L 123.4,224.6 L 115.6,230.6 L 106.9,235.4 L 97.4,238.9 L 86.9,240.9 L 75.5,241.6 Z ");
         public static readonly StreamGeometry Meem = (StreamGeometry)Geometry.Parse("F1 M 108.6,120.9 L 114.8,127.9 L 119.4,136.2 L 122.4,145.9 L 123.4,157 L 122.4,169.1 L 119.2,178.9 L 114.5,186.8 L 108.9,192.6 L 102.5,196.9 L 95.8,199.6 L 89.1,201.2 L 82.8,201.8 L 74.6,201 L 66.5,198.8 L 58.9,195 L 51.9,190 L 47.9,200.8 L 43,210.1 L 37.2,218.2 L 30.8,225 L 23.5,230.6 L 16,235.2 L 8.1,239 L 0,241.6 L 0,206.6 L 6.5,204.2 L 12.1,201.4 L 17.4,197.5 L 22.4,192 L 26.9,184.9 L 30.6,175.9 L 32.2,170.5 L 33.6,164.4 L 34.8,157.4 L 35.8,149.6 L 37.4,140.1 L 39.9,131.8 L 43.2,124.6 L 47.6,118.6 L 53,113.9 L 59.4,110.5 L 66.9,108.4 L 75.4,107.8 L 84.6,108.6 L 93.4,111.1 L 101.4,115.2 L 108.6,120.9 Z M 96,154.5 L 94.5,148 L 90.1,142.5 L 83.9,138.6 L 76.8,137.4 L 71.2,138.4 L 66.9,141.5 L 64,146.1 L 63,151.5 L 64.4,157.2 L 68.4,162.1 L 74.4,165.6 L 81.6,166.8 L 87.4,165.9 L 92,163.5 L 95,159.6 L 96,154.5 Z ");
         static AmPmGlyph() { Sad.Freeze(); Meem.Freeze(); }
+    }
+
+    /// <summary>Shared celestial bodies for every sky in the app (Sun-path, Neon sky).
+    /// The sun is a genuinely burning object: a wide corona wash, twelve tapered rays that
+    /// rotate so slowly you only notice on a second glance, a layered amber body, and a
+    /// white-hot core — no flat accent dot anywhere.</summary>
+    static class SkyBodies
+    {
+        /// <summary>Builds the sun. The returned grid starts Hidden; callers toggle its
+        /// Visibility and place it with Canvas.SetLeft/Top using its Width/Height.</summary>
+        public static Grid BuildSun(double radius, bool hidden)
+        {
+            double box = radius * 5.2;
+            double c = box / 2;
+            var g = new Grid { Width = box, Height = box, Visibility = hidden ? Visibility.Hidden : Visibility.Visible };
+
+            // corona wash
+            var corona = new Ellipse { Width = box, Height = box, IsHitTestVisible = false };
+            var cg = new RadialGradientBrush { GradientOrigin = new Point(0.5, 0.5), Center = new Point(0.5, 0.5) };
+            cg.GradientStops.Add(new GradientStop(Color.FromArgb(0x59, 0xFF, 0xD2, 0x7A), 0));
+            cg.GradientStops.Add(new GradientStop(Color.FromArgb(0x24, 0xFF, 0xB8, 0x5C), 0.5));
+            cg.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+            corona.Fill = cg;
+            g.Children.Add(corona);
+
+            // rays: 12 tapered blades fading outward, on a layer that rotates once per 90 s —
+            // a physical sun's shimmer without a strobe
+            var rays = new Canvas { Width = box, Height = box, IsHitTestVisible = false };
+            for (int i = 0; i < 12; i++)
+            {
+                double rw = Math.Max(1.2, radius * 0.26);
+                double rh = radius * 1.15;
+                var rayFill = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+                rayFill.GradientStops.Add(new GradientStop(Colors.Transparent, 0));
+                rayFill.GradientStops.Add(new GradientStop(Color.FromArgb(0x8C, 0xFF, 0xC8, 0x66), 1));
+                var ray = new System.Windows.Controls.Border
+                {
+                    Width = rw, Height = rh,
+                    CornerRadius = new CornerRadius(rw / 2),
+                    Background = rayFill,
+                    IsHitTestVisible = false,
+                };
+                double x = c - rw / 2;
+                double y = c - radius * 1.72 - rh;   // blade standing above the limb
+                Canvas.SetLeft(ray, x);
+                Canvas.SetTop(ray, y);
+                ray.RenderTransform = new RotateTransform(i * 30, c - x, c - y);
+                rays.Children.Add(ray);
+            }
+            rays.RenderTransform = new RotateTransform(0, c, c);
+            rays.RenderTransform.BeginAnimation(RotateTransform.AngleProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(0, 360, TimeSpan.FromSeconds(90))
+                {
+                    RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever,
+                });
+            g.Children.Add(rays);
+
+            // body: white-hot heart → amber limb
+            var body = new Ellipse { Width = radius * 2, Height = radius * 2 };
+            var bg = new RadialGradientBrush { GradientOrigin = new Point(0.35, 0.3), Center = new Point(0.45, 0.42) };
+            bg.GradientStops.Add(new GradientStop(Colors.White, 0));
+            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0xE9, 0xB0), 0.35));
+            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xFF, 0xC2, 0x66), 0.78));
+            bg.GradientStops.Add(new GradientStop(Color.FromRgb(0xF5, 0xA2, 0x4A), 1));
+            body.Fill = bg;
+            var glow = new DropShadowEffect { Color = Color.FromRgb(0xFF, 0xC0, 0x60), BlurRadius = 16, ShadowDepth = 0, Opacity = 0.9 };
+            glow.Freeze();
+            body.Effect = glow;
+            g.Children.Add(body);
+
+            // hotter core: a small white bloom at the heart of the disc
+            double cs = radius * 1.1;
+            var core = new Ellipse { Width = cs, Height = cs, IsHitTestVisible = false };
+            var kc = new RadialGradientBrush { GradientOrigin = new Point(0.5, 0.5), Center = new Point(0.5, 0.5) };
+            kc.GradientStops.Add(new GradientStop(Color.FromArgb(0xE6, 0xFF, 0xFF, 0xFF), 0));
+            kc.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF), 1));
+            core.Fill = kc;
+            core.HorizontalAlignment = HorizontalAlignment.Center;
+            core.VerticalAlignment = VerticalAlignment.Center;
+            g.Children.Add(core);
+            return g;
+        }
     }
 }

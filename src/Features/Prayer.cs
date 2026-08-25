@@ -264,18 +264,20 @@ namespace DeskMate.Features
             {
                 for (int i = 0; i < 6; i++)
                 {
-                    var rowDock = new DockPanel { Margin = new Thickness(4, 3, 4, 3) };
                     bool isNext = i == nextIdx;
+                    var rowDock = new DockPanel();
                     var timeText = Theme.MakeText(PrayerCalc.FormatTime(times[i], Settings.I.Use24h), 13.5,
                         isNext ? Theme.Accent : Theme.Text);
                     timeText.FlowDirection = FlowDirection.LeftToRight;
+                    timeText.VerticalAlignment = VerticalAlignment.Center;
                     DockPanel.SetDock(timeText, Dock.Right);
                     rowDock.Children.Add(timeText);
                     var nameText = Theme.MakeText(L.T(NameKeys[i]), 13.5,
                         i == 1 ? Theme.TextFaint : (isNext ? Theme.Accent : Theme.TextDim));
                     if (isNext) nameText.FontWeight = FontWeights.SemiBold;
+                    nameText.VerticalAlignment = VerticalAlignment.Center;
                     rowDock.Children.Add(nameText);
-                    stack.Children.Add(rowDock);
+                    stack.Children.Add(Theme.RowSurface(rowDock, isNext));
                 }
             }
 

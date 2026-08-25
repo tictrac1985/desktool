@@ -74,6 +74,15 @@ namespace DeskMate.UI
             new Palette { KeyAr = "ياقوتي", KeyEn = "Ruby",
                 Accent = Color.FromRgb(0xFF, 0x8A, 0x96),
                 CardTop = Color.FromArgb(0xD6, 0x31, 0x15, 0x22), CardBottom = Color.FromArgb(0xDE, 0x16, 0x07, 0x0E) },
+            // --- v1.10 (index 12): a true DAY theme. Light and Sand are neutral; Daylight
+            //     is colourful — sky-blue-tinted glass, a saturated azure accent, and the
+            //     gradient journey drifts toward a warm morning glow so the face reads as
+            //     daytime, not just "not dark". Panels, inputs and popups follow the same
+            //     light branch as every Light palette, so the whole app is bright, not only
+            //     the widget face.
+            new Palette { KeyAr = "نهاري", KeyEn = "Daylight", Light = true,
+                Accent = Color.FromRgb(0x00, 0x78, 0xD4),
+                CardTop = Color.FromArgb(0xEE, 0xF3, 0xFA, 0xFF), CardBottom = Color.FromArgb(0xF2, 0xD3, 0xE6, 0xF6) },
         };
 
         /// <summary>Index of the palette that was actually applied (differs from the chosen
@@ -325,14 +334,20 @@ namespace DeskMate.UI
                 else h = ((r - g) / d + 4) / 6;
             }
             h = (h + degrees / 360.0) % 1; if (h < 0) h += 1;
-            // HSL → RGB
-            Func<double, double> hue2 = p =>
+            // HSL → RGB, the real hue2rgb: the previous shortcut (returning l for the
+            // plateau and l·s·6t for ramps) only stayed hidden because dark palettes have
+            // l < 0.5 and modest s; a near-white card top (Daylight) has s ≈ 1, and the
+            // shortcut flipped it to full magenta. q/p are the two edge intensities the
+            // hue triangle interpolates between.
+            double q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            double p2 = 2 * l - q;
+            Func<double, double> hue2 = t =>
             {
-                if (p < 0) p += 1; if (p > 1) p -= 1;
-                if (p < 1.0 / 6) return l * s * 6 * p;
-                if (p < 1.0 / 2) return l;
-                if (p < 2.0 / 3) return l * s * (2.0 / 3 - p) * 6;
-                return l;
+                if (t < 0) t += 1; if (t > 1) t -= 1;
+                if (t < 1.0 / 6) return p2 + (q - p2) * 6 * t;
+                if (t < 1.0 / 2) return q;
+                if (t < 2.0 / 3) return p2 + (q - p2) * (2.0 / 3 - t) * 6;
+                return p2;
             };
             double rr = s == 0 ? l : hue2(h + 1.0 / 3);
             double gg = s == 0 ? l : hue2(h);
@@ -528,6 +543,27 @@ namespace DeskMate.UI
             };
             layers.Children.Add(sheen);
 
+            // edge light: a short, crisp streak of pure light along the top curve, fading to
+            // nothing at both ends. Real objects catch a bright line where the surface turns
+            // toward the light — this 1.6px streak is what makes the card read as touchable
+            // rather than printed.
+            var edge = new Border
+            {
+                Height = 1.6,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(radius * 0.9, 1.1, radius * 0.9, 0),
+                CornerRadius = new CornerRadius(1),
+                IsHitTestVisible = false,
+            };
+            var eb = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+            byte edgeA = IsLight ? (byte)0x99 : (byte)0x55;
+            eb.GradientStops.Add(new GradientStop(Colors.Transparent, 0));
+            eb.GradientStops.Add(new GradientStop(Color.FromArgb(edgeA, 255, 255, 255), 0.28));
+            eb.GradientStops.Add(new GradientStop(Color.FromArgb(edgeA, 255, 255, 255), 0.72));
+            eb.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+            edge.Background = eb;
+            layers.Children.Add(edge);
+
             var bevel = Bevel(inner);
             bevel.Margin = new Thickness(1);
             layers.Children.Add(bevel);
@@ -598,6 +634,45 @@ namespace DeskMate.UI
                 Background = CardBorder,
                 Margin = new Thickness(0, topMargin, 0, bottomMargin),
             };
+        }
+
+        /// <summary>Hairline under a panel header: a soft accent-tinted glow that peaks at
+        /// the centre and dissolves at both ends — direction-agnostic, so RTL and LTR get
+        /// the same quiet underline, and the header reads as a lit sign rather than a rule.</summary>
+        public static Border AccentHairline(double topMargin = 0, double bottomMargin = 8)
+        {
+            var b = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+            b.GradientStops.Add(new GradientStop(Colors.Transparent, 0));
+            b.GradientStops.Add(new GradientStop(Color.FromArgb(0x66, AccentColor.R, AccentColor.G, AccentColor.B), 0.5));
+            b.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+            return new Border
+            {
+                Height = 1.4,
+                Background = Freeze(b),
+                Margin = new Thickness(0, topMargin, 0, bottomMargin),
+            };
+        }
+
+        /// <summary>A list row with a quiet rounded surface: faint fill, hairline border and
+        /// a hover lift, so lists read as a stack of tactile chips instead of floating text
+        /// lines. <paramref name="highlighted"/> marks the "active" row (next prayer, current
+        /// zone) with the accent wash instead of the neutral fill.</summary>
+        public static Border RowSurface(UIElement child, bool highlighted = false)
+        {
+            Brush bg = highlighted ? AccentSoft : ButtonBg;
+            var b = new Border
+            {
+                Background = bg,
+                BorderBrush = highlighted ? Accent : CardBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(10, 5.5, 10, 5.5),
+                Margin = new Thickness(0, 2.5, 0, 2.5),
+                SnapsToDevicePixels = true,
+                Child = child,
+            };
+            if (!highlighted) AttachHover(b, bg, HoverBg);
+            return b;
         }
 
         // ---------------- 3D monolith helpers ----------------
@@ -751,60 +826,55 @@ namespace DeskMate.UI
             return Color.FromRgb((byte)Math.Round(f(0) * 255), (byte)Math.Round(f(8) * 255), (byte)Math.Round(f(4) * 255));
         }
 
-        /// <summary>The v1.9 tool cell: the glyph itself becomes the object — drawn large,
-        /// filled with its own colour gradient, given a lit top edge, a soft drop shadow and
-        /// a coloured under-glow that reads as a reflection beneath it. NO circle, NO plate:
-        /// nothing between the eye and the shape of the tool. Hover lifts the glyph, brightens
-        /// its glow and warms the label.</summary>
+        /// <summary>The v1.10 tool cell: a hand-drawn tangible object (see ToolIcons) sitting
+        /// on the widget face with a contact shadow, its name always under it. Hover LIFTS
+        /// the object — it rises, its shadow shrinks and fades, and a soft ambient glow in
+        /// the tool's hue blooms beneath it. Press squashes it back down. If ToolIcons does
+        /// not know the slot, the cell falls back to the MDL2 font glyph (forward-compat).</summary>
         public static FrameworkElement MakeToolCell(string glyph, string label, Action onClick, bool floating, double cellWidth = DefaultCellWidth, int toolSlot = 0)
         {
-            // dense single-row layouts (Orbit/Dock) shrink the cell but keep the glyph
-            // readable — colour needs size to be seen at all
-            double glyphSize = cellWidth >= 60 ? 24 : 20;
+            // dense single-row layouts (Orbit/Dock) shrink the cell but keep the object
+            // readable — material detail needs size to be seen at all
+            double iconSize = cellWidth >= 60 ? 40 : 34;
+            var icon = ToolIcons.Render(toolSlot, iconSize);
 
-            // coloured glyph: gradient fill via the Foreground brush
-            var glyphText = new TextBlock
+            // ambient glow behind the object in the tool's own hue — the "lit from below"
+            // cue that appears as it lifts off the surface
+            var hsl = ToolHues[Math.Max(0, Math.Min(ToolHues.Length - 1, toolSlot))];
+            var glowColor = FromHsl(hsl.Hue, 0.9, IsLight ? 0.45 : 0.6);
+            var glowBrush = new RadialGradientBrush { Center = new Point(0.5, 0.5), GradientOrigin = new Point(0.5, 0.5) };
+            glowBrush.GradientStops.Add(new GradientStop(
+                Color.FromArgb(0x70, glowColor.R, glowColor.G, glowColor.B), 0));
+            glowBrush.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
+            glowBrush.Freeze();
+            var ambient = new System.Windows.Shapes.Ellipse
             {
-                Text = glyph,
-                FontSize = glyphSize,
-                FontFamily = Mdl2,
-                Foreground = ToolTint(toolSlot),
+                Width = iconSize * 1.25, Height = iconSize * 1.25,
+                Fill = glowBrush, Opacity = 0,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
-                RenderTransformOrigin = new Point(0.5, 0.5),
-            };
-
-            // soft coloured glow behind the glyph — the "object sitting on the desktop" cue
-            var halo = new DropShadowEffect
-            {
-                Color = FromHsl(ToolHues[Math.Max(0, Math.Min(ToolHues.Length - 1, toolSlot))].Hue,
-                                0.9, IsLight ? 0.45 : 0.6),
-                BlurRadius = 14, ShadowDepth = 0, Opacity = 0.0,
-            };
-            glyphText.Effect = halo;
-
-            // reflection pad under the glyph: a thin bright line that fades down — grounds
-            // the floating glyph like a floor sheen, replacing the old circle entirely
-            var reflect = new System.Windows.Shapes.Rectangle
-            {
-                Width = cellWidth < 60 ? 22 : 26,
-                Height = 2.5,
-                RadiusX = 1.25, RadiusY = 1.25,
-                Fill = Freeze(new LinearGradientBrush(
-                    Color.FromArgb(IsLight ? (byte)0x66 : (byte)0x54,
-                        AccentColor.R, AccentColor.G, AccentColor.B),
-                    Colors.Transparent,
-                    new Point(0, 0), new Point(1, 0))),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(0, 0, 0, 1),
                 IsHitTestVisible = false,
             };
-            if (floating) reflect.Opacity = 0.9;
 
-            var glyphHost = new Grid { Width = 40, Height = 40 };
-            glyphHost.Children.Add(glyphText);
-            if (!floating) glyphHost.Children.Add(reflect);
+            var glyphHost = new Grid { Width = iconSize + 6, Height = iconSize + 8 };
+            glyphHost.Children.Add(ambient);
+
+            TextBlock glyphText = null;   // fallback path only
+            if (icon != null) glyphHost.Children.Add(icon.Root);
+            else
+            {
+                glyphText = new TextBlock
+                {
+                    Text = glyph,
+                    FontSize = cellWidth >= 60 ? 24 : 20,
+                    FontFamily = Mdl2,
+                    Foreground = ToolTint(toolSlot),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    RenderTransformOrigin = new Point(0.5, 0.5),
+                };
+                glyphHost.Children.Add(glyphText);
+            }
 
             // The label used to be allowed to overflow its cell (MaxWidth = cellWidth + 20 with
             // -10 side margins), so neighbouring Arabic names — "تنظيف سريع" beside
@@ -822,7 +892,7 @@ namespace DeskMate.UI
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 MaxWidth = cellWidth,
                 MaxHeight = 30,          // two lines at this size; a third would unbalance the row
-                Margin = new Thickness(0, 5, 0, 0),
+                Margin = new Thickness(0, 4, 0, 0),
                 FlowDirection = FlowDirection.RightToLeft,   // Arabic labels shape RTL always
             };
 
@@ -839,33 +909,85 @@ namespace DeskMate.UI
             cell.Children.Add(name);
 
             var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
-            var dur = TimeSpan.FromMilliseconds(130);
+            var dur = TimeSpan.FromMilliseconds(140);
             cell.MouseEnter += (s, e) =>
             {
                 name.Foreground = Accent;
-                halo.Opacity = 0.55;
-                zoomGlyph(glyphText, 1.14, dur, ease);
+                ambient.Opacity = IsLight ? 0.55 : 0.75;
+                LiftIcon(icon, glyphText, true, dur, ease);
             };
             cell.MouseLeave += (s, e) =>
             {
                 name.Foreground = TextDim;
-                halo.Opacity = 0.0;
-                zoomGlyph(glyphText, 1.0, dur, ease);
+                ambient.Opacity = 0.0;
+                LiftIcon(icon, glyphText, false, dur, ease);
             };
             cell.MouseLeftButtonDown += (s, e) =>
             {
                 e.Handled = true;
-                zoomGlyph(glyphText, 0.92, TimeSpan.FromMilliseconds(70), null);
+                PressIcon(icon, glyphText);
             };
             cell.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
-                zoomGlyph(glyphText, 1.14, TimeSpan.FromMilliseconds(90), null);
+                LiftIcon(icon, glyphText, true, TimeSpan.FromMilliseconds(90), null);
                 // hand the panel the icon it came from, so it can open attached to it
                 PanelWindow.PendingAnchor = glyphHost;
                 try { onClick(); } catch (Exception ex) { Log.Error("toolcell", ex); }
             };
             return cell;
+        }
+
+        /// <summary>Hover lift: the object rises ~3px and swells slightly while its contact
+        /// shadow shrinks and fades — the two motions together read as "picked up".</summary>
+        static void LiftIcon(IconVisual icon, TextBlock fallbackGlyph, bool lifted, TimeSpan dur, QuadraticEase ease)
+        {
+            if (icon == null)
+            {
+                if (fallbackGlyph != null) zoomGlyph(fallbackGlyph, lifted ? 1.14 : 1.0, dur, ease);
+                return;
+            }
+            var tg = new TransformGroup();
+            var sc = new ScaleTransform(1, 1);
+            var tr = new TranslateTransform(0, 0);
+            tg.Children.Add(sc);
+            tg.Children.Add(tr);
+            icon.Body.RenderTransform = tg;
+            double toScale = lifted ? 1.07 : 1.0;
+            double toY = lifted ? -3.2 : 0;
+            var aScale = new DoubleAnimation(toScale, dur);
+            var aY = new DoubleAnimation(toY, dur);
+            if (ease != null) { aScale.EasingFunction = ease; aY.EasingFunction = ease; }
+            sc.BeginAnimation(ScaleTransform.ScaleXProperty, aScale);
+            sc.BeginAnimation(ScaleTransform.ScaleYProperty, aScale);
+            tr.BeginAnimation(TranslateTransform.YProperty, aY);
+
+            var shScale = new ScaleTransform(1, 1);
+            icon.Shadow.RenderTransform = shScale;
+            var aShadow = new DoubleAnimation(lifted ? 0.78 : 1.0, dur);
+            var aShadowO = new DoubleAnimation(lifted ? 0.55 : 1.0, dur);
+            if (ease != null) { aShadow.EasingFunction = ease; aShadowO.EasingFunction = ease; }
+            shScale.BeginAnimation(ScaleTransform.ScaleXProperty, aShadow);
+            icon.Shadow.BeginAnimation(UIElement.OpacityProperty, aShadowO);
+        }
+
+        /// <summary>Press feedback: a quick squash before the click lands.</summary>
+        static void PressIcon(IconVisual icon, TextBlock fallbackGlyph)
+        {
+            if (icon == null)
+            {
+                if (fallbackGlyph != null) zoomGlyph(fallbackGlyph, 0.92, TimeSpan.FromMilliseconds(70), null);
+                return;
+            }
+            var sc = new ScaleTransform(1, 1);
+            var tr = new TranslateTransform(0, 1.5);
+            var tg = new TransformGroup();
+            tg.Children.Add(sc);
+            tg.Children.Add(tr);
+            icon.Body.RenderTransform = tg;
+            var a = new DoubleAnimation(0.93, TimeSpan.FromMilliseconds(70));
+            sc.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+            sc.BeginAnimation(ScaleTransform.ScaleYProperty, a);
         }
 
         /// <summary>Scale animation helper for the bare-glyph tool cells.</summary>

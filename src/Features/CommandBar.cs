@@ -19,6 +19,19 @@ namespace DeskMate.Features
             PanelWindow.Toggle(owner, "command", L.T("f_command"), Build, 360);
         }
 
+        /// <summary>Hotkey entry point (Win+Alt+D): a global shortcut must never TOGGLE the
+        /// bar shut — pressing it while the bar is open elsewhere on the screen should bring
+        /// it forward, not make it vanish under the user's fingers.</summary>
+        public static void Summon(Window owner)
+        {
+            if (PanelWindow.CurrentKey == "command" && PanelWindow.Current != null)
+            {
+                try { PanelWindow.Current.Activate(); } catch { }
+                return;
+            }
+            Open(owner);
+        }
+
         static FrameworkElement Build(PanelWindow host)
         {
             var stack = new StackPanel();
@@ -39,6 +52,13 @@ namespace DeskMate.Features
             preview.TextWrapping = TextWrapping.Wrap;
             preview.Margin = new Thickness(2, 8, 2, 0);
             stack.Children.Add(preview);
+
+            // the global hotkey is invisible UI — a bar that answers to Win+Alt+D has to
+            // say so somewhere or nobody discovers it
+            var hotkeyHint = Theme.MakeText(L.T("cb_hotkey_hint"), 10.5, Theme.TextFaint);
+            hotkeyHint.HorizontalAlignment = HorizontalAlignment.Center;
+            hotkeyHint.Margin = new Thickness(0, 10, 0, 0);
+            stack.Children.Add(hotkeyHint);
 
             Action execute = () =>
             {

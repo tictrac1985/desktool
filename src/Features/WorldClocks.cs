@@ -108,7 +108,7 @@ namespace DeskMate.Features
 
             FrameworkElement MakeRow(string name, Func<DateTime> timeOf, int dayDiff, Action onRemove)
             {
-                var dock = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+                var dock = new DockPanel();
 
                 var right = new StackPanel
                 {
@@ -156,7 +156,8 @@ namespace DeskMate.Features
                 var nameText = Theme.MakeText(name, 13, Theme.TextDim);
                 nameText.VerticalAlignment = VerticalAlignment.Center;
                 dock.Children.Add(nameText);
-                return dock;
+                // the local clock (no delete button) is the reference row — accent-washed
+                return Theme.RowSurface(dock, onRemove == null);
             }
 
             timer.Start();

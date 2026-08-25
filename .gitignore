@@ -1,6 +1,8 @@
 obj/
 assets/app.ico
 .claude/
+# legacy duplicate of dist/ — removed in v1.10; dist/ is the single canonical output
+finish/
 # dist binaries are the published portable/installer builds — tracked on purpose.
 # Anything else that lands there (temp copies, GUID-prefixed files) stays untracked.
 dist/*

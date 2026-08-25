@@ -128,6 +128,13 @@ static class UiSmoke
                 Theme.Apply(11);
                 _win.Reload();
             }), 700),
+            // v1.10: the Daylight palette — a light theme with a real blue accent
+            Tuple.Create("theme12_daylight", (Action)(() =>
+            {
+                Settings.I.ThemeIndex = 12;
+                Theme.Apply(12);
+                _win.Reload();
+            }), 700),
         };
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
@@ -191,18 +198,17 @@ static class UiSmoke
         }
     }
 
-    /// <summary>First tool-icon circle in the widget — the 40x40 Border built by
-    /// Theme.MakeToolCell. Used as the anchor so the "opened from an icon" path is covered.</summary>
+    /// <summary>First tool-icon host in the widget. v1.10: tool cells hold a 46×48 Grid
+    /// (iconSize 40 + padding) built by Theme.MakeToolCell — find the host by size so
+    /// anchored panels still have an anchor.</summary>
     static FrameworkElement FindToolCircle(DependencyObject root)
     {
         int n = VisualTreeHelper.GetChildrenCount(root);
         for (int i = 0; i < n; i++)
         {
             var child = VisualTreeHelper.GetChild(root, i);
-            var b = child as System.Windows.Controls.Border;
-            // v1.9: tool cells are bare glyph hosts now — a 40×40 Grid, not a circular
-            // Border; find the host by size so anchored panels still have an anchor
-            if (b != null && b.Child is System.Windows.Controls.Grid g && g.Width == 40 && g.Height == 40) return b;
+            var g = child as System.Windows.Controls.Grid;
+            if (g != null && g.Width == 46 && g.Height == 48) return g;
             var found = FindToolCircle(child);
             if (found != null) return found;
         }

@@ -57,6 +57,7 @@ static class SelfTest
         TestPercentPhrase();
         TestOccasionsSeasonal();
         TestMoonPhase();
+        TestToolGroups();
         Console.WriteLine();
         Console.WriteLine("Passed: " + _pass + "   Failed: " + _fail);
         return _fail == 0 ? 0 : 1;
@@ -220,6 +221,7 @@ static class SelfTest
                 AdhanSound = 2, AdhanPath = @"C:\sounds\adhan.wav",
                 StickyNote = "ملاحظة\nسطران", OccasionCustom = "2026-12-31",
                 OccasionCustomName = "عيد ميلاد", OccasionCustomYearly = true,
+                GroupTools = false, GroupDailyCollapsed = true, GroupSystemCollapsed = true,
             };
             s.PinnedClips.Add("clip one");
             s.PinnedClips.Add("مقطع اثنان");
@@ -252,6 +254,8 @@ static class SelfTest
             Check(r.OccasionCustomName == "عيد ميلاد" && r.OccasionCustomYearly, "all: occasion name + yearly");
             Check(r.WorldClocks.Count == 2 && r.WorldClocks[0] == "Egypt Standard Time" &&
                   r.WorldClocks[1] == "Tokyo Standard Time", "all: world clocks");
+            Check(!r.GroupTools && r.GroupDailyCollapsed && r.GroupSystemCollapsed,
+                  "all: tool grouping block");
 
             // out-of-range values in a hand-edited or corrupted file fall back to defaults
             File.WriteAllText(tmp, "{\"LayoutIndex\":99,\"Scale\":50,\"BgOpacity\":-3,\"AdhanSound\":7}");
@@ -646,7 +650,9 @@ static class SelfTest
         Check(AutoThemeCore.EffectiveIndex(8, false, 10) == 8, "violet (8) accepted");
         Check(AutoThemeCore.EffectiveIndex(11, 10, true, 22) == 11, "ruby (11) accepted at night");
         Check(AutoThemeCore.EffectiveIndex(11, 8, true, 10) == 8, "auto theme day → violet (8)");
-        Check(AutoThemeCore.EffectiveIndex(12, false, 10) == 0, "index 12 clamps to 0");
+        // v1.10: palette table grew to 13 (0..12) — Daylight (12) is a valid light palette
+        Check(AutoThemeCore.EffectiveIndex(12, false, 10) == 12, "daylight (12) accepted");
+        Check(AutoThemeCore.EffectiveIndex(13, false, 10) == 0, "index 13 clamps to 0");
         Check(AutoThemeCore.EffectiveIndex(-1, false, 10) == 0, "index -1 clamps to 0");
     }
 
@@ -884,6 +890,19 @@ static class SelfTest
         // not a phrase: plain expressions and modulo stay untouched
         Check(ExpressionEvaluator.NormalizePercentPhrase("10%3") == "10%3", "modulo not rewritten");
         Check(ExpressionEvaluator.NormalizePercentPhrase("2+2") == "2+2", "plain expression untouched");
+
+        // v1.10.1: POSTFIX percent, Windows-calculator semantics — the case the user hit:
+        // 16000*15% used to be a syntax error because % was only the infix remainder.
+        CheckNear(ExpressionEvaluator.Eval("16000*15%"), 2400, 1e-9, "postfix percent after multiply");
+        CheckNear(ExpressionEvaluator.Eval("200+10%"), 220, 1e-9, "percent of the base after plus");
+        CheckNear(ExpressionEvaluator.Eval("200-10%"), 180, 1e-9, "percent of the base after minus");
+        CheckNear(ExpressionEvaluator.Eval("1000/50%"), 2000, 1e-9, "postfix percent after divide");
+        CheckNear(ExpressionEvaluator.Eval("15%"), 0.15, 1e-12, "bare trailing percent is /100");
+        CheckNear(ExpressionEvaluator.Eval("50%*2"), 1, 1e-12, "left-side percent resolves first");
+        CheckNear(ExpressionEvaluator.Eval("2*(50%)"), 1, 1e-12, "percent on a parenthesised group");
+        CheckNear(ExpressionEvaluator.Eval("16000*15%+100"), 2500, 1e-9, "percent mid-expression");
+        CheckNear(ExpressionEvaluator.Eval("10%3"), 1, 1e-12, "infix percent still means remainder");
+        CheckNear(ExpressionEvaluator.Eval("2*3%"), 0.06, 1e-12, "percent binds tighter than *");
     }
 
     /// <summary>v1.8 seasonal occasion line: nearest-occasion ordering, Ramadan windows
@@ -981,5 +1000,31 @@ static class SelfTest
 
         // Phase names differ between the known full and new moons in both languages.
         Check(MoonPhase.NameEn(newm) != MoonPhase.NameEn(full), "names distinguish phases en");
+    }
+
+    static void TestToolGroups()
+    {
+        // Group membership: daily tools up front, system tools in the second section,
+        // settings never grouped (it must stay reachable whatever is collapsed).
+        Check(ToolGroups.GroupOf("f_prayer") == ToolGroups.Daily, "prayer is a daily tool");
+        Check(ToolGroups.GroupOf("f_calc") == ToolGroups.Daily, "calc is a daily tool");
+        Check(ToolGroups.GroupOf("f_cleaner") == ToolGroups.System, "cleaner is a system tool");
+        Check(ToolGroups.GroupOf("f_sysmon") == ToolGroups.System, "sysmon is a system tool");
+        Check(ToolGroups.GroupOf("f_settings") == ToolGroups.Ungrouped, "settings is pinned, never grouped");
+        Check(ToolGroups.GroupOf("f_future_tool") == ToolGroups.Daily, "unknown tool lands in daily (visible)");
+
+        // Split keeps each tool's original registry order inside its group — grouping must
+        // not reshuffle the user's muscle memory.
+        var keys = new List<string>
+        {
+            "f_prayer", "f_cleaner", "f_calc", "f_sysmon", "f_weather", "f_settings"
+        };
+        List<int> daily, system, pinned;
+        ToolGroups.Split(keys, out daily, out system, out pinned);
+        Check(daily.Count == 3 && daily[0] == 0 && daily[1] == 2 && daily[2] == 4,
+              "split: daily keeps registry order");
+        Check(system.Count == 2 && system[0] == 1 && system[1] == 3,
+              "split: system keeps registry order");
+        Check(pinned.Count == 1 && pinned[0] == 5, "split: settings stays pinned last");
     }
 }

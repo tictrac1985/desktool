@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -7,46 +8,147 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using DeskMate.Core;
 using DeskMate.Features;
+using DeskMate.Logic;
 
 namespace DeskMate.UI
 {
-    /// <summary>MainWindow tool icons: the ordered tool registry, labeled cell factory
-    /// and the connector rays of the "linked" layout.</summary>
+    /// <summary>MainWindow tool icons: the ordered tool registry, labeled cell factory,
+    /// collapsible icon sections, and the connector rays of the "linked" layout.</summary>
     public partial class MainWindow
     {
-        /// <summary>Single source of truth: glyph, label key and open action per tool,
-        /// gated by its visibility setting.</summary>
-        List<Tuple<string, string, Action>> IconDefs()
+        /// <summary>One registered tool: its fallback glyph, label key, open action and a
+        /// FIXED identity id. The id never moves when other tools are hidden — the drawn
+        /// icon (ToolIcons) and the identity hue (Theme.ToolHues) both key off it, so a
+        /// visibility change must not recolour or redraw a neighbour.</summary>
+        class ToolDef
+        {
+            public string Glyph;
+            public string Key;
+            public Action Open;
+            public int Id;
+            public ToolDef(string glyph, string key, int id, Action open)
+            {
+                Glyph = glyph; Key = key; Id = id; Open = open;
+            }
+        }
+
+        /// <summary>Single source of truth: glyph, label key, fixed id and open action per
+        /// tool, gated by its visibility setting.</summary>
+        List<ToolDef> IconDefs()
         {
             var s = Settings.I;
-            var list = new List<Tuple<string, string, Action>>();
-            if (s.ShowCleaner) list.Add(Tuple.Create(Glyphs.Cleaner, "f_cleaner", (Action)(() => CleanerFeature.Open(this))));
-            if (s.ShowCalc) list.Add(Tuple.Create(Glyphs.Calc, "f_calc", (Action)(() => CalculatorFeature.Open(this))));
-            if (s.ShowWallpaper) list.Add(Tuple.Create(Glyphs.Wallpaper, "f_wallpaper", (Action)(() => WallpaperFeature.Open(this))));
-            if (s.ShowPower) list.Add(Tuple.Create(Glyphs.Power, "f_power", (Action)(() => PowerFeature.Open(this))));
-            if (s.ShowClipboard) list.Add(Tuple.Create(Glyphs.Clipboard, "f_clipboard", (Action)(() => ClipboardKeeper.Open(this))));
-            if (s.ShowWeather) list.Add(Tuple.Create(Glyphs.Weather, "f_weather", (Action)(() => WeatherFeature.Open(this))));
-            if (s.ShowApps) list.Add(Tuple.Create(Glyphs.Apps, "f_apps", (Action)(() => AppsFeature.Open(this))));
-            if (s.ShowPrayer) list.Add(Tuple.Create(Glyphs.Prayer, "f_prayer", (Action)(() => PrayerFeature.Open(this))));
-            if (s.ShowFocus) list.Add(Tuple.Create(Glyphs.Focus, "f_focus", (Action)(() => FocusFeature.Open(this))));
-            if (s.ShowOccasions) list.Add(Tuple.Create(Glyphs.Occasions, "f_occasions", (Action)(() => OccasionsFeature.Open(this))));
-            if (s.ShowNote) list.Add(Tuple.Create(Glyphs.Note, "f_note", (Action)(() => StickyNoteFeature.Open(this))));
-            if (s.ShowSysMon) list.Add(Tuple.Create(Glyphs.SysMon, "f_sysmon", (Action)(() => SysMonFeature.Open(this))));
-            if (s.ShowWorldClock) list.Add(Tuple.Create(Glyphs.WorldClock, "f_worldclock", (Action)(() => WorldClocksFeature.Open(this))));
-            if (s.ShowCommand) list.Add(Tuple.Create(Glyphs.Command, "f_command", (Action)(() => CommandBarFeature.Open(this))));
-            list.Add(Tuple.Create(Glyphs.SettingsGear, "f_settings", (Action)(() => SettingsFeature.Open(this))));
+            var list = new List<ToolDef>();
+            if (s.ShowCleaner) list.Add(new ToolDef(Glyphs.Cleaner, "f_cleaner", ToolIcons.Cleaner, () => CleanerFeature.Open(this)));
+            if (s.ShowCalc) list.Add(new ToolDef(Glyphs.Calc, "f_calc", ToolIcons.Calc, () => CalculatorFeature.Open(this)));
+            if (s.ShowWallpaper) list.Add(new ToolDef(Glyphs.Wallpaper, "f_wallpaper", ToolIcons.Wallpaper, () => WallpaperFeature.Open(this)));
+            if (s.ShowPower) list.Add(new ToolDef(Glyphs.Power, "f_power", ToolIcons.Power, () => PowerFeature.Open(this)));
+            if (s.ShowClipboard) list.Add(new ToolDef(Glyphs.Clipboard, "f_clipboard", ToolIcons.Clipboard, () => ClipboardKeeper.Open(this)));
+            if (s.ShowWeather) list.Add(new ToolDef(Glyphs.Weather, "f_weather", ToolIcons.Weather, () => WeatherFeature.Open(this)));
+            if (s.ShowApps) list.Add(new ToolDef(Glyphs.Apps, "f_apps", ToolIcons.Apps, () => AppsFeature.Open(this)));
+            if (s.ShowPrayer) list.Add(new ToolDef(Glyphs.Prayer, "f_prayer", ToolIcons.Prayer, () => PrayerFeature.Open(this)));
+            if (s.ShowFocus) list.Add(new ToolDef(Glyphs.Focus, "f_focus", ToolIcons.Focus, () => FocusFeature.Open(this)));
+            if (s.ShowOccasions) list.Add(new ToolDef(Glyphs.Occasions, "f_occasions", ToolIcons.Occasions, () => OccasionsFeature.Open(this)));
+            if (s.ShowNote) list.Add(new ToolDef(Glyphs.Note, "f_note", ToolIcons.Note, () => StickyNoteFeature.Open(this)));
+            if (s.ShowSysMon) list.Add(new ToolDef(Glyphs.SysMon, "f_sysmon", ToolIcons.SysMon, () => SysMonFeature.Open(this)));
+            if (s.ShowWorldClock) list.Add(new ToolDef(Glyphs.WorldClock, "f_worldclock", ToolIcons.WorldClock, () => WorldClocksFeature.Open(this)));
+            if (s.ShowCommand) list.Add(new ToolDef(Glyphs.Command, "f_command", ToolIcons.Command, () => CommandBarFeature.Open(this)));
+            list.Add(new ToolDef(Glyphs.SettingsGear, "f_settings", ToolIcons.Settings, () => SettingsFeature.Open(this)));
             return list;
         }
 
-        /// <summary>Tool cells with permanently visible names under each icon. Each cell gets
-        /// its registry slot so the new v1.9 bare-glyph cells pick their identity colour.</summary>
+        /// <summary>Tool cells with permanently visible names under each icon. The drawn icon
+        /// and its ambient glow key off the tool's fixed identity id.</summary>
         List<FrameworkElement> BuildIcons(bool floating, double cellWidth = 58)
         {
             var list = new List<FrameworkElement>();
-            var defs = IconDefs();
-            for (int i = 0; i < defs.Count; i++)
-                list.Add(Theme.MakeToolCell(defs[i].Item1, L.T(defs[i].Item2), defs[i].Item3, floating, cellWidth, i));
+            foreach (var d in IconDefs())
+            {
+                var def = d;
+                list.Add(Theme.MakeToolCell(def.Glyph, L.T(def.Key), () => def.Open(), floating, cellWidth, def.Id));
+            }
             return list;
+        }
+
+        // ---------------- collapsible sections (v1.10) ----------------
+
+        /// <summary>Icon cells grouped into two collapsible sections — «Daily» and «System» —
+        /// with Settings always pinned ungrouped at the end. Used by the multi-row layouts
+        /// (Classic, Tri-panel, Monolith) where fourteen tools would otherwise crowd one
+        /// undifferentiated mass. Single-row strips (Sidebar/Dock/…) stay flat.</summary>
+        FrameworkElement BuildIconSections(bool floating, int maxPerRow, double cellWidth = 58)
+        {
+            var defs = IconDefs();
+            var keys = defs.Select(d => d.Key).ToList();
+            List<int> daily, system, pinned;
+            ToolGroups.Split(keys, out daily, out system, out pinned);
+
+            var host = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+            if (daily.Count > 0)
+                host.Children.Add(IconSection("grp_daily", daily, defs, floating, cellWidth, maxPerRow,
+                    Settings.I.GroupDailyCollapsed, v => Settings.I.GroupDailyCollapsed = v));
+            if (system.Count > 0)
+                host.Children.Add(IconSection("grp_system", system, defs, floating, cellWidth, maxPerRow,
+                    Settings.I.GroupSystemCollapsed, v => Settings.I.GroupSystemCollapsed = v));
+            if (pinned.Count > 0)
+            {
+                var cells = pinned.Select(i => CellFor(defs[i], floating, cellWidth)).ToList();
+                host.Children.Add(BuildBalancedRows(cells, maxPerRow, new Thickness(0, 6, 0, 0)));
+            }
+            return host;
+        }
+
+        FrameworkElement CellFor(ToolDef def, bool floating, double cellWidth)
+        {
+            return Theme.MakeToolCell(def.Glyph, L.T(def.Key), () => def.Open(), floating, cellWidth, def.Id);
+        }
+
+        /// <summary>One section: a quiet clickable header (name + hairline + chevron) that
+        /// collapses its rows. Collapse state is persisted, so a tidied widget stays tidy.</summary>
+        FrameworkElement IconSection(string titleKey, List<int> indices, List<ToolDef> defs,
+            bool floating, double cellWidth, int maxPerRow, bool collapsed, Action<bool> setCollapsed)
+        {
+            var section = new StackPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
+
+            var title = Theme.MakeText(L.T(titleKey), 10.5, Theme.TextFaint);
+            title.VerticalAlignment = VerticalAlignment.Center;
+            var chevron = Theme.MakeGlyph(collapsed ? "" : "", 8.5, Theme.TextFaint); // E70D/E70E chevrons
+            chevron.VerticalAlignment = VerticalAlignment.Center;
+            chevron.Margin = new Thickness(6, 0, 2, 0);
+            var rule = new Border
+            {
+                Height = 1, Background = Theme.CardBorder,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0),
+            };
+            DockPanel.SetDock(chevron, Dock.Left);      // trailing edge in RTL = left
+            DockPanel.SetDock(title, Dock.Right);       // leading edge in RTL = right
+            var headRow = new DockPanel();
+            headRow.Children.Add(chevron);
+            headRow.Children.Add(title);
+            headRow.Children.Add(rule);                 // fills the middle
+            var head = new Border
+            {
+                Child = headRow,
+                Margin = new Thickness(14, 9, 14, 1),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                Background = Brushes.Transparent,        // full-width click target
+            };
+            head.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
+            head.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                setCollapsed(!collapsed);
+                Settings.I.Save();
+                Reload();
+            };
+            section.Children.Add(head);
+
+            if (!collapsed)
+            {
+                var cells = indices.Select(i => CellFor(defs[i], floating, cellWidth)).ToList();
+                section.Children.Add(BuildBalancedRows(cells, maxPerRow, new Thickness(0, 4, 0, 0)));
+            }
+            return section;
         }
 
         // ---------------- connector rays (layout 1) ----------------

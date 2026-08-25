@@ -239,6 +239,8 @@ namespace DeskMate.Features
 
             // ---- visible tools ----
             stack.Children.Add(Theme.SectionTitle(L.T("st_features")));
+            stack.Children.Add(Theme.MakeCheck(L.T("st_group_tools"), Settings.I.GroupTools,
+                v => { Settings.I.GroupTools = v; SaveAndReload(); }));
             var grid = new UniformGrid { Columns = 2 };
             AddFeatureCheck(grid, "f_cleaner", Settings.I.ShowCleaner, v => Settings.I.ShowCleaner = v);
             AddFeatureCheck(grid, "f_calc", Settings.I.ShowCalc, v => Settings.I.ShowCalc = v);
@@ -344,6 +346,12 @@ namespace DeskMate.Features
 
             // ---- backup: export / import the whole settings file ----
             stack.Children.Add(Theme.SectionTitle(L.T("st_backup")));
+            // the file carries tasks/notes/pinned clips too (DPAPI-encrypted) — say so,
+            // otherwise users assume "settings" means theme choices only
+            var note = Theme.MakeText(L.T("st_backup_note"), 11, Theme.TextFaint);
+            note.TextWrapping = TextWrapping.Wrap;
+            note.Margin = new Thickness(0, 0, 0, 6);
+            stack.Children.Add(note);
             var backupStatus = Theme.MakeText("", 11.5, Theme.Accent);
             backupStatus.HorizontalAlignment = HorizontalAlignment.Center;
             backupStatus.Margin = new Thickness(0, 4, 0, 0);

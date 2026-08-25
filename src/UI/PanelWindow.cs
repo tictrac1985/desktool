@@ -20,6 +20,10 @@ namespace DeskMate.UI
         /// <summary>Currently open panel, if any (used by tests and callers that reposition).</summary>
         public static Window Current { get { return _current; } }
 
+        /// <summary>Key of the currently open panel ("" when none). Lets the global hotkey
+        /// re-activate the command bar instead of toggling it shut on a second press.</summary>
+        public static string CurrentKey { get { return _current != null ? _currentKey : ""; } }
+
         /// <summary>When true this panel ignores deactivation — the user asked for a panel
         /// that stays put while they work elsewhere. Set from <see cref="Core.Settings.I"/>.PanelsPinned
         /// when the panel opens and flipped by the header's pin button.</summary>
@@ -97,6 +101,32 @@ namespace DeskMate.UI
             }
         }
 
+        /// <summary>Panel key → fixed tool id, so the header can carry the same hand-drawn
+        /// object the widget icon shows. The panel then reads as "that same tool, opened"
+        /// rather than a generic window with a font glyph.</summary>
+        static int SlotFor(string key)
+        {
+            switch (key)
+            {
+                case "cleaner": return ToolIcons.Cleaner;
+                case "calc": return ToolIcons.Calc;
+                case "wallpaper": return ToolIcons.Wallpaper;
+                case "power": return ToolIcons.Power;
+                case "clipboard": return ToolIcons.Clipboard;
+                case "weather": return ToolIcons.Weather;
+                case "apps": return ToolIcons.Apps;
+                case "prayer": return ToolIcons.Prayer;
+                case "focus": return ToolIcons.Focus;
+                case "occasions": return ToolIcons.Occasions;
+                case "note": return ToolIcons.Note;
+                case "sysmon": return ToolIcons.SysMon;
+                case "worldclock": return ToolIcons.WorldClock;
+                case "command": return ToolIcons.Command;
+                case "settings": return ToolIcons.Settings;
+                default: return -1;
+            }
+        }
+
         PanelWindow(string key, string title, FrameworkElement content, double width)
         {
             WindowStyle = WindowStyle.None;
@@ -153,20 +183,34 @@ namespace DeskMate.UI
             header.Children.Add(_pinBtn);
             _pinGlyph = (TextBlock)_pinBtn.Child;
 
-            string glyph = GlyphFor(key);
-            if (!string.IsNullOrEmpty(glyph))
+            int slot = SlotFor(key);
+            var drawnIcon = slot >= 0 ? ToolIcons.Render(slot, 27) : null;
+            if (drawnIcon != null)
             {
-                var chip = Theme.MakeGlyphChip(glyph, 26);
-                chip.Margin = new Thickness(0, 0, 9, 0);
-                DockPanel.SetDock(chip, Dock.Left);
-                header.Children.Add(chip);
+                // the header shows the same physical object as the widget icon, slightly
+                // lifted by an ambient halo in the tool's own hue
+                drawnIcon.Root.Margin = new Thickness(0, 0, 8, 0);
+                drawnIcon.Root.VerticalAlignment = VerticalAlignment.Center;
+                DockPanel.SetDock(drawnIcon.Root, Dock.Left);
+                header.Children.Add(drawnIcon.Root);
+            }
+            else
+            {
+                string glyph = GlyphFor(key);
+                if (!string.IsNullOrEmpty(glyph))
+                {
+                    var chip = Theme.MakeGlyphChip(glyph, 26);
+                    chip.Margin = new Thickness(0, 0, 9, 0);
+                    DockPanel.SetDock(chip, Dock.Left);
+                    header.Children.Add(chip);
+                }
             }
             var titleText = Theme.MakeText(title, 14.5, Theme.Text);
             titleText.FontWeight = FontWeights.SemiBold;
             titleText.VerticalAlignment = VerticalAlignment.Center;
             header.Children.Add(titleText);
             stack.Children.Add(header);
-            stack.Children.Add(Theme.Divider(0, 10));
+            stack.Children.Add(Theme.AccentHairline(0, 10));
 
             _contentHost.Children.Add(content);
             stack.Children.Add(_contentHost);

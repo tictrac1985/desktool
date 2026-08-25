@@ -121,7 +121,13 @@ namespace DeskMate.UI
             src.AddHook(WndProc);
             Win32.SendToBottom(_hwnd);
             Win32.ListenClipboard(_hwnd);
+            // Win+Alt+D summons the command bar from anywhere. If another app owns the combo
+            // the registration just fails — the icon keeps working, no startup crash.
+            if (!Win32.RegisterSummonHotKey(_hwnd, HotkeyIdCommand))
+                Log.Write("Win+Alt+D already taken by another app; command bar stays icon-only");
         }
+
+        const int HotkeyIdCommand = 0x444D;   // 'DM'
 
         IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
@@ -132,6 +138,14 @@ namespace DeskMate.UI
             else if (msg == Win32.WM_CLIPBOARDUPDATE)
             {
                 ClipboardKeeper.OnClipboardUpdate();
+            }
+            else if (msg == Win32.WM_HOTKEY && wParam.ToInt32() == HotkeyIdCommand)
+            {
+                handled = true;
+                // the widget usually sits hidden behind every window; the bar it opens must
+                // not appear next to an invisible anchor — surface the widget first
+                if (!IsVisible) ShowFromTray();
+                CommandBarFeature.Summon(this);
             }
             return IntPtr.Zero;
         }
@@ -409,6 +423,8 @@ namespace DeskMate.UI
         {
             _reallyExiting = true;
             try { Settings.I.Save(); } catch { }
+            // a leaked global hotkey would keep answering Win+Alt+D with a dead window
+            if (_hwnd != IntPtr.Zero) Win32.UnregisterSummonHotKey(_hwnd, HotkeyIdCommand);
             if (_tray != null) { _tray.Visible = false; _tray.Dispose(); _tray = null; }
             Application.Current.Shutdown();
         }

@@ -195,6 +195,12 @@ namespace DeskMate.Core
             { "pr_adjust_more",  new[] { "تأخير دقيقة", "One minute later" } },
 
             { "st_backup",       new[] { "النسخ الاحتياطي", "Backup" } },
+            { "st_backup_note",  new[] { "النسخة تشمل مهامك وملاحظاتك وحافظتك المثبتة — مشفَّرة، وتُستعاد على حساب ويندوز نفسه فقط",
+                                         "The backup includes your tasks, notes and pinned clips — encrypted, it restores on the same Windows account only" } },
+            { "st_group_tools",  new[] { "تجميع الأدوات في قسمين قابلين للطي", "Group tools into collapsible sections" } },
+            { "grp_daily",       new[] { "أدوات يومية", "Daily tools" } },
+            { "grp_system",      new[] { "أدوات النظام", "System tools" } },
+            { "cb_hotkey_hint",  new[] { "يُفتح أيضاً من أي مكان بـ Win+Alt+D", "Also opens from anywhere with Win+Alt+D" } },
             { "st_export",       new[] { "تصدير الإعدادات", "Export settings" } },
             { "st_import",       new[] { "استيراد الإعدادات", "Import settings" } },
             { "st_exported",     new[] { "تم التصدير ✓", "Exported ✓" } },

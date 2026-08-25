@@ -150,10 +150,13 @@ namespace DeskMate.Features
             var row = new Border
             {
                 Background = Theme.ButtonBg,
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(8, 6, 8, 6),
-                Margin = new Thickness(0, 2, 0, 2),
+                BorderBrush = Theme.CardBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(9, 6, 9, 6),
+                Margin = new Thickness(0, 2.5, 0, 2.5),
                 Cursor = Cursors.Hand,
+                SnapsToDevicePixels = true,
             };
             Theme.AttachHover(row, Theme.ButtonBg, Theme.HoverBg);
             var dock = new DockPanel();

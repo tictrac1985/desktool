@@ -258,13 +258,16 @@ namespace DeskMate.Features
             var row = new Border
             {
                 Background = note.Pinned && !note.Done ? Theme.AccentSoft : Theme.ButtonBg,
+                BorderBrush = note.Pinned && !note.Done ? Theme.Accent : Theme.CardBorder,
+                BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
                 Padding = new Thickness(9, 7, 9, 7),
-                Margin = new Thickness(0, 2, 0, 2),
+                Margin = new Thickness(0, 2.5, 0, 2.5),
                 Cursor = Cursors.Hand,
                 Child = dock,
                 ToolTip = L.T("nt_edit"),
                 Opacity = note.Done ? 0.62 : 1.0,
+                SnapsToDevicePixels = true,
             };
             Theme.AttachHover(row, note.Pinned && !note.Done ? Theme.AccentSoft : Theme.ButtonBg, Theme.HoverBg);
             // Handle Down too — otherwise the panel window's DragMove captures the press and

@@ -60,6 +60,12 @@ namespace DeskMate.Core
         public bool ShowWorldClock = false;
         public bool ShowCommand = true;
 
+        // tool grouping on the widget face: when on, the icon row splits into two
+        // collapsible sections (daily / system) so eleven-plus tools stop crowding one row
+        public bool GroupTools = true;
+        public bool GroupDailyCollapsed = false;
+        public bool GroupSystemCollapsed = false;
+
         // location
         public bool AutoLocation = true;
         public double Lat = 0;
@@ -274,6 +280,9 @@ namespace DeskMate.Core
             Bit("ShowSysMon",         s => s.ShowSysMon,         (s, v) => s.ShowSysMon = v),
             Bit("ShowWorldClock",     s => s.ShowWorldClock,     (s, v) => s.ShowWorldClock = v),
             Bit("ShowCommand",        s => s.ShowCommand,        (s, v) => s.ShowCommand = v),
+            Bit("GroupTools",         s => s.GroupTools,         (s, v) => s.GroupTools = v),
+            Bit("GroupDailyCollapsed",    s => s.GroupDailyCollapsed,    (s, v) => s.GroupDailyCollapsed = v),
+            Bit("GroupSystemCollapsed",   s => s.GroupSystemCollapsed,   (s, v) => s.GroupSystemCollapsed = v),
 
             Bit("AutoLocation",       s => s.AutoLocation,       (s, v) => s.AutoLocation = v),
             Num("Lat",                s => s.Lat,                (s, v) => s.Lat = v),
@@ -313,8 +322,8 @@ namespace DeskMate.Core
             if (AdhanSound < 0 || AdhanSound > 2) AdhanSound = 0;
             // keep in sync with UI.Theme.Palettes.Length — an out-of-range value used to
             // loop Theme.Apply → Reload → tick → Apply until StackOverflow killed the process
-            if (ThemeIndex < 0 || ThemeIndex > 11) ThemeIndex = 0;
-            if (LightThemeIndex < 0 || LightThemeIndex > 11) LightThemeIndex = 4;
+            if (ThemeIndex < 0 || ThemeIndex > 12) ThemeIndex = 0;
+            if (LightThemeIndex < 0 || LightThemeIndex > 12) LightThemeIndex = 4;
             if (ClockStyle < 0 || ClockStyle > 10) ClockStyle = 0;   // 0..10: digital, analog, minimal, flip, word, neon, binary, day-ring, sun-path, day-stripes, moon-phase
             if (PrayerAdjust == null || PrayerAdjust.Length != 6) PrayerAdjust = new int[6];
             for (int i = 0; i < PrayerAdjust.Length; i++)

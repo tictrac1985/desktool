@@ -132,13 +132,16 @@ namespace DeskMate.Features
         {
             var row = new Border
             {
-                Background = Brushes.Transparent,
-                CornerRadius = new CornerRadius(8),
+                Background = Theme.ButtonBg,
+                BorderBrush = Theme.CardBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(9),
                 Padding = new Thickness(8, 5, 8, 5),
-                Margin = new Thickness(0, 1, 0, 1),
+                Margin = new Thickness(0, 1.5, 0, 1.5),
                 Cursor = Cursors.Hand,
+                SnapsToDevicePixels = true,
             };
-            Theme.AttachHover(row, Brushes.Transparent, Theme.HoverBg);
+            Theme.AttachHover(row, Theme.ButtonBg, Theme.HoverBg);
             var dock = new DockPanel();
 
             var openBtn = MakeMini("\uE8A7", L.T("ap_open"), () =>

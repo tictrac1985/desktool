@@ -7,6 +7,9 @@ namespace DeskMate.Logic
 {
     /// <summary>Shunting-yard expression evaluator for the calculator.
     /// Supports + - * / % ^ ( ), functions sin cos tan asin acos atan log ln sqrt abs, constants pi e.
+    /// % has two context-decided meanings: between two operands it is the infix remainder
+    /// (10%3 = 1); right after an operand with no operand following it is POSTFIX percent
+    /// with Windows-calculator semantics — 16000*15% = 2400, 200+10% = 220.
     /// Trig operates in degrees when <c>degrees</c> is true.</summary>
     public static class ExpressionEvaluator
     {
@@ -22,7 +25,7 @@ namespace DeskMate.Logic
             return "((" + m.Groups[1].Value + ")/100)*(" + m.Groups[2].Value + ")";
         }
 
-        enum TokKind { Num, Op, Func, LParen, RParen }
+        enum TokKind { Num, Op, Func, LParen, RParen, Pct }
 
         class Tok
         {
@@ -68,7 +71,28 @@ namespace DeskMate.Logic
                 }
                 if (c == '(') { toks.Add(new Tok { Kind = TokKind.LParen }); i++; continue; }
                 if (c == ')') { toks.Add(new Tok { Kind = TokKind.RParen }); i++; continue; }
-                if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '^' ||
+                if (c == '%')
+                {
+                    // Two meanings, decided by context:
+                    //  · followed by an operand (10%3) → infix remainder
+                    //  · right after an operand, followed by nothing / an operator / ')'
+                    //    (16000*15%, 200+10%) → POSTFIX percent, the everyday meaning on
+                    //    every pocket calculator. Without this the most common percentage
+                    //    pattern — price × VAT% — died in a syntax error.
+                    bool prevIsOperand = toks.Count > 0 &&
+                        (toks[toks.Count - 1].Kind == TokKind.Num || toks[toks.Count - 1].Kind == TokKind.RParen);
+                    int j = i + 1;
+                    while (j < s.Length && (s[j] == ' ' || s[j] == '\t')) j++;
+                    bool nextStartsOperand = j < s.Length &&
+                        (char.IsDigit(s[j]) || s[j] == '.' || char.IsLetter(s[j]) || s[j] == 'π' || s[j] == '(');
+                    if (prevIsOperand && !nextStartsOperand)
+                        toks.Add(new Tok { Kind = TokKind.Pct });
+                    else
+                        toks.Add(new Tok { Kind = TokKind.Op, Op = '%' });
+                    i++;
+                    continue;
+                }
+                if (c == '+' || c == '-' || c == '*' || c == '/' || c == '^' ||
                     c == '×' || c == '÷' || c == '−')
                 {
                     char op = c;
@@ -112,6 +136,12 @@ namespace DeskMate.Logic
                 switch (t.Kind)
                 {
                     case TokKind.Num: outQ.Add(t); break;
+                    case TokKind.Pct:
+                        // postfix: the operand it modifies has just been fully emitted, so it
+                        // binds tighter than any pending operator (2*3% evaluates 3% first)
+                        if (outQ.Count == 0) throw new FormatException("syntax");
+                        outQ.Add(t);
+                        break;
                     case TokKind.Func: stack.Push(t); break;
                     case TokKind.Op:
                         while (stack.Count > 0)
@@ -148,45 +178,63 @@ namespace DeskMate.Logic
             return outQ;
         }
 
+        /// <summary>A stack value: the number, plus whether a postfix % is still attached
+        /// to it. The % resolves LAZILY at the operator that consumes it — after * / ^ it
+        /// means /100 (16000*15% = 16000×0.15), after + − it means "that percent OF the
+        /// left operand" (200+10% = 220), exactly like the Windows calculator.</summary>
+        struct Val { public double V; public bool Pct; }
+
         static double EvalRpn(List<Tok> rpn, bool degrees)
         {
-            var st = new Stack<double>();
+            var st = new Stack<Val>();
             foreach (var t in rpn)
             {
-                if (t.Kind == TokKind.Num) { st.Push(t.Num); continue; }
+                if (t.Kind == TokKind.Num) { st.Push(new Val { V = t.Num }); continue; }
+                if (t.Kind == TokKind.Pct)
+                {
+                    if (st.Count < 1) throw new FormatException("syntax");
+                    var pv = st.Pop();
+                    st.Push(new Val { V = pv.V, Pct = true });
+                    continue;
+                }
                 if (t.Kind == TokKind.Op)
                 {
                     if (st.Count < 2) throw new FormatException("syntax");
-                    double b = st.Pop(), a = st.Pop();
+                    Val b = st.Pop(), a = st.Pop();
+                    double av = a.Pct ? a.V / 100.0 : a.V;
+                    double bv = !b.Pct ? b.V
+                        : (t.Op == '+' || t.Op == '-') ? a.V * b.V / 100.0
+                        : b.V / 100.0;
                     switch (t.Op)
                     {
-                        case '+': st.Push(a + b); break;
-                        case '-': st.Push(a - b); break;
-                        case '*': st.Push(a * b); break;
-                        case '/': st.Push(a / b); break;
-                        case '%': st.Push(a % b); break;
-                        case '^': st.Push(Math.Pow(a, b)); break;
+                        case '+': st.Push(new Val { V = av + bv }); break;
+                        case '-': st.Push(new Val { V = av - bv }); break;
+                        case '*': st.Push(new Val { V = av * bv }); break;
+                        case '/': st.Push(new Val { V = av / bv }); break;
+                        case '%': st.Push(new Val { V = av % bv }); break;
+                        case '^': st.Push(new Val { V = Math.Pow(av, bv) }); break;
                     }
                     continue;
                 }
                 if (t.Kind == TokKind.Func)
                 {
                     if (st.Count < 1) throw new FormatException("syntax");
-                    double x = st.Pop();
+                    var xv = st.Pop();
+                    double x = xv.Pct ? xv.V / 100.0 : xv.V;
                     double inRad = degrees ? x * Math.PI / 180.0 : x;
                     switch (t.Func)
                     {
-                        case "neg": st.Push(-x); break;
-                        case "sin": st.Push(Math.Sin(inRad)); break;
-                        case "cos": st.Push(Math.Cos(inRad)); break;
-                        case "tan": st.Push(Math.Tan(inRad)); break;
-                        case "asin": st.Push(degrees ? Math.Asin(x) * 180.0 / Math.PI : Math.Asin(x)); break;
-                        case "acos": st.Push(degrees ? Math.Acos(x) * 180.0 / Math.PI : Math.Acos(x)); break;
-                        case "atan": st.Push(degrees ? Math.Atan(x) * 180.0 / Math.PI : Math.Atan(x)); break;
-                        case "log": st.Push(Math.Log10(x)); break;
-                        case "ln": st.Push(Math.Log(x)); break;
-                        case "sqrt": st.Push(Math.Sqrt(x)); break;
-                        case "abs": st.Push(Math.Abs(x)); break;
+                        case "neg": st.Push(new Val { V = -x }); break;
+                        case "sin": st.Push(new Val { V = Math.Sin(inRad) }); break;
+                        case "cos": st.Push(new Val { V = Math.Cos(inRad) }); break;
+                        case "tan": st.Push(new Val { V = Math.Tan(inRad) }); break;
+                        case "asin": st.Push(new Val { V = degrees ? Math.Asin(x) * 180.0 / Math.PI : Math.Asin(x) }); break;
+                        case "acos": st.Push(new Val { V = degrees ? Math.Acos(x) * 180.0 / Math.PI : Math.Acos(x) }); break;
+                        case "atan": st.Push(new Val { V = degrees ? Math.Atan(x) * 180.0 / Math.PI : Math.Atan(x) }); break;
+                        case "log": st.Push(new Val { V = Math.Log10(x) }); break;
+                        case "ln": st.Push(new Val { V = Math.Log(x) }); break;
+                        case "sqrt": st.Push(new Val { V = Math.Sqrt(x) }); break;
+                        case "abs": st.Push(new Val { V = Math.Abs(x) }); break;
                         default: throw new FormatException("unknown fn " + t.Func);
                     }
                     continue;
@@ -194,9 +242,10 @@ namespace DeskMate.Logic
                 throw new FormatException("syntax");
             }
             if (st.Count != 1) throw new FormatException("syntax");
-            double result = st.Pop();
-            if (double.IsNaN(result) || double.IsInfinity(result)) throw new FormatException("math");
-            return result;
+            Val result = st.Pop();
+            double finalV = result.Pct ? result.V / 100.0 : result.V;
+            if (double.IsNaN(finalV) || double.IsInfinity(finalV)) throw new FormatException("math");
+            return finalV;
         }
     }
 }

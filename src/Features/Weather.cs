@@ -235,7 +235,9 @@ namespace DeskMate.Features
                 for (int i = 0; i < w.Days.Count && i < 3; i++)
                 {
                     var d = w.Days[i];
-                    var cell = new StackPanel { Margin = new Thickness(4, 0, 4, 0), HorizontalAlignment = HorizontalAlignment.Center };
+                    // each forecast day is its own little card — three chips you could pick
+                    // up, not three columns of floating text
+                    var cell = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
                     DateTime date;
                     string dayName = DateTime.TryParse(d.Date, out date) ? date.ToString("ddd", ci) : d.Date;
                     var dn = Theme.MakeText(dayName, 11.5, Theme.TextDim);
@@ -243,11 +245,24 @@ namespace DeskMate.Features
                     cell.Children.Add(dn);
                     var dg = Theme.MakeText(WeatherCore.WmoGlyph(d.Code), 18, Theme.Accent, Theme.SymbolFont);
                     dg.HorizontalAlignment = HorizontalAlignment.Center;
+                    dg.Margin = new Thickness(0, 3, 0, 3);
                     cell.Children.Add(dg);
                     var t = Theme.MakeText(Math.Round(d.TMax) + "° / " + Math.Round(d.TMin) + "°", 11.5, Theme.Text);
                     t.HorizontalAlignment = HorizontalAlignment.Center;
                     cell.Children.Add(t);
-                    daysRow.Children.Add(cell);
+                    var card = new Border
+                    {
+                        Background = Theme.ButtonBg,
+                        BorderBrush = Theme.CardBorder,
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(10),
+                        Padding = new Thickness(4, 6, 4, 6),
+                        Margin = new Thickness(3, 0, 3, 0),
+                        SnapsToDevicePixels = true,
+                        Child = cell,
+                    };
+                    Theme.AttachHover(card, Theme.ButtonBg, Theme.HoverBg);
+                    daysRow.Children.Add(card);
                 }
                 content.Children.Add(daysRow);
             }

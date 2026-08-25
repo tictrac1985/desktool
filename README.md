@@ -1,4 +1,4 @@
-﻿# DeskMate — ديسك ميت
+# DeskMate — ديسك ميت
 
 أداة سطح مكتب لويندوز: ساعة وتاريخ في منتصف الشاشة مع أدوات سريعة أسفلها — تظهر كجزء من سطح المكتب (خلف كل النوافذ دائماً)، بالعربية والإنجليزية.
 
@@ -35,10 +35,12 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 | ⊞ | مراقب موارد: معالج وذاكرة وبطارية بأشرطة حية | System monitor: live CPU / memory / battery bars |
 | ◎ | ساعات عالمية لمدن تختارها مع فرق اليوم | World clocks for your cities, with day-offset badges |
 | ⚙ | إعدادات: اللغة، شكل الساعة، إظهار/إخفاء كل أداة، التشغيل مع ويندوز | Settings: language, clock style, show/hide any tool, autostart |
-| 🎨 | 12 ثيماً + ثيم تلقائي اختياري (فاتح نهاراً والمختار ليلاً) + ثيم من خلفية الشاشة + شفافية قابلة للضبط + تكبير/تصغير بمقبض الزاوية | 12 themes + optional auto theme (light by day) + wallpaper theme + adjustable transparency + corner-grip resizing |
+| 🎨 | 13 ثيماً + ثيم تلقائي اختياري (فاتح نهاراً والمختار ليلاً) + ثيم من خلفية الشاشة + شفافية قابلة للضبط + تكبير/تصغير بمقبض الزاوية | 13 themes + optional auto theme (light by day) + wallpaper theme + adjustable transparency + corner-grip resizing |
 | 🧊 | 8 أشكال للأداة — منها «مجسم» بعمق ثلاثي الأبعاد و«هالة» بحلقة دوّارة | 8 widget shapes — incl. the 3D «Monolith» slab and the revolving-ring «Halo» |
 | ✦ | سطر موسمي تحت الساعة: اقتراب المناسبات، وعدّاد إفطار حي في رمضان، وتهانئ العيد — يظهر ويختفي مع حجم الأداة تلقائياً | Seasonal line under the clock: occasion countdowns, live Ramadan iftar timer, Eid greetings — appears/hides with widget size automatically |
 | 📌 | اللوحات مثبّتة افتراضياً: تبقى مفتوحة أثناء عملك ولا تُغلق إلا أنت — أو أعد السلوك القديم من الإعدادات | Panels are pinned by default: they stay open while you work and only you close them — or restore the old behaviour in Settings |
+| 🗂 | تجميع الأدوات قابل للطي: «يومية» و«نظام» برأسين ينقران للطي، والإعدادات مثبّتة دائماً — مع إيقونات مرسومة بالكود مجسّمة ترتفع وتتوهج عند التحويم | Collapsible tool grouping: «Daily» and «System» sections with click-to-collapse headers, Settings always pinned — plus hand-drawn 3D icons that lift and glow on hover |
+| ⌨ | اختصار عام Win+Alt+D ينادي شريط الأوامر من أي مكان — حتى والأداة مخفية | Global Win+Alt+D hotkey summons the command bar from anywhere — even when the widget is hidden |
 
 كل أيقونة يظهر اسم أداتها تحتها دائماً — لا حاجة للتخمين. · Every icon shows its tool's name beneath it — no guessing.
 
@@ -56,9 +58,9 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل 284 اختباراً ذاتياً للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
+يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل 316 اختباراً ذاتياً للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
 
-Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs 284 logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
+Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs 316 logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
 
 ```powershell
 # لقطات معاينة لكل التخطيطات واللوحات في obj\uishots · render every layout & panel to obj\uishots

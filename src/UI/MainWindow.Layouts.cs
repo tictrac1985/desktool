@@ -199,7 +199,9 @@ namespace DeskMate.UI
             stack.Children.Add(_clock.Root);
             stack.Children.Add(StatusLines());
             stack.Children.Add(Hairline(12));
-            stack.Children.Add(BuildBalancedRows(BuildIcons(false), 7, new Thickness(0, 8, 0, 0)));
+            stack.Children.Add(Settings.I.GroupTools
+                ? BuildIconSections(false, 7)
+                : BuildBalancedRows(BuildIcons(false), 7, new Thickness(0, 8, 0, 0)));
             return WithGrip(MakeCardTracked(stack));
         }
 
@@ -265,7 +267,9 @@ namespace DeskMate.UI
             row.Children.Add(centerCard);
             row.Children.Add(gregCard);
 
-            var pillContent = BuildBalancedRows(BuildIcons(false), 7, new Thickness(0));
+            var pillContent = Settings.I.GroupTools
+                ? BuildIconSections(false, 7)
+                : BuildBalancedRows(BuildIcons(false), 7, new Thickness(0));
             var pill = MakeCardTracked(pillContent, 30);
             Theme.SetCardPadding(pill, new Thickness(12, 6, 12, 8));
             pill.Margin = new Thickness(12, 0, 12, 12);
@@ -408,7 +412,7 @@ namespace DeskMate.UI
             stack.Children.Add(Hairline(10, 6));
             var allDefs = IconDefs();
             for (int i = 0; i < allDefs.Count; i++)
-                stack.Children.Add(MakeSidebarRow(allDefs[i].Item1, allDefs[i].Item2, allDefs[i].Item3, i));
+                stack.Children.Add(MakeSidebarRow(allDefs[i].Glyph, allDefs[i].Key, allDefs[i].Open, allDefs[i].Id));
 
             // The strip must be at least as wide as the clock actually needs: a digital
             // time + AM/PM pill is wider than 176px, and squeezing it clipped the pill
@@ -433,18 +437,30 @@ namespace DeskMate.UI
                 RenderTransform = new TranslateTransform(0, 0),
             };
             var content = new StackPanel { Orientation = Orientation.Horizontal };
-            // v1.9: bare coloured glyph — same identity tint as the icon rows, no circle
-            var glyphText = new TextBlock
+            // v1.10: the drawn tangible icon; the MDL2 glyph only survives as a fallback
+            // for a slot ToolIcons does not know yet
+            FrameworkElement iconEl;
+            var icon = ToolIcons.Render(toolSlot, 27);
+            if (icon != null)
             {
-                Text = glyph,
-                FontSize = 17,
-                FontFamily = Theme.Mdl2,
-                Foreground = Theme.ToolTint(toolSlot),
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                FlowDirection = FlowDirection.LeftToRight,   // glyph codepoint, not text
-            };
-            var glyphHost = new Border { Width = 30, Height = 30, Child = glyphText };
+                iconEl = icon.Root;
+                iconEl.VerticalAlignment = VerticalAlignment.Center;
+                iconEl.Margin = new Thickness(1.5, 0, 1.5, 0);
+            }
+            else
+            {
+                iconEl = new TextBlock
+                {
+                    Text = glyph,
+                    FontSize = 17,
+                    FontFamily = Theme.Mdl2,
+                    Foreground = Theme.ToolTint(toolSlot),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    FlowDirection = FlowDirection.LeftToRight,   // glyph codepoint, not text
+                };
+            }
+            var glyphHost = new Border { Width = 30, Height = 32, Child = iconEl };
             content.Children.Add(glyphHost);
             var name = Theme.MakeText(L.T(titleKey), 12.5, Theme.TextDim);
             name.VerticalAlignment = VerticalAlignment.Center;
@@ -557,16 +573,26 @@ namespace DeskMate.UI
             // below the normal width AND the shelf gets generous side padding: eleven
             // two-line Arabic labels need real room or the end ones kiss the rounded edge.
             double cw = Math.Min(CellWidthFor(IconDefs().Count, RowBudget()), 62);
-            var shelfRow = new StackPanel
+            FrameworkElement shelfContent;
+            if (Settings.I.GroupTools)
             {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 8, 0, 2),
-            };
-            foreach (var ic in BuildIcons(false, cw))
+                // grouped: sections stack vertically — the shelf becomes a short column
+                // of labelled groups instead of one very wide pill
+                shelfContent = BuildIconSections(false, 7, cw);
+            }
+            else
             {
-                ic.Margin = new Thickness(2, 0, 2, 0);
-                shelfRow.Children.Add(ic);
+                var shelfRow = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                };
+                foreach (var ic in BuildIcons(false, cw))
+                {
+                    ic.Margin = new Thickness(2, 0, 2, 0);
+                    shelfRow.Children.Add(ic);
+                }
+                shelfContent = shelfRow;
             }
             var shelf = new Border
             {
@@ -574,7 +600,7 @@ namespace DeskMate.UI
                 CornerRadius = new CornerRadius(18),
                 Padding = new Thickness(22, 5, 22, 4),
                 Effect = Theme.Elevation(2),
-                Child = shelfRow,
+                Child = shelfContent,
             };
 
             var root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
@@ -659,11 +685,11 @@ namespace DeskMate.UI
 
         /// <summary>One vertical stack of compact tool rows for the Halo layout. Slots stay
         /// aligned with the global registry so identity colours match every other layout.</summary>
-        StackPanel BuildHaloColumn(List<Tuple<string, string, Action>> defs, int start, int count)
+        StackPanel BuildHaloColumn(List<ToolDef> defs, int start, int count)
         {
             var col = new StackPanel { MinWidth = 132 };
             for (int i = start; i < start + count && i < defs.Count; i++)
-                col.Children.Add(MakeSidebarRow(defs[i].Item1, defs[i].Item2, defs[i].Item3, i));
+                col.Children.Add(MakeSidebarRow(defs[i].Glyph, defs[i].Key, defs[i].Open, defs[i].Id));
             return col;
         }
 
