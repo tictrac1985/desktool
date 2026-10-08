@@ -56,6 +56,9 @@ namespace DeskMate.UI
 
         FrameworkElement _rootEl;                       // scaled content root
         readonly List<System.Windows.Controls.Border> _cards = new List<System.Windows.Controls.Border>();
+        /// <summary>Non-rectangular card surfaces (the Orbit bezel ring) that take the same
+        /// background brush and transparency as the cards.</summary>
+        readonly List<System.Windows.Shapes.Shape> _plates = new List<System.Windows.Shapes.Shape>();
         System.Windows.Controls.Border _clockCard;      // for connector lines
         System.Windows.Controls.Canvas _connectors;
         readonly List<FrameworkElement> _floatIcons = new List<FrameworkElement>();
@@ -67,6 +70,20 @@ namespace DeskMate.UI
         System.Windows.Controls.StackPanel _occasionLine;
         System.Windows.Controls.TextBlock _occasionGlyph, _occasionText;
         int _lastOccasionMin = -1;
+
+        // ---- repaint gating (see OnTick) ----
+        /// <summary>Set while the foreground window completely hides the widget.</summary>
+        bool _covered;
+        DateTime _coverChecked = DateTime.MinValue;
+        /// <summary>Something moved on while nothing was being drawn, so the next painted tick
+        /// must refresh every line rather than trusting the per-minute markers.</summary>
+        bool _repaintPending = true;
+        int _lastPaintedMin = -1;
+        /// <summary>Minute of the last weather freshness check. Separate from _lastWeatherMin
+        /// because fetching happens even while the widget is invisible; drawing does not.</summary>
+        int _lastWeatherFetchMin = -1;
+        /// <summary>Power-saving state the current visual tree was built for.</summary>
+        bool _saverApplied;
 
         /// <summary>State shared with the Halo layout: its dashed ring is rotated a step on
         /// every tick so the halo slowly revolves. Null in every other layout.</summary>
@@ -94,6 +111,7 @@ namespace DeskMate.UI
             SourceInitialized += OnSourceInitialized;
             Loaded += (s, e) =>
             {
+                _saverApplied = Settings.SaverActive;   // BuildUI already ran for this state
                 _timer.Interval = TimeSpan.FromSeconds(1);
                 _timer.Tick += (ts, te) => OnTick(DateTime.Now);
                 _timer.Start();
@@ -155,8 +173,12 @@ namespace DeskMate.UI
         {
             _lastPrayerLineMin = -1;
             _lastWeatherMin = -1;   // the rebuilt line starts empty; force a repaint on the next tick
+            ForceRepaint();
             BuildUI();
             SetupTray();
+            // the tree was just built for the current power-saving state, so the tick below
+            // must not read a stale flag and immediately rebuild it again
+            _saverApplied = Settings.SaverActive;
             OnTick(DateTime.Now);
         }
 
@@ -169,6 +191,15 @@ namespace DeskMate.UI
                 b.Opacity = Settings.I.BgOpacity;
                 if (b.CanFreeze) b.Freeze();
                 card.Background = b;
+            }
+            foreach (var plate in _plates)
+            {
+                var b = Theme.CardBg.Clone();
+                // the bezel sits a touch more transparent than the clock core, so the core
+                // reads as the raised centre and the ring as the dial around it
+                b.Opacity = Settings.I.BgOpacity * 0.94;
+                if (b.CanFreeze) b.Freeze();
+                plate.Fill = b;
             }
         }
 
@@ -211,6 +242,48 @@ namespace DeskMate.UI
 
         // ---------------- tick ----------------
 
+        /// <summary>Forces the next tick to repaint everything. Called after a rebuild and
+        /// whenever the widget comes back into view, where the cached per-minute markers no
+        /// longer describe what is actually on screen.</summary>
+        public void ForceRepaint()
+        {
+            _repaintPending = true;
+            _lastPaintedMin = -1;
+            _coverChecked = DateTime.MinValue;
+            _covered = false;
+        }
+
+        /// <summary>Is the widget worth drawing at all right now? Hidden from the tray,
+        /// minimised, or completely covered by the foreground window all answer no. The
+        /// occlusion probe runs at most every two seconds — it is three cheap syscalls, but
+        /// there is no reason to pay for them sixty times a minute.</summary>
+        bool CanBeSeen(DateTime now)
+        {
+            if (!IsVisible) return false;
+            // "Show widget" lifts the widget above everything for a couple of seconds without
+            // activating it, so the app that still owns the foreground would otherwise be read
+            // as covering it — and the user would be shown a stale face at the exact moment
+            // they asked to see it.
+            if (_flashOnTop || Topmost) return true;
+            if ((now - _coverChecked).TotalSeconds >= 2)
+            {
+                _coverChecked = now;
+                _covered = Win32.IsCovered(_hwnd);
+            }
+            return !_covered;
+        }
+
+        /// <summary>Does anything on the face actually differ from one second to the next?
+        /// Only the seconds readout and the two decorative rotations do; every other element
+        /// moves on the minute. With all three off the widget repaints sixty times an hour
+        /// instead of three thousand six hundred — the same picture, a sixtieth of the work.</summary>
+        bool NeedsSecondCadence()
+        {
+            if (Settings.I.ShowSeconds) return true;
+            if (Settings.SaverActive) return false;
+            return HaloBrushes.Halo != null || SkyBodies.HasSpin;
+        }
+
         void OnTick(DateTime now)
         {
             // auto day/night theme — flip the palette exactly when the boundary is crossed
@@ -250,18 +323,68 @@ namespace DeskMate.UI
                 return;
             }
 
+            // ---- work that happens whether or not a single pixel is drawn ----
+            // Alerts are the whole point of a prayer widget: they must fire while it sits
+            // buried under a full-screen window exactly as they do in plain sight.
+            PrayerFeature.MinuteTick(now);
+            FocusFeature.BackgroundTick(now);
+            StickyNoteFeature.BackgroundTick(now);   // note reminders fire whether the panel is open or not
+            if (now.Minute != _lastWeatherFetchMin)
+            {
+                _lastWeatherFetchMin = now.Minute;
+                WeatherFeature.EnsureFresh();        // no-op unless enabled, located and stale
+            }
+
             // "Show desktop" (Win+D) minimizes even tool windows; restore automatically
             if (WindowState != WindowState.Normal && IsVisible)
             {
                 WindowState = WindowState.Normal;
                 Win32.SendToBottom(_hwnd);
             }
-            if (_clock != null && IsVisible) _clock.Tick(now);
 
-            // Halo layout: revolve the dashed ring one step per tick (1°/s = 6 min/rev —
-            // a slow drift you only notice glancing back after a while)
-            if (HaloBrushes.Halo != null && HaloBrushes.Halo.RenderTransform is RotateTransform rt)
-                rt.Angle = (rt.Angle + 1.0) % 360.0;
+            // Power saving followed the charger out or in. The blur ramp is baked into the
+            // visual tree, so this one costs a rebuild — which is fine: it happens when you
+            // unplug, not on a timer.
+            bool saver = Settings.SaverActive;
+            if (saver != _saverApplied)
+            {
+                _saverApplied = saver;
+                Theme.InvalidateEffects();
+                Reload();
+                return;
+            }
+
+            // ---- everything below this line paints ----
+            //
+            // AllowsTransparency makes this a layered window, which takes it off the GPU:
+            // Windows composes it on the CPU through UpdateLayeredWindow. A repaint is
+            // therefore never free, and one nobody can see is pure heat. Two gates follow —
+            // is anyone looking, and has anything actually changed.
+            if (!CanBeSeen(now)) { _repaintPending = true; return; }
+
+            if (!_repaintPending && now.Minute == _lastPaintedMin && !NeedsSecondCadence()) return;
+
+            if (_repaintPending)
+            {
+                // back from hidden or covered: the "already drawn this minute" markers no
+                // longer describe what is on screen, so let every line paint once.
+                _repaintPending = false;
+                _lastPrayerLineMin = _lastWeatherMin = _lastOccasionMin = -1;
+                _dateKey = null;
+            }
+            _lastPaintedMin = now.Minute;
+
+            if (_clock != null) _clock.Tick(now);
+
+            if (!saver)
+            {
+                // Halo layout: revolve the dashed ring one step per painted tick (1° a tick =
+                // 6 min/rev — a slow drift you only notice glancing back after a while)
+                if (HaloBrushes.Halo != null && HaloBrushes.Halo.RenderTransform is RotateTransform rt)
+                    rt.Angle = (rt.Angle + 1.0) % 360.0;
+                // the sun's rays turn the same way, and by the same one degree
+                SkyBodies.Advance();
+            }
 
             // tri-panel side dates — refresh when the day or language changes
             if (_gregText != null)
@@ -274,10 +397,6 @@ namespace DeskMate.UI
                     if (_hijriText != null) _hijriText.Text = DateText.Hijri(now);
                 }
             }
-
-            PrayerFeature.MinuteTick(now);
-            FocusFeature.BackgroundTick(now);
-            StickyNoteFeature.BackgroundTick(now);   // note reminders fire whether the panel is open or not
             // the countdown only changes once a minute — skip the recompute otherwise
             if (now.Minute != _lastPrayerLineMin)
             {
@@ -294,8 +413,7 @@ namespace DeskMate.UI
             if (now.Minute != _lastWeatherMin)
             {
                 _lastWeatherMin = now.Minute;
-                WeatherFeature.EnsureFresh();   // no-op unless enabled, located and stale
-                UpdateWeatherLine();
+                UpdateWeatherLine();            // the fetch itself ran above, gate or no gate
             }
 
             // seasonal occasion line — refresh per minute: during Ramadan it carries a
@@ -333,6 +451,25 @@ namespace DeskMate.UI
             _occasionLine.Visibility = Visibility.Visible;
         }
 
+        /// <summary>Fills every status line right away (normally they wait for the first
+        /// tick). Layouts that size themselves around their content call this before
+        /// measuring, so a circle is cut for the lines that will actually be there.</summary>
+        void PrimeStatusLines(DateTime now)
+        {
+            try
+            {
+                if (Settings.I.ShowPrayer && Settings.I.ShowNextPrayerLine)
+                {
+                    string line = PrayerFeature.NextLine(now);
+                    _prayerLine.Text = line;
+                    _prayerLine.Visibility = string.IsNullOrEmpty(line) ? Visibility.Collapsed : Visibility.Visible;
+                }
+                UpdateWeatherLine();
+                UpdateOccasionLine(now);
+            }
+            catch (Exception ex) { Log.Error("prime lines", ex); }
+        }
+
         /// <summary>Repaints the next-prayer line immediately. Called when a per-prayer
         /// correction changes, so the widget agrees with the panel without waiting for the
         /// next minute boundary.</summary>
@@ -357,8 +494,14 @@ namespace DeskMate.UI
             bool night = DateTime.Now.Hour < 6 || DateTime.Now.Hour >= 19;
             _weatherGlyph.Text = WeatherCore.WmoGlyph(w.Code, night);
             string city = Settings.I.City;
-            _weatherText.Text = Math.Round(w.Temp) + "°" +
-                (string.IsNullOrEmpty(city) ? "" : "  ·  " + city);
+            string temp = Math.Round(w.Temp).ToString(System.Globalization.CultureInfo.InvariantCulture) + "°";
+            // The text runs left-to-right in both languages so the degree sign stays glued to
+            // its number (inside an RTL run the bidi rules floated it to the wrong side).
+            // Arabic reads from the right: glyph, temperature, then the city — so the city is
+            // written first here and lands on the left.
+            _weatherText.FlowDirection = FlowDirection.LeftToRight;
+            _weatherText.Text = string.IsNullOrEmpty(city) ? temp
+                : L.IsAr ? city + "  ·  " + temp : temp + "  ·  " + city;
             _weatherLine.Visibility = Visibility.Visible;
         }
 
@@ -403,6 +546,7 @@ namespace DeskMate.UI
         {
             WindowState = WindowState.Normal;
             Show();
+            ForceRepaint();     // it was invisible a moment ago; nothing on it is current
             OnTick(DateTime.Now);
             // surface above other windows for a moment so the user sees it opened,
             // then settle back to the desktop layer

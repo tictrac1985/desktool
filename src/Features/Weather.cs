@@ -211,6 +211,8 @@ namespace DeskMate.Features
             glyph.Margin = new Thickness(0, 0, 10, 0);
             row.Children.Add(glyph);
             var temp = Theme.MakeText(double.IsNaN(w.Temp) ? "--" : Math.Round(w.Temp) + "°", 46, Theme.Text, Theme.LightFont);
+            // left-to-right so the degree sign stays after its number (an RTL run put it in front)
+            temp.FlowDirection = FlowDirection.LeftToRight;
             row.Children.Add(temp);
             content.Children.Add(row);
 

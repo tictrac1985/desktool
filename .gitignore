@@ -8,3 +8,4 @@ finish/
 dist/*
 !dist/DeskMate.exe
 !dist/DeskMateSetup.exe
+build-log.txt

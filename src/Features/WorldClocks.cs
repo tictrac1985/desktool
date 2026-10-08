@@ -25,13 +25,18 @@ namespace DeskMate.Features
             var listHost = new StackPanel();
             stack.Children.Add(listHost);
 
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            // The labels read HH:mm, so the old one-second timer rewrote the same string
+            // fifty-nine times a minute — and every one of those writes dirtied a translucent
+            // panel that Windows composes on the CPU. Five seconds is close enough for a clock
+            // face, and the paint only happens when the minute actually turns.
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
             host.Closed += (s, e) => timer.Stop();
 
             Action rebuild = null;
 
             // ---- live time labels ----
             var timeLabels = new System.Collections.Generic.List<Tuple<TextBlock, Func<DateTime>>>();
+            int lastMin = -1;
             Action TickTimes = () =>
             {
                 string fmt = Settings.I.Use24h ? "HH:mm" : "h:mm tt";
@@ -41,7 +46,14 @@ namespace DeskMate.Features
                     catch { pair.Item1.Text = "--:--"; }
                 }
             };
-            timer.Tick += (s, e) => TickTimes();
+            timer.Tick += (s, e) =>
+            {
+                if (!host.IsVisible) return;            // pinned open behind another window
+                int m = DateTime.Now.Minute;
+                if (m == lastMin) return;               // nothing in HH:mm has moved
+                lastMin = m;
+                TickTimes();
+            };
 
             // ---- add-city row ----
             var combo = Theme.MakeCombo();

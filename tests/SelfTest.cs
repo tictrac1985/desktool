@@ -210,6 +210,7 @@ static class SelfTest
                 Lang = "en", ClockStyle = 2, Use24h = true, ShowSeconds = true, ShowHijri = false,
                 ShowNextPrayerLine = false, AutoStart = false, PosX = 123.5, PosY = 456.25,
                 ThemeIndex = 3, AutoTheme = true, LayoutIndex = 5, Scale = 1.25, BgOpacity = 0.55,
+                PowerSaver = true, PowerSaverOnBattery = false,
                 ShowCleaner = false, ShowCalc = false, ShowWallpaper = false, ShowPower = false,
                 ShowClipboard = false, ShowWeather = false, ShowApps = false, ShowPrayer = false,
                 ShowFocus = false, ShowOccasions = false, ShowNote = true, ShowSysMon = true,
@@ -222,6 +223,7 @@ static class SelfTest
                 StickyNote = "ملاحظة\nسطران", OccasionCustom = "2026-12-31",
                 OccasionCustomName = "عيد ميلاد", OccasionCustomYearly = true,
                 GroupTools = false, GroupDailyCollapsed = true, GroupSystemCollapsed = true,
+                IconStyle = 2, FontChoice = 1,
             };
             s.PinnedClips.Add("clip one");
             s.PinnedClips.Add("مقطع اثنان");
@@ -239,6 +241,7 @@ static class SelfTest
             Check(Math.Abs(r.PosX - 123.5) < 1e-9 && Math.Abs(r.PosY - 456.25) < 1e-9, "all: position");
             Check(r.ThemeIndex == 3 && r.AutoTheme && r.LayoutIndex == 5, "all: theme + layout");
             Check(Math.Abs(r.Scale - 1.25) < 1e-9 && Math.Abs(r.BgOpacity - 0.55) < 1e-9, "all: scale + opacity");
+            Check(r.PowerSaver && !r.PowerSaverOnBattery, "all: power saving");
             Check(!r.ShowCleaner && !r.ShowCalc && !r.ShowWallpaper && !r.ShowPower &&
                   !r.ShowClipboard && !r.ShowWeather && !r.ShowApps && !r.ShowPrayer &&
                   !r.ShowFocus && !r.ShowOccasions, "all: tool visibility off");
@@ -256,6 +259,7 @@ static class SelfTest
                   r.WorldClocks[1] == "Tokyo Standard Time", "all: world clocks");
             Check(!r.GroupTools && r.GroupDailyCollapsed && r.GroupSystemCollapsed,
                   "all: tool grouping block");
+            Check(r.IconStyle == 2 && r.FontChoice == 1, "all: icon style + font (v1.11)");
 
             // out-of-range values in a hand-edited or corrupted file fall back to defaults
             File.WriteAllText(tmp, "{\"LayoutIndex\":99,\"Scale\":50,\"BgOpacity\":-3,\"AdhanSound\":7}");
@@ -675,12 +679,15 @@ static class SelfTest
 
             // out-of-range values fall back instead of looping Apply→Reload — tested through
             // the real pipeline: write a corrupt file, load it, read the clamped result
-            var bad = new Settings { ThemeIndex = 99, LightThemeIndex = -5, ClockStyle = 42 };
+            var bad = new Settings { ThemeIndex = 99, LightThemeIndex = -5, ClockStyle = 42, IconStyle = 9, FontChoice = -2 };
             bad.Save();
             Settings.Load();
             Check(Settings.I.ThemeIndex == 0, "theme 99 clamps to 0 on load");
             Check(Settings.I.LightThemeIndex == 4, "light theme -5 clamps to 4 on load");
             Check(Settings.I.ClockStyle == 0, "clock 42 clamps to 0 on load");
+            Check(Settings.I.IconStyle == 0, "icon style 9 clamps to 0 on load");
+            Check(Settings.I.FontChoice == 0, "font choice -2 clamps to 0 on load");
+            Check(new Settings().IconStyle == 0 && new Settings().FontChoice == 0, "tiles + bundled font by default");
 
             // default is pinned — the user asked for panels that stay open
             Check(new Settings().PanelsPinned, "panels pinned by default");

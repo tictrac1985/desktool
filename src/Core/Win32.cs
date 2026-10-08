@@ -124,6 +124,76 @@ namespace DeskMate.Core
             Marshal.StructureToPtr(wp, lParam, false);
         }
 
+        // ---------------- visibility & power probes ----------------
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct RECT { public int Left, Top, Right, Bottom; }
+
+        [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder buf, int max);
+
+        /// <summary>True when the foreground window covers <paramref name="self"/> completely.
+        /// The widget is pinned to the bottom of the z-order, so a foreground window whose
+        /// rectangle contains it means not one pixel of it is on screen. That matters more here
+        /// than in a normal app: the widget is a layered (per-pixel alpha) window, which takes
+        /// it off the GPU — Windows composes it on the CPU through UpdateLayeredWindow — so a
+        /// repaint nobody can see is pure heat and fan noise.
+        ///
+        /// Only the foreground window is examined on purpose. Walking the whole z-order to
+        /// catch every partial overlap would cost more than the repaints it saves, and the
+        /// case that actually matters (working in a maximised window) is exactly the one a
+        /// single rectangle test catches.</summary>
+        public static bool IsCovered(IntPtr self)
+        {
+            try
+            {
+                if (self == IntPtr.Zero) return false;
+                IntPtr fg = GetForegroundWindow();
+                if (fg == IntPtr.Zero || fg == self) return false;
+                if (IsIconic(fg) || !IsWindowVisible(fg)) return false;
+                // Progman and WorkerW ARE the desktop, and the taskbar sits beside the widget,
+                // not over it. Their rectangles span the screen, so without this the widget
+                // would decide it was hidden every time the user clicked the desktop.
+                var sb = new System.Text.StringBuilder(64);
+                GetClassName(fg, sb, sb.Capacity);
+                string cls = sb.ToString();
+                if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd") return false;
+                RECT f, w;
+                if (!GetWindowRect(fg, out f) || !GetWindowRect(self, out w)) return false;
+                if (w.Right <= w.Left || w.Bottom <= w.Top) return false;
+                return f.Left <= w.Left && f.Top <= w.Top && f.Right >= w.Right && f.Bottom >= w.Bottom;
+            }
+            catch { return false; }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct SYSTEM_POWER_STATUS
+        {
+            public byte ACLineStatus, BatteryFlag, BatteryLifePercent, Reserved1;
+            public int BatteryLifeTime, BatteryFullLifeTime;
+        }
+
+        [DllImport("kernel32.dll")] static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS s);
+
+        /// <summary>True only when the machine is demonstrably running on battery. Desktops,
+        /// unknown states and any failure all answer false: power saving may switch itself on
+        /// for a laptop on battery, never by accident on a machine that is plugged in.</summary>
+        public static bool OnBattery()
+        {
+            try
+            {
+                SYSTEM_POWER_STATUS st;
+                if (!GetSystemPowerStatus(out st)) return false;
+                if (st.BatteryFlag == 128 || st.BatteryFlag == 255) return false;   // no battery / unknown
+                return st.ACLineStatus == 0;
+            }
+            catch { return false; }
+        }
+
         public static void ListenClipboard(IntPtr hwnd)
         {
             try { AddClipboardFormatListener(hwnd); } catch { }

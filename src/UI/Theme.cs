@@ -130,8 +130,33 @@ namespace DeskMate.UI
         /// (Segoe UI → Segoe UI Light → Tahoma → Arial) keeps the widget readable on
         /// any Windows machine that doesn't have Tajawal — WPF silently drops missing
         /// families, and the first one that resolves is the one used.</summary>
-        public static readonly FontFamily UiFont = new FontFamily("Tajawal, Segoe UI, Tahoma, Arial");
-        public static readonly FontFamily LightFont = new FontFamily("Tajawal, Segoe UI Light, Segoe UI, Tahoma, Arial");
+        public static FontFamily UiFont = AppFonts.Ui;
+        /// <summary>Same family as <see cref="UiFont"/> but a distinct instance, so the text
+        /// factories can recognise it and apply the Light weight (big clock digits).</summary>
+        public static FontFamily LightFont = AppFonts.Light;
+        public static readonly FontWeight LightWeight = FontWeights.Light;
+
+        /// <summary>Tajawal draws its Arabic noticeably smaller than Segoe UI at the same em
+        /// size, so small UI text (labels, rows, captions) is set a notch larger with it. Big
+        /// display digits are left alone — Latin numerals match across the two families.</summary>
+        public static double TextScale = 1.0;
+
+        /// <summary>Re-reads the font choice. Called from Apply, i.e. before every rebuild.</summary>
+        public static void RefreshFonts()
+        {
+            UiFont = AppFonts.Ui;
+            LightFont = AppFonts.Light;
+            TextScale = AppFonts.UsingBundled ? 1.08 : 1.0;
+        }
+
+        /// <summary>Applies <see cref="TextScale"/> to small text only, and floors captions at
+        /// 11.5 px — the 10–11 px hints and badges scattered through the panels were below
+        /// what reads comfortably on a translucent surface.</summary>
+        public static double Fs(double size)
+        {
+            if (size >= 24) return size;
+            return Math.Round(Math.Max(size, 11.5) * TextScale * 2) / 2;
+        }
         public static readonly FontFamily Mdl2 = new FontFamily("Segoe MDL2 Assets");
         public static readonly FontFamily SymbolFont = new FontFamily("Segoe UI Symbol");
 
@@ -155,6 +180,7 @@ namespace DeskMate.UI
                 Accent = accent, CardTop = cardTop, CardBottom = cardBottom,
             };
             MaterialYouActive = true;
+            RefreshFonts();
             // AppliedIndex is left at whatever the previous value was: Material You is a
             // runtime override, not a "real" palette. The settings panel reads
             // MaterialYouActive to render the swatch row in its "off / overridden" state.
@@ -175,8 +201,8 @@ namespace DeskMate.UI
                 // and button backgrounds work, but keep the user-chosen accent (lifted in
                 // MaterialYouCore.BuildPalette) for the digits and highlights.
                 Text = Freeze(new SolidColorBrush(Color.FromArgb(0xE8, 0x16, 0x1E, 0x2A)));
-                TextDim = Freeze(new SolidColorBrush(Color.FromArgb(0xAC, 0x16, 0x1E, 0x2A)));
-                TextFaint = Freeze(new SolidColorBrush(Color.FromArgb(0x68, 0x16, 0x1E, 0x2A)));
+                TextDim = Freeze(new SolidColorBrush(Color.FromArgb(0xCC, 0x16, 0x1E, 0x2A)));
+                TextFaint = Freeze(new SolidColorBrush(Color.FromArgb(0x8E, 0x16, 0x1E, 0x2A)));
                 CardBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x2E, 0x10, 0x18, 0x24)));
                 ButtonBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x3C, 0x10, 0x18, 0x24)));
                 HoverBg = Freeze(new SolidColorBrush(Color.FromArgb(0x26, 0x10, 0x18, 0x24)));
@@ -197,8 +223,8 @@ namespace DeskMate.UI
             {
                 // dark-card path — original behaviour.
                 Text = Brushes.White;
-                TextDim = Freeze(new SolidColorBrush(Color.FromArgb(0xB8, 0xFF, 0xFF, 0xFF)));
-                TextFaint = Freeze(new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)));
+                TextDim = Freeze(new SolidColorBrush(Color.FromArgb(0xD6, 0xFF, 0xFF, 0xFF)));
+                TextFaint = Freeze(new SolidColorBrush(Color.FromArgb(0x9A, 0xFF, 0xFF, 0xFF)));
                 CardBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x2C, 0xFF, 0xFF, 0xFF)));
                 ButtonBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x3A, 0xFF, 0xFF, 0xFF)));
                 HoverBg = Freeze(new SolidColorBrush(Color.FromArgb(0x34, 0xFF, 0xFF, 0xFF)));
@@ -235,6 +261,7 @@ namespace DeskMate.UI
         public static void Apply(int index)
         {
             if (index < 0 || index >= Palettes.Length) index = 0;
+            RefreshFonts();
             AppliedIndex = index;
             MaterialYouActive = false;   // normal Apply always clears the Material You override
             var p = Palettes[index];
@@ -246,8 +273,8 @@ namespace DeskMate.UI
             if (p.Light)
             {
                 Text = Freeze(new SolidColorBrush(Color.FromArgb(0xE8, 0x16, 0x1E, 0x2A)));
-                TextDim = Freeze(new SolidColorBrush(Color.FromArgb(0xAC, 0x16, 0x1E, 0x2A)));
-                TextFaint = Freeze(new SolidColorBrush(Color.FromArgb(0x68, 0x16, 0x1E, 0x2A)));
+                TextDim = Freeze(new SolidColorBrush(Color.FromArgb(0xCC, 0x16, 0x1E, 0x2A)));
+                TextFaint = Freeze(new SolidColorBrush(Color.FromArgb(0x8E, 0x16, 0x1E, 0x2A)));
                 CardBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x2E, 0x10, 0x18, 0x24)));
                 ButtonBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x3C, 0x10, 0x18, 0x24)));
                 HoverBg = Freeze(new SolidColorBrush(Color.FromArgb(0x26, 0x10, 0x18, 0x24)));
@@ -262,8 +289,8 @@ namespace DeskMate.UI
             else
             {
                 Text = Brushes.White;
-                TextDim = Freeze(new SolidColorBrush(Color.FromArgb(0xB8, 0xFF, 0xFF, 0xFF)));
-                TextFaint = Freeze(new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)));
+                TextDim = Freeze(new SolidColorBrush(Color.FromArgb(0xD6, 0xFF, 0xFF, 0xFF)));
+                TextFaint = Freeze(new SolidColorBrush(Color.FromArgb(0x9A, 0xFF, 0xFF, 0xFF)));
                 CardBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x2C, 0xFF, 0xFF, 0xFF)));
                 ButtonBorder = Freeze(new SolidColorBrush(Color.FromArgb(0x3A, 0xFF, 0xFF, 0xFF)));
                 HoverBg = Freeze(new SolidColorBrush(Color.FromArgb(0x34, 0xFF, 0xFF, 0xFF)));
@@ -414,6 +441,11 @@ namespace DeskMate.UI
         public static Brush RimBrush;
 
         static DropShadowEffect[] _elevation;
+        static bool _elevationSaver;
+
+        /// <summary>Drops the cached shadow ramp so the next request rebuilds it. Called on a
+        /// palette change and when power saving turns on or off.</summary>
+        public static void InvalidateEffects() { _elevation = null; }
 
         /// <summary>One shadow ramp for the whole app, so a key, a card and a floating panel
         /// sit at visibly different heights instead of each picking its own numbers.
@@ -422,15 +454,22 @@ namespace DeskMate.UI
         /// on a widget that rebuilds its whole tree on every settings change.</summary>
         public static DropShadowEffect Elevation(int level)
         {
-            if (_elevation == null)
+            bool saver = Settings.SaverActive;
+            if (_elevation == null || saver != _elevationSaver)
             {
+                _elevationSaver = saver;
+                // Cost scales with the blur radius, not with the shadow's presence, so power
+                // saving keeps the depth cue and shrinks the radius instead of dropping the
+                // shadow altogether — the widget still sits on the desktop, it just stops
+                // paying for a wide Gaussian on every repaint.
+                double k = saver ? 0.35 : 1.0;
                 _elevation = new[]
                 {
-                    MakeShadow(6, 1.5, IsLight ? 0.20 : 0.32),
+                    MakeShadow(6 * k, 1.5, IsLight ? 0.20 : 0.32),
                     // raised surface: a second offset layer is faked by a deeper blur+depth
                     // so cards visibly "sit" on the desktop instead of printing onto it
-                    MakeShadow(16, 4, IsLight ? 0.26 : 0.48),
-                    MakeShadow(34, 9, IsLight ? 0.34 : 0.62),
+                    MakeShadow(16 * k, 4, IsLight ? 0.26 : 0.48),
+                    MakeShadow(34 * k, 9, IsLight ? 0.34 : 0.62),
                 };
             }
             return _elevation[Math.Max(1, Math.Min(3, level)) - 1];
@@ -591,7 +630,7 @@ namespace DeskMate.UI
                 Margin = new Thickness(12), // room for the shadow inside the transparent window
                 // callers reshape the card through SetCardPadding / SetCardRadius — touching
                 // Padding or CornerRadius directly leaves these light layers behind
-                Tag = new CardParts { Pad = pad, Sheen = sheen, Bevel = bevel, Rim = rim },
+                Tag = new CardParts { Pad = pad, Sheen = sheen, Bevel = bevel, Rim = rim, Edge = edge },
             };
         }
 
@@ -601,7 +640,7 @@ namespace DeskMate.UI
         /// orbit layout's circular clock card.</summary>
         class CardParts
         {
-            public Border Pad, Sheen, Bevel, Rim;
+            public Border Pad, Sheen, Bevel, Rim, Edge;
         }
 
         /// <summary>Adjusts the inner spacing of a card made by <see cref="MakeCard"/>.
@@ -623,6 +662,21 @@ namespace DeskMate.UI
             p.Sheen.CornerRadius = new CornerRadius(inner);
             p.Bevel.CornerRadius = new CornerRadius(inner);
             p.Rim.CornerRadius = new CornerRadius(radius);
+            // The edge streak is a straight 1.6px line inset by the corner radius. On a
+            // rounded rectangle that is the flat top edge; on a circle (Orbit / Halo cores)
+            // there is no flat edge at all, so a line inset by the OLD radius ran straight
+            // across the top of the disc and out past both sides of it — the stray bar the
+            // user saw over the clock. A large radius means a round card: the curved rim
+            // light already does the job there, so the streak simply goes.
+            if (p.Edge != null)
+            {
+                if (radius > 40) p.Edge.Visibility = Visibility.Collapsed;
+                else
+                {
+                    p.Edge.Visibility = Visibility.Visible;
+                    p.Edge.Margin = new Thickness(radius * 0.9, 1.1, radius * 0.9, 0);
+                }
+            }
         }
 
         /// <summary>Full-width hairline used to separate panel sections.</summary>
@@ -735,16 +789,18 @@ namespace DeskMate.UI
 
         public static TextBlock MakeText(string text, double size, Brush brush = null, FontFamily font = null)
         {
-            return new TextBlock
+            var tb = new TextBlock
             {
                 Text = text,
-                FontSize = size,
+                FontSize = Fs(size),
                 Foreground = brush ?? Text,
                 FontFamily = font ?? UiFont,
                 // Arabic must ALWAYS shape and order RTL regardless of the container's
                 // flow direction — a stray LTR ancestor used to mirror word order
                 FlowDirection = FlowDirection.RightToLeft,
             };
+            if (ReferenceEquals(font, LightFont)) tb.FontWeight = LightWeight;
+            return tb;
         }
 
         public static TextBlock MakeGlyph(string glyph, double size, Brush brush = null)
@@ -766,10 +822,10 @@ namespace DeskMate.UI
         /// tool names ("الآلة الحاسبة", "مواقيت الصلاة") fit on one or two lines inside their
         /// own cell — the desktop has space to spare, and a cramped row is the first thing
         /// that makes the widget look unfinished.</summary>
-        public const double DefaultCellWidth = 76;
+        public const double DefaultCellWidth = 86;
 
         /// <summary>Clear gap between neighbouring cells, so labels never appear to touch.</summary>
-        public const double CellGap = 8;
+        public const double CellGap = 6;
 
         /// <summary>Per-tool identity colours. Each glyph rides its own hue family — cleaner
         /// in teal, calculator in amber, prayer in green, weather in sky blue… — so the icon
@@ -826,6 +882,12 @@ namespace DeskMate.UI
             return Color.FromRgb((byte)Math.Round(f(0) * 255), (byte)Math.Round(f(8) * 255), (byte)Math.Round(f(4) * 255));
         }
 
+        /// <summary>Tile size for a tool cell of the given width — one rule for every layout.</summary>
+        public static double ToolIconSize(double cellWidth)
+        {
+            return cellWidth >= 80 ? 46 : cellWidth >= 66 ? 42 : 36;
+        }
+
         /// <summary>The v1.10 tool cell: a hand-drawn tangible object (see ToolIcons) sitting
         /// on the widget face with a contact shadow, its name always under it. Hover LIFTS
         /// the object — it rises, its shadow shrinks and fades, and a soft ambient glow in
@@ -833,30 +895,29 @@ namespace DeskMate.UI
         /// not know the slot, the cell falls back to the MDL2 font glyph (forward-compat).</summary>
         public static FrameworkElement MakeToolCell(string glyph, string label, Action onClick, bool floating, double cellWidth = DefaultCellWidth, int toolSlot = 0)
         {
-            // dense single-row layouts (Orbit/Dock) shrink the cell but keep the object
-            // readable — material detail needs size to be seen at all
-            double iconSize = cellWidth >= 60 ? 40 : 34;
+            // v1.11: the icon is a full-size tile, not an object floating in a mostly empty
+            // box. Dense rows (Dock, Connected on a narrow screen) step it down a notch.
+            double iconSize = ToolIconSize(cellWidth);
             var icon = ToolIcons.Render(toolSlot, iconSize);
 
             // ambient glow behind the object in the tool's own hue — the "lit from below"
             // cue that appears as it lifts off the surface
-            var hsl = ToolHues[Math.Max(0, Math.Min(ToolHues.Length - 1, toolSlot))];
-            var glowColor = FromHsl(hsl.Hue, 0.9, IsLight ? 0.45 : 0.6);
+            var glowColor = ToolIcons.Hue(toolSlot);
             var glowBrush = new RadialGradientBrush { Center = new Point(0.5, 0.5), GradientOrigin = new Point(0.5, 0.5) };
             glowBrush.GradientStops.Add(new GradientStop(
-                Color.FromArgb(0x70, glowColor.R, glowColor.G, glowColor.B), 0));
+                Color.FromArgb(0x66, glowColor.R, glowColor.G, glowColor.B), 0));
             glowBrush.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
             glowBrush.Freeze();
             var ambient = new System.Windows.Shapes.Ellipse
             {
-                Width = iconSize * 1.25, Height = iconSize * 1.25,
+                Width = iconSize * 1.5, Height = iconSize * 1.5,
                 Fill = glowBrush, Opacity = 0,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 IsHitTestVisible = false,
             };
 
-            var glyphHost = new Grid { Width = iconSize + 6, Height = iconSize + 8 };
+            var glyphHost = new Grid { Width = iconSize + 8, Height = iconSize + iconSize * 0.14 };
             glyphHost.Children.Add(ambient);
 
             TextBlock glyphText = null;   // fallback path only
@@ -866,7 +927,7 @@ namespace DeskMate.UI
                 glyphText = new TextBlock
                 {
                     Text = glyph,
-                    FontSize = cellWidth >= 60 ? 24 : 20,
+                    FontSize = iconSize * 0.55,
                     FontFamily = Mdl2,
                     Foreground = ToolTint(toolSlot),
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -876,23 +937,24 @@ namespace DeskMate.UI
                 glyphHost.Children.Add(glyphText);
             }
 
-            // The label used to be allowed to overflow its cell (MaxWidth = cellWidth + 20 with
-            // -10 side margins), so neighbouring Arabic names — "تنظيف سريع" beside
-            // "الآلة الحاسبة" — ran straight into each other with no gap. A label now stays
-            // inside its own cell and wraps to a second line instead of invading the next one.
+            // The name stays inside its own cell and wraps to a second line rather than
+            // running into the neighbour. v1.11: a real reading size and Medium weight — the
+            // old 9.5–10.5 px regular labels were the hardest thing on the widget to read.
+            double labelSize = Fs(cellWidth >= 70 ? 12.5 : 11.5);
             var name = new TextBlock
             {
                 Text = label,
-                FontSize = cellWidth < 60 ? 9.5 : 10.5,
+                FontSize = labelSize,
                 FontFamily = UiFont,
+                FontWeight = FontWeights.Medium,
                 Foreground = TextDim,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 TextAlignment = TextAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 MaxWidth = cellWidth,
-                MaxHeight = 30,          // two lines at this size; a third would unbalance the row
-                Margin = new Thickness(0, 4, 0, 0),
+                MaxHeight = Math.Ceiling(labelSize * 2.7),   // two lines; a third would unbalance the row
+                Margin = new Thickness(0, 3, 0, 0),
                 FlowDirection = FlowDirection.RightToLeft,   // Arabic labels shape RTL always
             };
 
@@ -903,6 +965,7 @@ namespace DeskMate.UI
                 Background = Brushes.Transparent,
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(CellGap / 2, 0, CellGap / 2, 0),
+                ToolTip = label,
             };
             // StackPanel Background only paints with a panel hit-test surface
             cell.Children.Add(glyphHost);
@@ -1085,7 +1148,7 @@ namespace DeskMate.UI
                 BorderBrush = CardBorder,
                 BorderThickness = new Thickness(1),
                 Padding = new Thickness(9, 7, 9, 7),
-                FontSize = 13,
+                FontSize = Fs(13),
                 FontFamily = UiFont,
                 VerticalContentAlignment = VerticalAlignment.Center,
             };
@@ -1098,7 +1161,7 @@ namespace DeskMate.UI
         {
             return new ComboBox
             {
-                FontSize = 13,
+                FontSize = Fs(13),
                 FontFamily = UiFont,
                 MinWidth = 140,
                 VerticalContentAlignment = VerticalAlignment.Center,
@@ -1110,7 +1173,7 @@ namespace DeskMate.UI
         {
             var cb = new CheckBox
             {
-                Content = new TextBlock { Text = text, Foreground = Text, FontSize = 13, FontFamily = UiFont, TextWrapping = TextWrapping.Wrap, FlowDirection = FlowDirection.RightToLeft },
+                Content = new TextBlock { Text = text, Foreground = Text, FontSize = Fs(13), FontFamily = UiFont, TextWrapping = TextWrapping.Wrap, FlowDirection = FlowDirection.RightToLeft },
                 IsChecked = isChecked,
                 Margin = new Thickness(0, 4, 0, 4),
                 VerticalContentAlignment = VerticalAlignment.Center,
@@ -1137,8 +1200,8 @@ namespace DeskMate.UI
 
         public static TextBlock SectionTitle(string text)
         {
-            var t = MakeText(text, 11.5, Accent);
-            t.FontWeight = FontWeights.SemiBold;
+            var t = MakeText(text, 12, Accent);
+            t.FontWeight = FontWeights.Bold;
             t.Margin = new Thickness(0, 10, 0, 4);
             return t;
         }

@@ -42,7 +42,25 @@ namespace DeskMate.Core
         /// (until turned off). Default off: most users want a stable theme.</summary>
         public bool MaterialYou = false;
         public double Scale = 1.0;
+        /// <summary>Tool icon look: 0 = colour tiles (v1.11 default), 1 = glass tiles tinted by
+        /// the theme, 2 = the v1.10 hand-drawn objects.</summary>
+        public int IconStyle = 0;
+        /// <summary>Interface font: 0 = the bundled Tajawal, 1 = the system font (Segoe UI).</summary>
+        public int FontChoice = 0;
         public double BgOpacity = 1.0;   // 0.3 .. 1.0 — widget card background only
+
+        /// <summary>Power saving. The widget is a layered window, so Windows composes it on
+        /// the CPU rather than the GPU and every repaint costs real processor time. This mode
+        /// stops the decorative rotations, shrinks the blur radii (a Gaussian blur is the most
+        /// expensive thing the widget draws) and lets the face repaint once a minute instead of
+        /// once a second. Nothing you can read changes — only how often the same picture is
+        /// redrawn.</summary>
+        public bool PowerSaver = false;
+
+        /// <summary>Switch <see cref="PowerSaver"/> on by itself while the machine runs on
+        /// battery, and off again when it is plugged back in. Ignored on desktops, which never
+        /// report a battery.</summary>
+        public bool PowerSaverOnBattery = true;
 
         // feature icon visibility
         public bool ShowCleaner = true;
@@ -109,6 +127,32 @@ namespace DeskMate.Core
 
         // world clocks: Windows timezone ids chosen by the user
         public List<string> WorldClocks = new List<string>();
+
+        // ---------------- power saving ----------------
+
+        static bool _saverCached;
+        static DateTime _saverChecked = DateTime.MinValue;
+
+        /// <summary>Power saving as it applies right now: the explicit switch, or the machine
+        /// running on battery with the automatic option on. Asked on every tick, so the battery
+        /// probe (a syscall, cheap but not free) is cached for twenty seconds — plugging a
+        /// charger in is not something that needs a per-second answer.</summary>
+        public static bool SaverActive
+        {
+            get
+            {
+                var s = I;
+                if (s.PowerSaver) return true;
+                if (!s.PowerSaverOnBattery) return false;
+                var now = DateTime.UtcNow;
+                if ((now - _saverChecked).TotalSeconds >= 20)
+                {
+                    _saverChecked = now;
+                    _saverCached = Win32.OnBattery();
+                }
+                return _saverCached;
+            }
+        }
 
         // ---------------- persistence table ----------------
 
@@ -264,7 +308,11 @@ namespace DeskMate.Core
             Bit("MaterialYou",        s => s.MaterialYou,        (s, v) => s.MaterialYou = v),
             Int("LayoutIndex",        s => s.LayoutIndex,        (s, v) => s.LayoutIndex = v),
             Num("Scale",              s => s.Scale,              (s, v) => s.Scale = v),
+            Int("IconStyle",          s => s.IconStyle,          (s, v) => s.IconStyle = v),
+            Int("FontChoice",         s => s.FontChoice,         (s, v) => s.FontChoice = v),
             Num("BgOpacity",          s => s.BgOpacity,          (s, v) => s.BgOpacity = v),
+            Bit("PowerSaver",         s => s.PowerSaver,         (s, v) => s.PowerSaver = v),
+            Bit("PowerSaverOnBattery", s => s.PowerSaverOnBattery, (s, v) => s.PowerSaverOnBattery = v),
 
             Bit("ShowCleaner",        s => s.ShowCleaner,        (s, v) => s.ShowCleaner = v),
             Bit("ShowCalc",           s => s.ShowCalc,           (s, v) => s.ShowCalc = v),
@@ -324,7 +372,9 @@ namespace DeskMate.Core
             // loop Theme.Apply → Reload → tick → Apply until StackOverflow killed the process
             if (ThemeIndex < 0 || ThemeIndex > 12) ThemeIndex = 0;
             if (LightThemeIndex < 0 || LightThemeIndex > 12) LightThemeIndex = 4;
-            if (ClockStyle < 0 || ClockStyle > 10) ClockStyle = 0;   // 0..10: digital, analog, minimal, flip, word, neon, binary, day-ring, sun-path, day-stripes, moon-phase
+            if (ClockStyle < 0 || ClockStyle > 10) ClockStyle = 0;
+            if (IconStyle < 0 || IconStyle > 2) IconStyle = 0;
+            if (FontChoice < 0 || FontChoice > 1) FontChoice = 0;   // 0..10: digital, analog, minimal, flip, word, neon, binary, day-ring, sun-path, day-stripes, moon-phase
             if (PrayerAdjust == null || PrayerAdjust.Length != 6) PrayerAdjust = new int[6];
             for (int i = 0; i < PrayerAdjust.Length; i++)
             {

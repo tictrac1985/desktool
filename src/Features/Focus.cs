@@ -89,6 +89,10 @@ namespace DeskMate.Features
             timeText.FlowDirection = FlowDirection.LeftToRight;
             var phaseText = Theme.MakeText("", 12, Theme.TextDim);
             phaseText.HorizontalAlignment = HorizontalAlignment.Center;
+            // the hint must stay inside the ring: wrap it to the ring's inner width
+            phaseText.TextWrapping = TextWrapping.Wrap;
+            phaseText.TextAlignment = TextAlignment.Center;
+            phaseText.MaxWidth = size - 2 * stroke - 24;
             centerText.Children.Add(timeText);
             centerText.Children.Add(phaseText);
 
@@ -207,8 +211,8 @@ namespace DeskMate.Features
 
             // the panel only draws; phase transitions belong to BackgroundTick so they survive
             // the panel being closed
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-            timer.Tick += (s, e) => Render(DateTime.Now);
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(Settings.SaverActive ? 1000 : 500) };
+            timer.Tick += (s, e) => { if (host.IsVisible) Render(DateTime.Now); };
             timer.Start();
 
             Action onChanged = () =>

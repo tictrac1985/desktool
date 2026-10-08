@@ -184,7 +184,7 @@ namespace DeskMate.UI
             _pinGlyph = (TextBlock)_pinBtn.Child;
 
             int slot = SlotFor(key);
-            var drawnIcon = slot >= 0 ? ToolIcons.Render(slot, 27) : null;
+            var drawnIcon = slot >= 0 ? ToolIcons.Render(slot, 30) : null;
             if (drawnIcon != null)
             {
                 // the header shows the same physical object as the widget icon, slightly
@@ -205,8 +205,8 @@ namespace DeskMate.UI
                     header.Children.Add(chip);
                 }
             }
-            var titleText = Theme.MakeText(title, 14.5, Theme.Text);
-            titleText.FontWeight = FontWeights.SemiBold;
+            var titleText = Theme.MakeText(title, 15, Theme.Text);
+            titleText.FontWeight = FontWeights.Bold;
             titleText.VerticalAlignment = VerticalAlignment.Center;
             header.Children.Add(titleText);
             stack.Children.Add(header);

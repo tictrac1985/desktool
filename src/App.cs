@@ -29,7 +29,7 @@ namespace DeskMate
 
                 _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, "DeskMate.ShowSignal");
                 Settings.Load();
-                UI.Theme.Apply(Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.AutoTheme, DateTime.Now.Hour));
+                UI.Theme.Apply(Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.LightThemeIndex, Settings.I.AutoTheme, DateTime.Now.Hour));
 
                 var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
                 app.DispatcherUnhandledException += (s, e) =>

@@ -106,8 +106,11 @@ namespace DeskMate.Features
                 catch { batt.Value.Text = "—"; }
             };
 
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            timer.Tick += (s, e) => refresh();
+            // Live bars are the whole point of this panel, so the cadence stays at a second.
+            // But panels are pinned open by default: one left behind a maximised window was
+            // redrawing meters nobody was reading, once a second, for hours.
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(Settings.SaverActive ? 3 : 1) };
+            timer.Tick += (s, e) => { if (host.IsVisible) refresh(); };
             host.Loaded += (s, e) => refresh();
             host.Closed += (s, e) => timer.Stop();
             timer.Start();

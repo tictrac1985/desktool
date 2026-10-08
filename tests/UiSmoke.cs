@@ -41,7 +41,7 @@ static class UiSmoke
         // nor derive every palette from their wallpaper: Material You overrides Theme.Apply
         // on the first tick, which would paint every swatch and clock accent wallpaper-grey
         Settings.I.MaterialYou = false;
-        Theme.Apply(DeskMate.Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.AutoTheme, DateTime.Now.Hour));
+        Theme.Apply(DeskMate.Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.LightThemeIndex, Settings.I.AutoTheme, DateTime.Now.Hour));
         _app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         _win = new MainWindow();
         _win.Show();
@@ -49,93 +49,55 @@ static class UiSmoke
         _win.Left = -4000;
         _win.Top = 100;
 
-        _steps = new List<Tuple<string, Action, int>>
+        // v1.11: the matrix centres on what the redesign touched — every layout with the
+        // sun-path face (the user's own setup), the orbit ring across light and dark themes
+        // and all three icon looks, every clock face, then the panels.
+        Settings.I.AutoTheme = false;   // a day/night flip mid-run would repaint the wrong theme
+        int userLayout = Settings.I.LayoutIndex, userClock = Settings.I.ClockStyle, userTheme = Settings.I.ThemeIndex;
+        _steps = new List<Tuple<string, Action, int>>();
+        Action<string, Action, int> step = (n, a, w) => _steps.Add(Tuple.Create(n, a, w));
+        step("mine", () => Look(userLayout, userClock, userTheme, 0, 0), 900);
+        for (int ly = 0; ly <= 7; ly++)
         {
-            Tuple.Create("layout0", (Action)(() => SetLayout(0)), 700),
-            Tuple.Create("layout1", (Action)(() => SetLayout(1)), 700),
-            Tuple.Create("layout2", (Action)(() => SetLayout(2)), 700),
-            Tuple.Create("layout3", (Action)(() => SetLayout(3)), 700),
-            Tuple.Create("layout4", (Action)(() => SetLayout(4)), 700),
-            Tuple.Create("layout5", (Action)(() => SetLayout(5)), 700),
-            Tuple.Create("cleaner", (Action)(() => CleanerFeature.Open(_win)), 900),
-            Tuple.Create("calc", (Action)(() => CalculatorFeature.Open(_win)), 900),
-            Tuple.Create("wallpaper", (Action)(() => WallpaperFeature.Open(_win)), 900),
-            Tuple.Create("power", (Action)(() => PowerFeature.Open(_win)), 900),
-            Tuple.Create("clipboard", (Action)(() => ClipboardKeeper.Open(_win)), 900),
-            Tuple.Create("focus", (Action)(() => FocusFeature.Open(_win)), 900),
-            Tuple.Create("command", (Action)(() => CommandBarFeature.Open(_win)), 900),
-            Tuple.Create("occasions", (Action)(() => OccasionsFeature.Open(_win)), 900),
-            // seeded first: an empty list only proves the placeholder renders, not the task row
-            Tuple.Create("note", (Action)(() => { SeedTasks(); StickyNoteFeature.Open(_win); }), 900),
-            Tuple.Create("note_edit", (Action)(() => StickyNoteFeature.OpenEditorForSmoke()), 900),
-            Tuple.Create("sysmon", (Action)(() => SysMonFeature.Open(_win)), 1600),
-            Tuple.Create("worldclock", (Action)(() => WorldClocksFeature.Open(_win)), 1200),
-            Tuple.Create("weather", (Action)(() => WeatherFeature.Open(_win)), 8000),
-            Tuple.Create("apps", (Action)(() => AppsFeature.Open(_win)), 2000),
-            Tuple.Create("prayer", (Action)(() => PrayerFeature.Open(_win)), 8000),
-            Tuple.Create("settings", (Action)(() => SettingsFeature.Open(_win)), 1200),
-            // opened the way a user opens it — from an icon — so the caret and the anchored
-            // placement are actually rendered instead of silently falling back
-            Tuple.Create("anchored", (Action)(() =>
-            {
-                SetLayout(0);
-                // on-screen for this one step: parked at -4000 the panel is clamped back into
-                // the work area, thousands of pixels from its anchor, and the caret would only
-                // ever prove the clamp rather than the placement
-                _win.Left = 120;
-                _win.Top = 120;
-                _win.UpdateLayout();
-                PanelWindow.PendingAnchor = FindToolCircle(_win);
-                CalculatorFeature.Open(_win);
-            }), 900),
-            // v1.7: the two new clock styles rendered on the classic layout
-            Tuple.Create("clock6_binary", (Action)(() => { Settings.I.ClockStyle = 6; SetLayout(0); }), 700),
-            Tuple.Create("clock7_dayring", (Action)(() => { Settings.I.ClockStyle = 7; SetLayout(0); }), 700),
-            // v1.8: the two newer clock styles + the two new layouts
-            Tuple.Create("clock3_flip", (Action)(() => { Settings.I.ClockStyle = 3; SetLayout(0); }), 700),
-            Tuple.Create("clock4_sidebar_flip", (Action)(() => { SetLayout(4); }), 800),
-            Tuple.Create("clock8_sunpath", (Action)(() => { Settings.I.ClockStyle = 8; SetLayout(0); }), 700),
-            Tuple.Create("clock9_stripes", (Action)(() => { Settings.I.ClockStyle = 9; SetLayout(0); }), 700),
-            // v1.9: the moon-phase dome + the moon-phase clock in the compact sidebar
-            // v1.9: the moon-phase dome + neon-with-sky (sun by day, moon by night)
-            Tuple.Create("clock10_moonphase", (Action)(() => { Settings.I.ClockStyle = 10; SetLayout(0); }), 700),
-            Tuple.Create("clock5_neon_sky", (Action)(() => { Settings.I.ClockStyle = 5; SetLayout(0); }), 700),
-            Tuple.Create("layout6_monolith", (Action)(() => { Settings.I.ClockStyle = 0; SetLayout(6); }), 800),
-            Tuple.Create("layout7_halo", (Action)(() => { SetLayout(7); }), 900),
-            // v1.7: a couple of the new palettes on the widget (Material You is already
-            // forced off for the whole run — see Main — so Theme.Apply sticks)
-            Tuple.Create("theme8_violet", (Action)(() =>
-            {
-                Settings.I.ThemeIndex = 8;
-                Theme.Apply(8);
-                _win.Reload();
-            }), 700),
-            Tuple.Create("theme9_copper", (Action)(() =>
-            {
-                Settings.I.ThemeIndex = 9;
-                Theme.Apply(9);
-                _win.Reload();
-            }), 700),
-            Tuple.Create("theme10_sand", (Action)(() =>
-            {
-                Settings.I.ThemeIndex = 10;
-                Theme.Apply(10);
-                _win.Reload();
-            }), 700),
-            Tuple.Create("theme11_ruby", (Action)(() =>
-            {
-                Settings.I.ThemeIndex = 11;
-                Theme.Apply(11);
-                _win.Reload();
-            }), 700),
-            // v1.10: the Daylight palette — a light theme with a real blue accent
-            Tuple.Create("theme12_daylight", (Action)(() =>
-            {
-                Settings.I.ThemeIndex = 12;
-                Theme.Apply(12);
-                _win.Reload();
-            }), 700),
-        };
+            int l = ly;
+            step("layout" + l, () => Look(l, 8, 0, 0, 0), 800);
+        }
+        foreach (int th in new[] { 12, 10, 4, 8, 6, 1 })
+        {
+            int t = th;
+            step("orbit_theme" + t, () => Look(3, 8, t, 0, 0), 800);
+        }
+        step("orbit_glass", () => Look(3, 8, 0, 1, 0), 800);
+        step("orbit_objects", () => Look(3, 8, 0, 2, 0), 800);
+        step("orbit_systemfont", () => Look(3, 8, 0, 0, 1), 800);
+        step("orbit_digital", () => Look(3, 0, 0, 0, 0), 800);
+        step("orbit_analog", () => Look(3, 1, 0, 0, 0), 800);
+        step("halo_light", () => Look(7, 0, 12, 0, 0), 800);
+        step("connected_light", () => Look(1, 8, 12, 0, 0), 800);
+        step("classic_light", () => Look(0, 0, 10, 0, 0), 800);
+        for (int cs = 0; cs <= 10; cs++)
+        {
+            int c = cs;
+            step("clock" + c, () => Look(0, c, 0, 0, 0), 800);
+        }
+        step("sidebar_glass", () => Look(4, 2, 5, 1, 0), 800);
+        step("dock_tiles", () => Look(5, 1, 0, 0, 0), 800);
+        step("monolith_ruby", () => Look(6, 0, 11, 0, 0), 800);
+        step("triple_digital", () => Look(2, 0, 0, 0, 0), 800);
+        // panels in the default look
+        step("p_reset", () => Look(3, 8, 0, 0, 0), 600);
+        step("cleaner", () => CleanerFeature.Open(_win), 900);
+        step("calc", () => CalculatorFeature.Open(_win), 900);
+        step("clipboard", () => ClipboardKeeper.Open(_win), 900);
+        step("focus", () => FocusFeature.Open(_win), 900);
+        step("occasions", () => OccasionsFeature.Open(_win), 900);
+        step("note", () => { SeedTasks(); StickyNoteFeature.Open(_win); }, 900);
+        step("worldclock", () => WorldClocksFeature.Open(_win), 1200);
+        step("weather", () => WeatherFeature.Open(_win), 6000);
+        step("apps", () => AppsFeature.Open(_win), 2000);
+        step("prayer", () => PrayerFeature.Open(_win), 6000);
+        step("settings", () => SettingsFeature.Open(_win), 1200);
+        step("settings_light", () => { Look(3, 8, 12, 0, 0); SettingsFeature.Open(_win); }, 1200);
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         _timer.Tick += NextStep;
@@ -215,6 +177,21 @@ static class UiSmoke
         return null;
     }
 
+    /// <summary>One complete look: layout, clock face, palette, icon style, font.</summary>
+    static void Look(int layout, int clock, int theme, int icons, int font)
+    {
+        PanelWindow.CloseCurrent();
+        Settings.I.LayoutIndex = layout;
+        Settings.I.ClockStyle = clock;
+        Settings.I.ThemeIndex = theme;
+        Settings.I.IconStyle = icons;
+        Settings.I.FontChoice = font;
+        Theme.Apply(theme);
+        _win.Reload();
+        _win.Left = -4000;
+        _win.Top = 100;
+    }
+
     static void SetLayout(int idx)
     {
         Settings.I.LayoutIndex = idx;
@@ -233,7 +210,9 @@ static class UiSmoke
             try
             {
                 // a panel still opening under load gets ONE extra beat before it counts as failed
-                bool widgetStep = prev.StartsWith("layout") || prev.StartsWith("clock") || prev.StartsWith("theme");
+                bool widgetStep = !(prev == "cleaner" || prev == "calc" || prev == "clipboard" || prev == "focus"
+                    || prev == "occasions" || prev == "note" || prev == "worldclock" || prev == "weather"
+                    || prev == "apps" || prev == "prayer" || prev.StartsWith("settings"));
                 bool panelMissing = !widgetStep && PanelWindow.Current == null;
                 if (panelMissing && _retried != prev)
                 {

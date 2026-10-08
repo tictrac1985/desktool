@@ -58,7 +58,7 @@ namespace DeskMate.UI
 
         /// <summary>Tool cells with permanently visible names under each icon. The drawn icon
         /// and its ambient glow key off the tool's fixed identity id.</summary>
-        List<FrameworkElement> BuildIcons(bool floating, double cellWidth = 58)
+        List<FrameworkElement> BuildIcons(bool floating, double cellWidth = Theme.DefaultCellWidth)
         {
             var list = new List<FrameworkElement>();
             foreach (var d in IconDefs())
@@ -75,7 +75,7 @@ namespace DeskMate.UI
         /// with Settings always pinned ungrouped at the end. Used by the multi-row layouts
         /// (Classic, Tri-panel, Monolith) where fourteen tools would otherwise crowd one
         /// undifferentiated mass. Single-row strips (Sidebar/Dock/…) stay flat.</summary>
-        FrameworkElement BuildIconSections(bool floating, int maxPerRow, double cellWidth = 58)
+        FrameworkElement BuildIconSections(bool floating, int maxPerRow, double cellWidth = Theme.DefaultCellWidth)
         {
             var defs = IconDefs();
             var keys = defs.Select(d => d.Key).ToList();
@@ -109,19 +109,25 @@ namespace DeskMate.UI
         {
             var section = new StackPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
 
-            var title = Theme.MakeText(L.T(titleKey), 10.5, Theme.TextFaint);
+            var title = Theme.MakeText(L.T(titleKey), 12, Theme.TextFaint);
+            title.FontWeight = FontWeights.Medium;
             title.VerticalAlignment = VerticalAlignment.Center;
-            var chevron = Theme.MakeGlyph(collapsed ? "" : "", 8.5, Theme.TextFaint); // E70D/E70E chevrons
+            // the title keeps a clear gap from the rule on its inner side (it used to run
+            // straight into the line)
+            title.Margin = new Thickness(0, 0, 10, 0);
+            var chevron = Theme.MakeGlyph(collapsed ? "\uE70D" : "\uE70E", 9, Theme.TextFaint); // E70D/E70E chevrons
             chevron.VerticalAlignment = VerticalAlignment.Center;
-            chevron.Margin = new Thickness(6, 0, 2, 0);
+            chevron.Margin = new Thickness(10, 0, 2, 0);
             var rule = new Border
             {
                 Height = 1, Background = Theme.CardBorder,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(8, 0, 0, 0),
             };
-            DockPanel.SetDock(chevron, Dock.Left);      // trailing edge in RTL = left
-            DockPanel.SetDock(title, Dock.Right);       // leading edge in RTL = right
+            // logical sides: the panel mirrors under RTL, so Dock.Left is the reading start —
+            // the title leads (right in Arabic), the chevron trails (left in Arabic). The old
+            // docking had them swapped, which put the Arabic title at the far left
+            DockPanel.SetDock(title, Dock.Left);
+            DockPanel.SetDock(chevron, Dock.Right);
             var headRow = new DockPanel();
             headRow.Children.Add(chevron);
             headRow.Children.Add(title);

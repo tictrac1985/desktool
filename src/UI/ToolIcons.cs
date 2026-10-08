@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using DeskMate.Core;
 
 namespace DeskMate.UI
 {
@@ -17,17 +18,20 @@ namespace DeskMate.UI
         public Ellipse Shadow;
     }
 
-    /// <summary>Hand-drawn tangible tool icons — v1.10 replaces the MDL2 font glyphs with
-    /// small physical objects rendered in code: layered material gradients (metal, glass,
-    /// paper, plastic), a specular highlight from the top-left light, and a soft contact
-    /// shadow grounding each object on the widget face. Everything is vector geometry built
-    /// per Reload; nothing is per-tick, so the richer drawing costs nothing at runtime.
+    /// <summary>Tool icons, drawn in code (no image assets, nothing per-tick).
+    ///
+    /// v1.11 — the default look is a set of TILES: one rounded-square shape for every tool,
+    /// filled with that tool's own colour, carrying a white line glyph drawn on a shared
+    /// 24-unit grid with one stroke weight. Same silhouette, same optical size, same line —
+    /// the row finally reads as one family. The v1.10 objects drew a ~20-unit object in a
+    /// 44-unit box, so every icon showed at under half its nominal size; tiles fill their
+    /// box edge to edge.
+    ///
+    /// Settings.IconStyle: 0 = colour tiles · 1 = glass tiles (theme surface, tool-coloured
+    /// glyph) · 2 = the v1.10 hand-drawn objects, now cropped so they fill their box too.
     ///
     /// Icon identity is fixed by TOOL ID (0..14), never by filtered position: hiding a tool
-    /// must not recolour the others (it used to — the slot came from the visible list).
-    ///
-    /// Design canvas is 44×44 with the object roughly in the top 38 units; the remaining
-    /// strip at the bottom is where the contact shadow lives.</summary>
+    /// must not recolour the others.</summary>
     public static class ToolIcons
     {
         // Tool ids — the registry order in MainWindow.IconDefs and Theme.ToolHues.
@@ -35,45 +39,266 @@ namespace DeskMate.UI
                          Weather = 5, Apps = 6, Prayer = 7, Focus = 8, Occasions = 9,
                          Note = 10, SysMon = 11, WorldClock = 12, Command = 13, Settings = 14;
 
+        /// <summary>Tile gradient per tool: light top → deep bottom. Neighbours on the default
+        /// ring alternate warm and cool so no two adjacent tiles blur together.</summary>
+        static readonly string[,] TileColors =
+        {
+            { "#34D3C0", "#0E9F8E" },   // Cleaner    — teal
+            { "#FFC15A", "#F0890C" },   // Calc       — amber
+            { "#B69BFF", "#7B52F0" },   // Wallpaper  — violet
+            { "#FF7B73", "#E2383A" },   // Power      — red
+            { "#E3AE72", "#B57536" },   // Clipboard  — tan
+            { "#6CCBFF", "#2496EE" },   // Weather    — sky
+            { "#8E95FF", "#4F55E6" },   // Apps       — indigo
+            { "#4FDDA0", "#0FA36B" },   // Prayer     — emerald
+            { "#FF8AC0", "#E1468E" },   // Focus      — pink
+            { "#FFD54A", "#DDA208" },   // Occasions  — gold
+            { "#FF9E6E", "#EE5F2C" },   // Note       — coral
+            { "#A6E25A", "#5CAA1C" },   // SysMon     — lime
+            { "#5FE3F0", "#0FA4C0" },   // WorldClock — cyan
+            { "#66718C", "#2B3245" },   // Command    — slate
+            { "#A9B1BF", "#66707F" },   // Settings   — steel
+        };
+
+        const string Gear = "M12.50 5.12 L13.70 3.26 L16.97 4.62 L16.51 6.78 A6.9 6.9 0 0 1 17.22 7.49 L19.38 7.03 L20.74 10.30 L18.88 11.50 A6.9 6.9 0 0 1 18.88 12.50 L20.74 13.70 L19.38 16.97 L17.22 16.51 A6.9 6.9 0 0 1 16.51 17.22 L16.97 19.38 L13.70 20.74 L12.50 18.88 A6.9 6.9 0 0 1 11.50 18.88 L10.30 20.74 L7.03 19.38 L7.49 17.22 A6.9 6.9 0 0 1 6.78 16.51 L4.62 16.97 L3.26 13.70 L5.12 12.50 A6.9 6.9 0 0 1 5.12 11.50 L3.26 10.30 L4.62 7.03 L6.78 7.49 A6.9 6.9 0 0 1 7.49 6.78 L7.03 4.62 L10.30 3.26 L11.50 5.12 A6.9 6.9 0 0 1 12.50 5.12 Z";
+
+        /// <summary>White line glyphs on a 24-unit grid. s: stroked path · f: filled path ·
+        /// c: stroked circle "cx,cy,r" · d: filled dot "cx,cy,r". Every stroke is drawn at
+        /// the same weight, which is what makes fifteen different symbols look like a set.</summary>
+        static readonly string[][] GlyphSpec =
+        {
+            // 0 Cleaner — a sweeping brush with two sparkles
+            new[] { "s:M19.5 4.5 L13 11", "s:M11.2 9.6 L14.4 12.8",
+                    "f:M10.6 10.3 C8.4 11.6 6.4 14.2 4.6 18.6 L5.4 19.4 C9.8 17.6 12.4 15.6 13.7 13.4 Z",
+                    "s:M17.8 15.2 V18.8 M16 17 H19.6", "s:M7 4.5 V7.1 M5.7 5.8 H8.3" },
+            // 1 Calc — body, display line, six keys
+            new[] { "s:M7.5 3 H16.5 A2.5 2.5 0 0 1 19 5.5 V18.5 A2.5 2.5 0 0 1 16.5 21 H7.5 A2.5 2.5 0 0 1 5 18.5 V5.5 A2.5 2.5 0 0 1 7.5 3 Z",
+                    "s:M8.5 7.5 H15.5", "d:9,12.2,1.3", "d:12,12.2,1.3", "d:15,12.2,1.3",
+                    "d:9,16,1.3", "d:12,16,1.3", "d:15,16,1.3" },
+            // 2 Wallpaper — framed picture: sun and two hills
+            new[] { "s:M5.5 4.5 H18.5 A2.5 2.5 0 0 1 21 7 V17 A2.5 2.5 0 0 1 18.5 19.5 H5.5 A2.5 2.5 0 0 1 3 17 V7 A2.5 2.5 0 0 1 5.5 4.5 Z",
+                    "d:8.6,9.4,1.7", "s:M3.6 17.2 L9 12.2 L13 15.6 L15.6 13.3 L20.6 17.6" },
+            // 3 Power — the power symbol
+            new[] { "s:M12 3 V11.2", "s:M7.1 6.1 A7.6 7.6 0 1 0 16.9 6.1" },
+            // 4 Clipboard — board, clip, two lines
+            new[] { "s:M8.5 5 H7.5 A2.5 2.5 0 0 0 5 7.5 V18.5 A2.5 2.5 0 0 0 7.5 21 H16.5 A2.5 2.5 0 0 0 19 18.5 V7.5 A2.5 2.5 0 0 0 16.5 5 H15.5",
+                    "s:M10 3 H14 A1.2 1.2 0 0 1 15.2 4.2 V5.8 A1.2 1.2 0 0 1 14 7 H10 A1.2 1.2 0 0 1 8.8 5.8 V4.2 A1.2 1.2 0 0 1 10 3 Z",
+                    "s:M9 11.5 H15 M9 15.5 H13.4" },
+            // 5 Weather — sun behind a cloud
+            new[] { "s:M7.6 3 V4.4 M2.9 7.8 H4.3 M4.2 4.4 L5.2 5.4 M11 4.4 L10 5.4",
+                    "s:M4.9 10.7 A3.4 3.4 0 1 1 10.9 6.4",
+                    "s:M7.8 20 H16.6 A3.9 3.9 0 0 0 17.2 12.25 A5.2 5.2 0 0 0 7.4 11.6 A4.2 4.2 0 0 0 7.8 20 Z" },
+            // 6 Apps — four rounded squares
+            new[] { "s:M6.2 4 H8.8 A2.2 2.2 0 0 1 11 6.2 V8.8 A2.2 2.2 0 0 1 8.8 11 H6.2 A2.2 2.2 0 0 1 4 8.8 V6.2 A2.2 2.2 0 0 1 6.2 4 Z",
+                    "s:M15.2 4 H17.8 A2.2 2.2 0 0 1 20 6.2 V8.8 A2.2 2.2 0 0 1 17.8 11 H15.2 A2.2 2.2 0 0 1 13 8.8 V6.2 A2.2 2.2 0 0 1 15.2 4 Z",
+                    "s:M6.2 13 H8.8 A2.2 2.2 0 0 1 11 15.2 V17.8 A2.2 2.2 0 0 1 8.8 20 H6.2 A2.2 2.2 0 0 1 4 17.8 V15.2 A2.2 2.2 0 0 1 6.2 13 Z",
+                    "s:M15.2 13 H17.8 A2.2 2.2 0 0 1 20 15.2 V17.8 A2.2 2.2 0 0 1 17.8 20 H15.2 A2.2 2.2 0 0 1 13 17.8 V15.2 A2.2 2.2 0 0 1 15.2 13 Z" },
+            // 7 Prayer — mosque: dome, door, minarets, crescent finial
+            new[] { "s:M3 20.5 H21",
+                    "s:M6.5 20.5 V15 C6.5 11.6 9.4 10 12 8.4 C14.6 10 17.5 11.6 17.5 15 V20.5",
+                    "s:M10.4 20.5 V17.8 A1.6 1.6 0 0 1 13.6 17.8 V20.5", "s:M12 8.4 V6.6",
+                    "f:M12.9 2.6 A2 2 0 1 0 12.9 6.1 A2.6 2.6 0 0 1 12.9 2.6 Z",
+                    "s:M3.8 20.5 V12.6 M20.2 20.5 V12.6" },
+            // 8 Focus — stopwatch
+            new[] { "c:12,13.5,7.3", "s:M10 2.8 H14 M12 2.8 V6.2", "s:M12 13.5 L15 10.5", "s:M18.4 6.4 L19.6 5.2" },
+            // 9 Occasions — a solid eight-pointed star (khatam) with an open centre
+            new[] { "f:F0 M12.00 2.70 L14.72 5.44 L18.58 5.42 L18.56 9.28 L21.30 12.00 L18.56 14.72 L18.58 18.58 L14.72 18.56 L12.00 21.30 L9.28 18.56 L5.42 18.58 L5.44 14.72 L2.70 12.00 L5.44 9.28 L5.42 5.42 L9.28 5.44 Z M14.6 12 A2.6 2.6 0 1 0 9.4 12 A2.6 2.6 0 1 0 14.6 12 Z" },
+            // 10 Note (tasks) — a sheet with a tick
+            new[] { "s:M7.5 3.5 H16.5 A2.5 2.5 0 0 1 19 6 V18 A2.5 2.5 0 0 1 16.5 20.5 H7.5 A2.5 2.5 0 0 1 5 18 V6 A2.5 2.5 0 0 1 7.5 3.5 Z",
+                    "s:M8.6 12.3 L11 14.7 L15.6 9.6" },
+            // 11 SysMon — a pulse line
+            new[] { "s:M2.8 12.5 H6.6 L9.2 6 L14.2 19 L16.8 12.5 H21.2" },
+            // 12 WorldClock — globe
+            new[] { "c:12,12,8.6", "s:M12 3.4 C8.6 7.6 8.6 16.4 12 20.6 C15.4 16.4 15.4 7.6 12 3.4 Z", "s:M3.6 12 H20.4" },
+            // 13 Command — terminal window with a prompt
+            new[] { "s:M5.5 4.5 H18.5 A2.5 2.5 0 0 1 21 7 V17 A2.5 2.5 0 0 1 18.5 19.5 H5.5 A2.5 2.5 0 0 1 3 17 V7 A2.5 2.5 0 0 1 5.5 4.5 Z",
+                    "s:M7.2 9.6 L10.2 12 L7.2 14.4", "s:M12.4 15 H16.6" },
+            // 14 Settings — gear
+            new[] { "s:" + Gear, "c:12,12,2.9" },
+        };
+
+        static Color Hex(string hex)
+        {
+            uint v = uint.Parse(hex.TrimStart('#'), System.Globalization.NumberStyles.HexNumber);
+            return Color.FromRgb((byte)(v >> 16), (byte)(v >> 8), (byte)v);
+        }
+
+        static bool Known(int id) { return id >= 0 && id < GlyphSpec.Length; }
+
+        /// <summary>The tool's identity colour (tile midpoint) — used for hover glows.</summary>
+        public static Color Hue(int id)
+        {
+            if (!Known(id)) return Color.FromRgb(0x9A, 0xA4, 0xB4);
+            var a = Hex(TileColors[id, 0]); var b = Hex(TileColors[id, 1]);
+            return Color.FromRgb((byte)((a.R + b.R) / 2), (byte)((a.G + b.G) / 2), (byte)((a.B + b.B) / 2));
+        }
+
         /// <summary>Builds the icon for a tool id at the requested box size. Returns null for
         /// an unknown id so the caller can fall back to the font glyph (forward-compat).</summary>
         public static IconVisual Render(int id, double size)
         {
-            Canvas body = Build(id);
+            if (!Known(id)) return null;
+            int style = Core.Settings.I.IconStyle;
+            FrameworkElement body = style == 2 ? ClassicBody(id, size) : TileBody(id, size, style == 1);
             if (body == null) return null;
-
-            var vb = new Viewbox
-            {
-                Width = size, Height = size,
-                Stretch = Stretch.Uniform,
-                Child = body,
-                RenderTransformOrigin = new Point(0.5, 0.5),
-            };
 
             // contact shadow: an oval of soft dark light pooled under the object. On light
             // themes a desktop already reflects light upward, so the shadow is gentler.
-            double sa = Theme.IsLight ? 0.26 : 0.42;
+            double sa = Theme.IsLight ? 0.24 : 0.46;
             var sh = new RadialGradientBrush { Center = new Point(0.5, 0.5), GradientOrigin = new Point(0.5, 0.5) };
             sh.GradientStops.Add(new GradientStop(Color.FromArgb((byte)(255 * sa), 0, 0, 0), 0));
             sh.GradientStops.Add(new GradientStop(Color.FromArgb((byte)(255 * sa * 0.45), 0, 0, 0), 0.55));
             sh.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
             sh.Freeze();
+            bool tile = style != 2;
             var shadow = new Ellipse
             {
-                Width = size * 0.56, Height = size * 0.115,
+                Width = size * (tile ? 0.78 : 0.62), Height = size * (tile ? 0.17 : 0.13),
                 Fill = sh,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(0, 0, 0, size * 0.005),
                 IsHitTestVisible = false,
                 RenderTransformOrigin = new Point(0.5, 0.5),
                 RenderTransform = new ScaleTransform(1, 1),
             };
 
-            var root = new Grid { Width = size, Height = size + size * 0.07 };
+            body.VerticalAlignment = VerticalAlignment.Top;
+            body.RenderTransformOrigin = new Point(0.5, 0.5);
+            var root = new Grid { Width = size, Height = size * 1.12, FlowDirection = FlowDirection.LeftToRight };
             root.Children.Add(shadow);
-            root.Children.Add(vb);
-            return new IconVisual { Root = root, Body = vb, Shadow = shadow };
+            root.Children.Add(body);
+            return new IconVisual { Root = root, Body = body, Shadow = shadow };
+        }
+
+        // ---------------- v1.11 tiles ----------------
+
+        static FrameworkElement TileBody(int id, double size, bool glass)
+        {
+            Color top = Hex(TileColors[id, 0]), bottom = Hex(TileColors[id, 1]);
+            bool light = Theme.IsLight;
+            double r = Math.Round(size * 0.29, 1);
+
+            Brush fill, glyphBrush, border;
+            if (!glass)
+            {
+                fill = TileGrad(top, bottom);
+                glyphBrush = Brushes.White;
+                border = Solid(light ? Color.FromArgb(0x26, 0, 0, 0) : Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF));
+            }
+            else
+            {
+                // glass: the theme's own surface, the tool's colour carried by the glyph alone
+                fill = light
+                    ? TileGrad(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), Color.FromArgb(0xB8, 0xFF, 0xFF, 0xFF))
+                    : TileGrad(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF), Color.FromArgb(0x0E, 0xFF, 0xFF, 0xFF));
+                glyphBrush = Solid(light ? bottom : top);
+                border = Solid(light ? Color.FromArgb(0x22, 0, 0, 0) : Color.FromArgb(0x2C, 0xFF, 0xFF, 0xFF));
+            }
+
+            var g = new Grid { Width = size, Height = size };
+            g.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(r),
+                Background = fill,
+                BorderBrush = border,
+                BorderThickness = new Thickness(1),
+                IsHitTestVisible = false,
+            });
+            // inner top light: a 1px highlight along the upper inside edge — what turns a flat
+            // rounded square into a lit, slightly domed tile
+            var hl = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            hl.GradientStops.Add(new GradientStop(Color.FromArgb(glass ? (byte)0x50 : (byte)0x78, 255, 255, 255), 0));
+            hl.GradientStops.Add(new GradientStop(Color.FromArgb(0, 255, 255, 255), 0.5));
+            hl.Freeze();
+            g.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(Math.Max(1, r - 1)),
+                BorderBrush = hl,
+                BorderThickness = new Thickness(1),
+                Margin = new Thickness(1),
+                IsHitTestVisible = false,
+            });
+
+            // glyph: a soft dark copy one hair below the white one gives the line its own
+            // depth on bright tiles (gold, lime) without paying for a blur effect
+            double gs = Math.Round(size * 0.6);
+            var layers = new Grid { Width = 24, Height = 24 };
+            if (!glass) layers.Children.Add(Glyph(id, Solid(Color.FromArgb(0x38, 0, 0, 0)), 0.55));
+            layers.Children.Add(Glyph(id, glyphBrush, 0));
+            g.Children.Add(new Viewbox
+            {
+                Width = gs, Height = gs,
+                Stretch = Stretch.Uniform,
+                Child = layers,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false,
+            });
+            return g;
+        }
+
+        /// <summary>One glyph as a 24×24 canvas of paths in a single brush.</summary>
+        static Canvas Glyph(int id, Brush brush, double dy)
+        {
+            var cv = new Canvas { Width = 24, Height = 24, IsHitTestVisible = false };
+            if (dy != 0) cv.RenderTransform = new TranslateTransform(0, dy);
+            foreach (var spec in GlyphSpec[id])
+            {
+                char kind = spec[0];
+                string data = spec.Substring(2);
+                Geometry geo;
+                if (kind == 'c' || kind == 'd')
+                {
+                    var p = data.Split(',');
+                    var ci = System.Globalization.CultureInfo.InvariantCulture;
+                    double cx = double.Parse(p[0], ci), cy = double.Parse(p[1], ci), rr = double.Parse(p[2], ci);
+                    geo = new EllipseGeometry(new Point(cx, cy), rr, rr);
+                }
+                else geo = Geometry.Parse(data);
+                geo.Freeze();
+                var path = new Path { Data = geo, IsHitTestVisible = false };
+                if (kind == 's' || kind == 'c')
+                {
+                    path.Stroke = brush;
+                    path.StrokeThickness = 2;
+                    path.StrokeStartLineCap = PenLineCap.Round;
+                    path.StrokeEndLineCap = PenLineCap.Round;
+                    path.StrokeLineJoin = PenLineJoin.Round;
+                }
+                else path.Fill = brush;
+                cv.Children.Add(path);
+            }
+            return cv;
+        }
+
+        static Brush TileGrad(Color top, Color bottom)
+        {
+            var b = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+            b.GradientStops.Add(new GradientStop(top, 0));
+            b.GradientStops.Add(new GradientStop(bottom, 1));
+            b.Freeze();
+            return b;
+        }
+
+        // ---------------- v1.10 objects (IconStyle 2) ----------------
+
+        /// <summary>The hand-drawn object, cropped. The objects live in the middle ~28 units of
+        /// a 44-unit design canvas; scaling the whole canvas left them at under half the box.
+        /// The 30-unit window below frames just the object, so it fills the box it is given.</summary>
+        static FrameworkElement ClassicBody(int id, double size)
+        {
+            Canvas body = Build(id);
+            if (body == null) return null;
+            var crop = new Canvas { Width = 30, Height = 30, ClipToBounds = false };
+            Canvas.SetLeft(body, -7);
+            Canvas.SetTop(body, -6.6);
+            crop.Children.Add(body);
+            return new Viewbox
+            {
+                Width = size, Height = size,
+                Stretch = Stretch.Uniform,
+                Child = crop,
+            };
         }
 
         static Canvas Build(int id)

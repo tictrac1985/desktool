@@ -15,6 +15,33 @@ namespace DeskMate.UI
         void Tick(DateTime now);
     }
 
+    /// <summary>Shape hints for layouts that cut a circle around the clock (Orbit, Halo).
+    /// A dial tagged Round only occupies the ellipse inscribed in its box; a Dome only the
+    /// upper half-ellipse standing on its bottom edge. Untagged elements count as their
+    /// full rectangle.</summary>
+    public static class Footprint
+    {
+        public const string Round = "fp:round";
+        public const string Dome = "fp:dome";
+    }
+
+    /// <summary>Date lines shared by every clock face. Tri-panel shows the dates in its own
+    /// side cards, so it switches them off here instead of printing everything twice.</summary>
+    static class ClockDates
+    {
+        public static bool Hidden;
+
+        public static void Paint(TextBlock date, TextBlock hijri, DateTime now)
+        {
+            var s = Settings.I;
+            date.Visibility = Hidden ? Visibility.Collapsed : Visibility.Visible;
+            if (!Hidden) date.Text = DateText.Gregorian(now);
+            bool showH = s.ShowHijri && !Hidden;
+            hijri.Visibility = showH ? Visibility.Visible : Visibility.Collapsed;
+            if (showH) hijri.Text = DateText.Hijri(now);
+        }
+    }
+
     static class DateText
     {
         // formatting + Hijri conversion are relatively costly — cache per day/language
@@ -134,9 +161,7 @@ namespace DeskMate.UI
             _ampmGlyphHost.Visibility = ar ? Visibility.Visible : Visibility.Collapsed;
             if (ar) _ampmGlyph.Data = now.Hour < 12 ? AmPmGlyph.Sad : AmPmGlyph.Meem;
             else _ampm.Text = now.Hour < 12 ? "AM" : "PM";
-            _date.Text = DateText.Gregorian(now);
-            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
-            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+            ClockDates.Paint(_date, _hijri, now);
         }
     }
 
@@ -184,7 +209,7 @@ namespace DeskMate.UI
             _hourLen = _cx * 0.48;
             _minLen = _cx * 0.70;
             _secLen = _cx * 0.78;
-            _canvas = new Canvas { Width = size, Height = size, FlowDirection = FlowDirection.LeftToRight };
+            _canvas = new Canvas { Width = size, Height = size, FlowDirection = FlowDirection.LeftToRight, Tag = Footprint.Round };
             var dial = new Ellipse
             {
                 Width = size, Height = size,
@@ -277,12 +302,15 @@ namespace DeskMate.UI
             SetHandAngle(_min, (now.Minute + (s.ShowSeconds ? now.Second / 60.0 : 0)) * 6, _minLen);
             _sec.Visibility = s.ShowSeconds ? Visibility.Visible : Visibility.Collapsed;
             if (s.ShowSeconds) SetHandAngle(_sec, now.Second * 6, _secLen);
-            // digital readout: confirms Tick() is firing even if the hands look off
-            string fmt = s.Use24h ? "HH:mm:ss" : "h:mm:ss";
+            // digital readout under the dial. It used to be hard-wired to :ss, which meant the
+            // analog face repainted every second even for users who had switched seconds off —
+            // and on a layered window that repaint is CPU work. It follows the setting now,
+            // like every other clock style.
+            string fmt = s.Use24h
+                ? (s.ShowSeconds ? "HH:mm:ss" : "HH:mm")
+                : (s.ShowSeconds ? "h:mm:ss" : "h:mm");
             _time.Text = now.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture);
-            _date.Text = DateText.Gregorian(now);
-            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
-            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+            ClockDates.Paint(_date, _hijri, now);
         }
 
         void SetHandAngle(Line hand, double deg, double length)
@@ -378,6 +406,7 @@ namespace DeskMate.UI
             string t = now.ToString(fmt, CultureInfo.InvariantCulture);
             if (!s.Use24h) t += L.IsAr ? (now.Hour < 12 ? " ﺹ" : " ﻡ") : (now.Hour < 12 ? " AM" : " PM");
             _time.Text = t;
+            _date.Visibility = ClockDates.Hidden ? Visibility.Collapsed : Visibility.Visible;
             string d = DateText.Gregorian(now);
             if (s.ShowHijri)
             {
@@ -388,12 +417,12 @@ namespace DeskMate.UI
         }
     }
 
-    /// <summary>Flip clock — split-flap style digits, top flap rotates from -90° to 0° and
-    /// bottom flap rotates from 0° to 90° on every change. The old digit stays visible
-    /// underneath (no hollow background) so the animation reads as a real flap fold, not a fade.
-    /// Each digit is its own visual unit; HH:MM:SS packed horizontally the same way the
-    /// Digital clock lays them out. The flip animation only runs on the columns that actually
-    /// changed since the last tick (cheap test, looks sharper than animating every second).</summary>
+    /// <summary>Flip clock — split-flap digits on a recessed tray. v1.11 rebuild: each card is
+    /// two CLIPPED halves around a seam (the old card drew two whole digits offset from each
+    /// other, so every number looked doubled), the row is pinned left-to-right (in Arabic it
+    /// ran right-to-left and printed 6:43 as 03:46), and the hour is zero-padded so the four
+    /// cards always mean HH:MM. The flip itself is the real split-flap motion: the old top
+    /// half folds down onto the seam, then the new bottom half unfolds from it.</summary>
     public class FlipClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
@@ -401,46 +430,42 @@ namespace DeskMate.UI
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Center,
+            FlowDirection = FlowDirection.LeftToRight,
         };
         readonly TextBlock _date, _hijri, _ampm;
-        readonly FlipCard[] _cards = new FlipCard[4];   // HH:MM (or HHMMSS if seconds)
+        readonly Border _ampmPill;
+        readonly FlipCard[] _cards = new FlipCard[4];   // H H : M M
         string _lastShown = "";
 
         public FlipClock()
         {
-            // AM/PM pill ABOVE the cards so the digits keep their full size and the marker
-            // never fights them for width (the old layout squeezed it beside the time)
-            var headRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            // AM/PM pill above the cards so the digits keep their full width
             var accentPill = new SolidColorBrush(Color.FromArgb(0x2A, Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
             accentPill.Freeze();
-            var pill = new Border
+            _ampm = Theme.MakeText("", 13, Theme.Accent);
+            _ampm.FontWeight = FontWeights.Bold;
+            _ampmPill = new Border
             {
                 Background = accentPill,
                 CornerRadius = new CornerRadius(9),
-                Padding = new Thickness(12, 3, 12, 4),
+                Padding = new Thickness(12, 3, 12, 3),
                 Margin = new Thickness(0, 0, 0, 8),
-                Child = _ampm = Theme.MakeText("", 13, Theme.Accent),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Child = _ampm,
             };
-            _ampm.FontWeight = FontWeights.SemiBold;
-            _ampm.FlowDirection = FlowDirection.LeftToRight;
-            headRow.Children.Add(pill);
-            _root.Children.Add(headRow);
+            _root.Children.Add(_ampmPill);
 
-            // the four flap cards sit on a dark recessed tray — a well the cards drop into,
-            // which is what makes each fold read as a physical movement
             var tray = new Border
             {
                 Background = Theme.InputBg,
                 CornerRadius = new CornerRadius(14),
-                Padding = new Thickness(10, 8, 10, 8),
+                Padding = new Thickness(10, 9, 10, 9),
                 BorderBrush = Theme.CardBorder,
                 BorderThickness = new Thickness(1),
-                Effect = Theme.Elevation(1),
                 Child = _digitsRow,
+                HorizontalAlignment = HorizontalAlignment.Center,
             };
-            var trayHost = new Grid { HorizontalAlignment = HorizontalAlignment.Center };
-            trayHost.Children.Add(tray);
-            _root.Children.Add(trayHost);
+            _root.Children.Add(tray);
 
             for (int i = 0; i < _cards.Length; i++)
             {
@@ -449,34 +474,30 @@ namespace DeskMate.UI
                 _digitsRow.Children.Add(c.Host);
                 if (i == 1) _digitsRow.Children.Add(MakeColon());
             }
-            _date = Theme.MakeText("", 14, Theme.TextDim);
+            _date = Theme.MakeText("", 14.5, Theme.TextDim);
             _date.HorizontalAlignment = HorizontalAlignment.Center;
             _date.Margin = new Thickness(0, 9, 0, 0);
             _root.Children.Add(_date);
-            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri = Theme.MakeText("", 12.5, Theme.TextFaint);
             _hijri.HorizontalAlignment = HorizontalAlignment.Center;
             _root.Children.Add(_hijri);
         }
 
         static FrameworkElement MakeColon()
         {
-            var g = new Grid { Width = 16, Height = 62, Margin = new Thickness(3, 0, 3, 0) };
-            var top = new System.Windows.Shapes.Ellipse
+            var g = new Grid { Width = 14, Height = FlipCard.H, Margin = new Thickness(2, 0, 2, 0) };
+            g.Children.Add(new Ellipse
             {
                 Width = 7, Height = 7, Fill = Theme.Accent,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 16, 0, 0),
-            };
-            var bot = new System.Windows.Shapes.Ellipse
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, FlipCard.H * 0.30, 0, 0),
+            });
+            g.Children.Add(new Ellipse
             {
                 Width = 7, Height = 7, Fill = Theme.Accent,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(0, 0, 0, 16),
-            };
-            g.Children.Add(top);
-            g.Children.Add(bot);
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, FlipCard.H * 0.30),
+            });
             return g;
         }
 
@@ -485,159 +506,156 @@ namespace DeskMate.UI
         public void Tick(DateTime now)
         {
             var s = Settings.I;
+            bool showAmPm = !s.Use24h && s.Scale >= 0.85;
+            _ampmPill.Visibility = showAmPm ? Visibility.Visible : Visibility.Collapsed;
+            if (showAmPm) _ampm.Text = L.IsAr ? (now.Hour < 12 ? "صباحاً" : "مساءً") : (now.Hour < 12 ? "AM" : "PM");
 
-            bool ar = L.IsAr;
-            bool showAmPm = !s.Use24h && s.Scale >= 0.85;   // adaptive density like the other clocks
-            _ampm.Visibility = showAmPm ? Visibility.Visible : Visibility.Collapsed;
-            if (showAmPm) _ampm.Text = ar ? (now.Hour < 12 ? "صباحاً" : "مساءً") : (now.Hour < 12 ? "AM" : "PM");
-
-            string fmt = s.Use24h ? "HHmm" : "hmm";
-            string t = now.ToString(fmt, CultureInfo.InvariantCulture);
-            if (t.Length != _lastShown.Length)   // AM/PM flip length-changes HH (12h "1:00" → 1 char)
-                for (int i = 0; i < _cards.Length; i++) _cards[i].SetImmediate(t.Length > i ? t[i] : '0');
-            else
-                for (int i = 0; i < _cards.Length && i < t.Length; i++)
-                    if (t[i] != _lastShown[i]) _cards[i].FlipTo(t[i]);
+            // always four digits: 12-hour "643" would leave the last card stale
+            string t = now.ToString(s.Use24h ? "HHmm" : "hhmm", CultureInfo.InvariantCulture);
+            bool first = _lastShown.Length != t.Length;
+            for (int i = 0; i < _cards.Length; i++)
+            {
+                if (first) _cards[i].SetImmediate(t[i]);
+                else if (t[i] != _lastShown[i]) _cards[i].FlipTo(t[i]);
+            }
             _lastShown = t;
-            _date.Text = DateText.Gregorian(now);
-            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
-            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+            ClockDates.Paint(_date, _hijri, now);
         }
 
-        /// <summary>One split-flap digit. Two half-cards (top/bottom) plus a front flap that
-        /// animates from 0° to -90° revealing the next digit. Backdrop color is the card body
-        /// (not transparent) so the previous digit doesn't bleed through mid-animation.
-        /// v1.8.1: bigger glass tiles (54×72) with a top sheen and per-card shadow, so each
-        /// digit reads as a physical tile instead of a flat number.</summary>
+        /// <summary>One split-flap digit: static top and bottom halves, plus two flaps used
+        /// only while flipping. Each half is a clipped window onto a full-height digit, so the
+        /// seam really cuts the number in two.</summary>
         class FlipCard
         {
+            public const double Wd = 50, H = 68;
             public readonly FrameworkElement Host;
-            TextBlock _frontTop, _backTop, _backBot;   // created in BuildTileBody, not the ctor
-            Border _flap;                // the front flap, rotates (same — built in BuildTileBody)
-            string _topChar = "0", _botChar = "0";
-            char _pendingNext = '0';
+            readonly TextBlock _top, _bottom, _flapTopText, _flapBottomText;
+            readonly Border _flapTop, _flapBottom;
+            char _current = '0';
             bool _animating;
+            char _queued = '\0';
 
             public FlipCard()
             {
-                const double w = 54, h = 72;
-                var root = new Grid { Width = w + 4, Height = h + 4, Margin = new Thickness(3, 0, 3, 0) };
+                var g = new Grid { Width = Wd, Height = H, Margin = new Thickness(3, 0, 3, 0) };
+                Border topHalf, bottomHalf;
+                _top = Half(true, out topHalf);
+                _bottom = Half(false, out bottomHalf);
+                g.Children.Add(topHalf);
+                g.Children.Add(bottomHalf);
+                _flapTopText = Half(true, out _flapTop);
+                _flapBottomText = Half(false, out _flapBottom);
+                _flapTop.RenderTransformOrigin = new Point(0.5, 1.0);
+                _flapBottom.RenderTransformOrigin = new Point(0.5, 0.0);
+                _flapTop.Visibility = Visibility.Hidden;
+                _flapBottom.Visibility = Visibility.Hidden;
+                g.Children.Add(_flapTop);
+                g.Children.Add(_flapBottom);
 
-                var tile = new Border
+                // the seam: a dark hairline with a faint light line under it
+                g.Children.Add(new Border
                 {
-                    Width = w, Height = h,
-                    CornerRadius = new CornerRadius(8),
-                    Effect = Theme.Elevation(1),
-                    Child = BuildTileBody(w, h),
-                };
-                root.Children.Add(tile);
-
-                Host = root;
+                    Height = 1.2, VerticalAlignment = VerticalAlignment.Center,
+                    Background = new SolidColorBrush(Color.FromArgb(Theme.IsLight ? (byte)0x30 : (byte)0x90, 0, 0, 0)),
+                    IsHitTestVisible = false,
+                });
+                Host = new Border { Child = g, Effect = Theme.Elevation(1) };
             }
 
-            Grid BuildTileBody(double w, double h)
+            /// <summary>A half-card window. The digit inside is laid out at full card height
+            /// and the window shows only its upper or lower half.</summary>
+            static TextBlock Half(bool upper, out Border half)
             {
-                double mid = h / 2;
-                var g = new Grid();
-
-                // static back face (always shows the *current* digit split across the seam)
-                _backTop = MakeHalf(VerticalAlignment.Top);
-                _backBot = MakeHalf(VerticalAlignment.Bottom);
-                g.Children.Add(_backTop);
-                g.Children.Add(_backBot);
-
-                // top-half sheen: light lands on the upper tile, the lower sits in shade —
-                // this gradient is what sells "two hinged flaps" over "one number"
-                var sheen = new System.Windows.Shapes.Path
+                var digit = new TextBlock
                 {
-                    Data = new RectangleGeometry(new Rect(0, 0, w, mid)),
-                    Fill = new LinearGradientBrush(
-                        Color.FromArgb(0x22, 255, 255, 255), Color.FromArgb(0x00, 255, 255, 255), 90),
-                    IsHitTestVisible = false,
-                };
-                g.Children.Add(sheen);
-
-                // a thin shadow line at the seam — what makes the flap fold read
-                var seam = new Border
-                {
-                    Height = 1.5, VerticalAlignment = VerticalAlignment.Center,
-                    Background = Theme.CardBorder, IsHitTestVisible = false,
-                };
-                g.Children.Add(seam);
-
-                // the rotating flap, sized to half the card, centered on the seam
-                _flap = new Border
-                {
-                    Height = mid, Width = w,
-                    Background = new SolidColorBrush(Theme.IsLight ? Color.FromArgb(0xF0, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xF0, 0x16, 0x18, 0x22)),
-                    BorderBrush = Theme.CardBorder, BorderThickness = new Thickness(0, 0, 0, 1),
-                    CornerRadius = new CornerRadius(8, 8, 0, 0),
-                    VerticalAlignment = VerticalAlignment.Top,
-                    IsHitTestVisible = false,
-                    RenderTransformOrigin = new Point(0.5, 1.0),
-                };
-                var flapFace = new Grid();
-                _frontTop = MakeHalf(VerticalAlignment.Top);
-                flapFace.Children.Add(_frontTop);
-                _flap.Child = flapFace;
-                g.Children.Add(_flap);
-
-                return g;
-            }
-
-            TextBlock MakeHalf(VerticalAlignment v)
-            {
-                return new TextBlock
-                {
-                    Text = "0", FontSize = 46, FontFamily = Theme.LightFont,
-                    Foreground = Theme.Text, HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = v,
+                    Text = "0",
+                    FontSize = 46,
+                    FontFamily = Theme.LightFont,
+                    FontWeight = Theme.LightWeight,
+                    Foreground = Theme.Text,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
                     FlowDirection = FlowDirection.LeftToRight,
                 };
+                var full = new Grid
+                {
+                    Height = H,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Margin = new Thickness(0, upper ? 0 : -H / 2, 0, 0),
+                };
+                full.Children.Add(digit);
+                var face = Theme.IsLight
+                    ? new LinearGradientBrush(Color.FromRgb(0xFF, 0xFF, 0xFF), Color.FromRgb(0xEE, 0xF2, 0xF7), 90)
+                    : new LinearGradientBrush(
+                        upper ? Color.FromRgb(0x2E, 0x34, 0x44) : Color.FromRgb(0x24, 0x29, 0x37),
+                        upper ? Color.FromRgb(0x26, 0x2B, 0x39) : Color.FromRgb(0x1C, 0x20, 0x2C), 90);
+                face.Freeze();
+                half = new Border
+                {
+                    Height = H / 2,
+                    VerticalAlignment = upper ? VerticalAlignment.Top : VerticalAlignment.Bottom,
+                    CornerRadius = upper ? new CornerRadius(8, 8, 0, 0) : new CornerRadius(0, 0, 8, 8),
+                    Background = face,
+                    ClipToBounds = true,
+                    Child = full,
+                    IsHitTestVisible = false,
+                };
+                return digit;
             }
 
             public void SetImmediate(char c)
             {
-                _topChar = c.ToString();
-                _botChar = c.ToString();
-                _frontTop.Text = _topChar;
-                _backTop.Text = _topChar;
-                _backBot.Text = _botChar;
-                _pendingNext = c;
-                _flap.RenderTransform = new RotateTransform(0);
+                _current = c;
+                _top.Text = _bottom.Text = c.ToString();
+                _flapTop.Visibility = _flapBottom.Visibility = Visibility.Hidden;
+                _animating = false;
             }
 
             public void FlipTo(char next)
             {
-                if (_animating || next == _topChar[0]) return;
-                _pendingNext = next;
-                // set the *front* (rotating) flap to show the next digit split, and the
-                // *back* (static) face to show the current digit. As the flap rotates from
-                // 0° to -90° about its bottom edge, the next digit rises from the seam —
-                // exactly how split-flap boards look.
-                _frontTop.Text = next.ToString();
-                _backTop.Text = _topChar;
-                _backBot.Text = _botChar;
+                if (next == _current && !_animating) return;
+                if (_animating) { _queued = next; return; }
+                if (Settings.SaverActive) { SetImmediate(next); return; }
                 _animating = true;
-                var anim = new System.Windows.Media.Animation.DoubleAnimation(0, -90, TimeSpan.FromMilliseconds(260))
+                char old = _current;
+                _current = next;
+
+                // behind the falling flap the new top is already there; the old bottom stays
+                // until the lower flap covers it
+                _top.Text = next.ToString();
+                _bottom.Text = old.ToString();
+                _flapTopText.Text = old.ToString();
+                _flapBottomText.Text = next.ToString();
+
+                var fold = new ScaleTransform(1, 1);
+                _flapTop.RenderTransform = fold;
+                _flapTop.Visibility = Visibility.Visible;
+                var unfold = new ScaleTransform(1, 0);
+                _flapBottom.RenderTransform = unfold;
+                _flapBottom.Visibility = Visibility.Visible;
+
+                var down = new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(140))
                 {
-                    EasingFunction = new System.Windows.Media.Animation.QuadraticEase
+                    EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn },
+                };
+                down.Completed += (s, e) =>
+                {
+                    _flapTop.Visibility = Visibility.Hidden;
+                    var up = new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140))
                     {
-                        EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn,
-                    },
+                        EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut },
+                    };
+                    up.Completed += (s2, e2) =>
+                    {
+                        _bottom.Text = _current.ToString();
+                        _flapBottom.Visibility = Visibility.Hidden;
+                        _animating = false;
+                        if (_queued != '\0' && _queued != _current) { char q = _queued; _queued = '\0'; FlipTo(q); }
+                        else _queued = '\0';
+                    };
+                    unfold.BeginAnimation(ScaleTransform.ScaleYProperty, up);
                 };
-                anim.Completed += (s, e) =>
-                {
-                    _topChar = _pendingNext.ToString();
-                    _botChar = _pendingNext.ToString();
-                    _frontTop.Text = _topChar;
-                    _backTop.Text = _topChar;
-                    _backBot.Text = _botChar;
-                    _flap.RenderTransform = new RotateTransform(0);
-                    _animating = false;
-                };
-                _flap.RenderTransform = new RotateTransform(0);
-                _flap.RenderTransform.BeginAnimation(RotateTransform.AngleProperty, anim);
+                fold.BeginAnimation(ScaleTransform.ScaleYProperty, down);
             }
         }
     }
@@ -724,9 +742,7 @@ namespace DeskMate.UI
                 _enWord.Text = ToEnglish(h12, bucket, rem);
                 _arWord.Text = "الساعة " + HoursAr[hForAr] + " " + MinutesAr[bucket];
             }
-            _date.Text = DateText.Gregorian(now);
-            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
-            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+            ClockDates.Paint(_date, _hijri, now);
         }
 
         static string RemAr(int m)
@@ -746,120 +762,80 @@ namespace DeskMate.UI
         }
     }
 
-    /// <summary>Neon clock — glowing digits inside a living sky: a real sun by day and
-    /// a real moon (at its astronomical phase) by night, each riding its arc behind the
-    /// time text. The digits keep the classic neon glow; the sky gives them a stage.
-    /// The glow is a single shared frozen effect so rebuilding the tree on a settings
-    /// change does not multiply the per-control cost.</summary>
+    /// <summary>Neon clock — glowing digits under a living sky strip: a real sun by day and a
+    /// real moon (at its astronomical phase) by night ride a shallow arc ABOVE the time.
+    /// v1.11: the old arc was centred 84px left of the stage, so at sunrise the sun hung
+    /// outside the widget and it never reached the right half at all; the AM/PM letter sat
+    /// under a stray horizon bar. The arc now spans the stage and stays inside it, and the
+    /// AM/PM marker is the same pill every other face uses.</summary>
     public class NeonClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
         readonly TextBlock _time;
-        readonly TextBlock _ampm, _ampmGlyph;
+        readonly AmPmBadge _ampm;
         readonly TextBlock _date, _hijri;
         readonly Canvas _sky;
         readonly Grid _sun;
         readonly MoonDisc _moon;
-        const double W = 260, H = 128;
+        const double W = 264, H = 122;
+        const double ArcCx = W / 2, ArcBase = 42, ArcRx = 104, ArcRy = 26;
         static DropShadowEffect _glow;   // one effect, frozen; rebuilt only on theme change
 
         public NeonClock()
         {
-            // ---- the sky stage behind everything ----
             _sky = new Canvas { Width = W, Height = H, FlowDirection = FlowDirection.LeftToRight };
-            BuildSky(_sky, out _sun, out _moon);
+            // (no backdrop box: on the card it read as a stray grey panel behind the time)
+            _sun = SkyBodies.BuildSun(9, true);
+            Canvas.SetZIndex(_sun, 1);
+            _sky.Children.Add(_sun);
+            _moon = new MoonDisc(10);
+            Canvas.SetZIndex(_moon, 1);
+            _sky.Children.Add(_moon);
 
-            // ---- the neon time, centred on top of the sky ----
-            _time = Theme.MakeText("", 56, Theme.Accent, Theme.LightFont);
-            _time.FontWeight = FontWeights.Bold;
+            _time = Theme.MakeText("", 54, Theme.Accent, Theme.LightFont);
+            _time.FontWeight = FontWeights.Normal;
             _time.FlowDirection = FlowDirection.LeftToRight;
-            _time.HorizontalAlignment = HorizontalAlignment.Center;
-            // a soft outer glow: warm light, low depth, large blur. We rebuild this on theme
-            // change because the colour is the accent and the frozen effect cannot be
-            // recoloured without recreating it.
+            _time.VerticalAlignment = VerticalAlignment.Bottom;
             _glow = MakeGlow();
             _time.Effect = _glow;
-
-            var centre = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -16, 0, 0) };
-            centre.Children.Add(_time);
-
-            // the AM/PM pill uses a translucent accent fill to match the lit digits
-            _ampm = Theme.MakeText("", 12.5, Theme.Accent);
-            _ampm.FontWeight = FontWeights.SemiBold;
-            _ampm.FlowDirection = FlowDirection.LeftToRight;
-            _ampm.HorizontalAlignment = HorizontalAlignment.Center;
-            _ampm.Margin = new Thickness(0, 4, 0, 0);
-            centre.Children.Add(_ampm);
-            _ampmGlyph = Theme.MakeText("", 22, Theme.Accent, Theme.SymbolFont);
-            _ampmGlyph.FlowDirection = FlowDirection.LeftToRight;
-            _ampmGlyph.HorizontalAlignment = HorizontalAlignment.Center;
-            _ampmGlyph.Margin = new Thickness(0, 2, 0, 0);
-            _ampmGlyph.Visibility = Visibility.Collapsed;
-            centre.Children.Add(_ampmGlyph);
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, 6),
+                FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+            };
+            row.Children.Add(_time);
+            _ampm = new AmPmBadge(54);
+            row.Children.Add(_ampm.Root);
 
             var dial = new Grid { Width = W, Height = H, FlowDirection = FlowDirection.LeftToRight };
             dial.Children.Add(_sky);
-            dial.Children.Add(centre);
-
+            dial.Children.Add(row);
             _root.Children.Add(dial);
-            _date = Theme.MakeText("", 14, Theme.TextDim);
+
+            _date = Theme.MakeText("", 14.5, Theme.TextDim);
             _date.HorizontalAlignment = HorizontalAlignment.Center;
-            _date.Margin = new Thickness(0, 6, 0, 0);
+            _date.Margin = new Thickness(0, 4, 0, 0);
             _root.Children.Add(_date);
-            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri = Theme.MakeText("", 12.5, Theme.TextFaint);
             _hijri.HorizontalAlignment = HorizontalAlignment.Center;
             _root.Children.Add(_hijri);
         }
 
-        /// <summary>The sky: a soft radial daylight wash or midnight well depending on the
-        /// hour, a horizon line low in the frame, and the sun/moon riding opposite arcs —
-        /// the sun high through the day hours, the moon skimming the upper sky at night.
-        /// Both stay clear of the centred time text.</summary>
-        static void BuildSky(Canvas sky, out Grid sun, out MoonDisc moon)
-        {
-            var wash = new System.Windows.Shapes.Rectangle { Width = W, Height = H, RadiusX = 18, RadiusY = 18 };
-            var grad = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
-            grad.GradientStops.Add(new GradientStop(Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF), 0));
-            grad.GradientStops.Add(new GradientStop(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF), 0.55));
-            grad.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0x00, 0x00, 0x00), 1));
-            wash.Fill = grad;
-            wash.IsHitTestVisible = false;
-            sky.Children.Add(wash);
-
-            sun = MakeNeonSun();
-            Canvas.SetZIndex(sun, 1);
-            sky.Children.Add(sun);
-
-            moon = new MoonDisc(15);
-            Canvas.SetZIndex(moon, 1);
-            sky.Children.Add(moon);
-
-            // thin horizon line anchoring the scene
-            var horizon = new System.Windows.Shapes.Rectangle
-            {
-                Width = W - 56, Height = 2,
-                RadiusX = 1, RadiusY = 1,
-                Fill = new SolidColorBrush(Color.FromArgb(0x5C, 0xFF, 0xFF, 0xFF)),
-                IsHitTestVisible = false,
-            };
-            Canvas.SetLeft(horizon, 28);
-            Canvas.SetTop(horizon, H - 26);
-            sky.Children.Add(horizon);
-        }
-
-        /// <summary>The neon-family sun: the same real layered sun as Sun-path, sized down —
-        /// its rays and glow reading like another lit tube in the sign.</summary>
-        static Grid MakeNeonSun()
-        {
-            return SkyBodies.BuildSun(13.5, true);
-        }
+        /// <summary>Power-saving state baked into the current <see cref="_glow"/>.</summary>
+        static bool _glowSaver;
 
         static DropShadowEffect MakeGlow()
         {
+            _glowSaver = Settings.SaverActive;
             var e = new DropShadowEffect
             {
                 Color = Theme.AccentColor,
-                BlurRadius = 18,
+                // a Gaussian blur is the most expensive thing on this face and its cost
+                // scales with the radius; power saving keeps the halo and makes it cheap
+                BlurRadius = _glowSaver ? 6 : 16,
                 ShadowDepth = 0,
                 Opacity = 0.85,
             };
@@ -869,18 +845,21 @@ namespace DeskMate.UI
 
         public FrameworkElement Root { get { return _root; } }
 
+        static Point OnArc(double f)
+        {
+            double ang = Math.PI * (1 - f);
+            return new Point(ArcCx + ArcRx * Math.Cos(ang), ArcBase - ArcRy * Math.Sin(ang));
+        }
+
         public void Tick(DateTime now)
         {
             var s = Settings.I;
-            // recolour the shared glow when the theme flips (the frozen one keeps its old colour
-            // until we replace the effect; doing it on every tick would defeat freezing)
-            if (_glow.Color != Theme.AccentColor)
+            if (_glow.Color != Theme.AccentColor || _glowSaver != Settings.SaverActive)
             {
                 _glow = MakeGlow();
                 _time.Effect = _glow;
             }
 
-            // ---- sun & moon ride their arcs ----
             double sunrise = 6, sunset = 18;
             double[] times = DeskMate.Features.PrayerFeature.PublicToday();
             if (times != null && !double.IsNaN(times[1]) && !double.IsNaN(times[4]))
@@ -894,12 +873,9 @@ namespace DeskMate.UI
             {
                 _sun.Visibility = Visibility.Visible;
                 _moon.Visibility = Visibility.Collapsed;
-                double frac = (h - sunrise) / Math.Max(0.001, sunset - sunrise);
-                double ang = Math.PI * (1 - frac);                    // π → 0 across the day
-                double cx = 46 + Math.Cos(ang) * (W / 2 - 60);
-                double cy = (H - 36) - Math.Sin(ang) * (H - 88);      // apex clears the digits
-                Canvas.SetLeft(_sun, cx - _sun.Width / 2);
-                Canvas.SetTop(_sun, cy - _sun.Height / 2);
+                var p = OnArc((h - sunrise) / Math.Max(0.001, sunset - sunrise));
+                Canvas.SetLeft(_sun, p.X - _sun.Width / 2);
+                Canvas.SetTop(_sun, p.Y - _sun.Height / 2);
             }
             else
             {
@@ -908,11 +884,9 @@ namespace DeskMate.UI
                 double nightStart = h >= sunrise ? sunset : sunset - 24;
                 double nightEnd = nightStart + (24 - (sunset - sunrise));
                 double nf = Math.Max(0, Math.Min(1, (h - nightStart) / Math.Max(0.001, nightEnd - nightStart)));
-                double ang = Math.PI * (1 - nf);
-                double cx = 44 + Math.Cos(ang) * (W / 2 - 58);
-                double cy = (H - 40) - Math.Sin(ang) * (H - 96);
-                Canvas.SetLeft(_moon, cx - _moon.Radius);
-                Canvas.SetTop(_moon, cy - _moon.Radius);
+                var p = OnArc(nf);
+                Canvas.SetLeft(_moon, p.X - _moon.Radius);
+                Canvas.SetTop(_moon, p.Y - _moon.Radius);
                 _moon.UpdatePhase(now);
             }
 
@@ -920,22 +894,8 @@ namespace DeskMate.UI
                 ? (s.ShowSeconds ? "HH:mm:ss" : "HH:mm")
                 : (s.ShowSeconds ? "h:mm:ss" : "h:mm");
             _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
-            if (s.Use24h) { _ampm.Visibility = Visibility.Collapsed; _ampmGlyph.Visibility = Visibility.Collapsed; }
-            else if (L.IsAr)
-            {
-                _ampm.Visibility = Visibility.Collapsed;
-                _ampmGlyph.Visibility = Visibility.Visible;
-                _ampmGlyph.Text = now.Hour < 12 ? "ﺹ" : "ﻡ";
-            }
-            else
-            {
-                _ampm.Visibility = Visibility.Visible;
-                _ampmGlyph.Visibility = Visibility.Collapsed;
-                _ampm.Text = now.Hour < 12 ? "AM" : "PM";
-            }
-            _date.Text = DateText.Gregorian(now);
-            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
-            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+            _ampm.Update(now);
+            ClockDates.Paint(_date, _hijri, now);
         }
     }
 
@@ -1025,9 +985,7 @@ namespace DeskMate.UI
             while (t.Length < 4) t = "0" + t;   // 12h "100" → "0100"
             for (int d = 0; d < 4 && d < t.Length; d++)
                 PaintDigit(_digitGrids[d], t[d] - '0');
-            _date.Text = DateText.Gregorian(now);
-            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
-            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+            ClockDates.Paint(_date, _hijri, now);
         }
 
         /// <summary>Lights the dots encoding <paramref name="value"/> (0..9) in BCD:
@@ -1053,7 +1011,8 @@ namespace DeskMate.UI
     public class DayRingClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-        readonly TextBlock _time, _ampm, _date, _hijri;
+        readonly TextBlock _time, _date, _hijri;
+        readonly AmPmBadge _ampm;
         readonly System.Windows.Media.ArcSegment _arc;
         readonly System.Windows.Shapes.Path _arcPath;
         const double Dial = 168;
@@ -1087,20 +1046,19 @@ namespace DeskMate.UI
                 Data = geo,
             };
 
-            var dial = new Grid { Width = Dial, Height = Dial, FlowDirection = FlowDirection.LeftToRight };
+            var dial = new Grid { Width = Dial, Height = Dial, FlowDirection = FlowDirection.LeftToRight, Tag = Footprint.Round };
             dial.Children.Add(track);
             dial.Children.Add(_arcPath);
 
             var centre = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            _time = Theme.MakeText("", 34, Theme.Text, Theme.LightFont);
+            _time = Theme.MakeText("", 36, Theme.Text, Theme.LightFont);
             _time.HorizontalAlignment = HorizontalAlignment.Center;
             _time.FlowDirection = FlowDirection.LeftToRight;
             centre.Children.Add(_time);
-            _ampm = Theme.MakeText("", 12.5, Theme.Accent);
-            _ampm.FontWeight = FontWeights.SemiBold;
-            _ampm.HorizontalAlignment = HorizontalAlignment.Center;
-            _ampm.FlowDirection = FlowDirection.LeftToRight;
-            centre.Children.Add(_ampm);
+            _ampm = new AmPmBadge(36);
+            _ampm.Root.HorizontalAlignment = HorizontalAlignment.Center;
+            _ampm.Root.Margin = new Thickness(0, 4, 0, 0);
+            centre.Children.Add(_ampm.Root);
             dial.Children.Add(centre);
 
             // tick marks at 6 / 12 / 18 / 24 h so the sweep has anchors — drawn as straight
@@ -1125,11 +1083,11 @@ namespace DeskMate.UI
             }
 
             _root.Children.Add(dial);
-            _date = Theme.MakeText("", 12.5, Theme.TextDim);
+            _date = Theme.MakeText("", 14.5, Theme.TextDim);
             _date.HorizontalAlignment = HorizontalAlignment.Center;
             _date.Margin = new Thickness(0, 6, 0, 0);
             _root.Children.Add(_date);
-            _hijri = Theme.MakeText("", 12, Theme.TextFaint);   // same pattern as DigitalClock
+            _hijri = Theme.MakeText("", 12.5, Theme.TextFaint);   // same pattern as DigitalClock
             _hijri.HorizontalAlignment = HorizontalAlignment.Center;
             _root.Children.Add(_hijri);
         }
@@ -1142,12 +1100,14 @@ namespace DeskMate.UI
             string fmt = s.Use24h ? "HH:mm" : "h:mm";
             if (s.ShowSeconds) fmt += ":ss";
             _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
-            bool ar = L.IsAr;
-            _ampm.Visibility = (!s.Use24h) ? Visibility.Visible : Visibility.Collapsed;
-            if (!s.Use24h) _ampm.Text = ar ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
+            _ampm.Update(now);
 
             // fraction of the day elapsed → sweep the arc clockwise from 12 o'clock
-            double frac = (now.Hour * 3600.0 + now.Minute * 60.0 + now.Second) / 86400.0;
+            // The arc advances 0.004° per second: real, and far below anything an eye can
+            // resolve. Including seconds only when the user asked for them keeps the face
+            // repainting on the minute the rest of the time.
+            double secs = s.ShowSeconds ? now.Second : 0;
+            double frac = (now.Hour * 3600.0 + now.Minute * 60.0 + secs) / 86400.0;
             if (frac <= 0.00001 || frac >= 0.99999)
             {
                 // degenerate arcs render nothing — hide instead of drawing a zero-length line
@@ -1163,102 +1123,122 @@ namespace DeskMate.UI
                 _arc.Point = new Point(x, y);
                 _arc.IsLargeArc = frac > 0.5;
             }
-            _date.Text = DateText.Gregorian(now);
-            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
-            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+            ClockDates.Paint(_date, _hijri, now);
         }
     }
 
-    /// <summary>Sun-path clock — NOT a ring: a half-dome sky over a horizon line, like
-    /// looking at the actual sky. The amber arc is only ever the top half (the visible sky),
-    /// with a REAL sun — a layered disc (hot core → amber body → soft corona) that rises
-    /// from the left horizon and sets at the right. Night shows the actual moon at its
-    /// true phase (waxing/waning, crescent→full→crescent) computed astronomically.
-    /// Deliberately flat-and-wide so it can't be confused with the circular Day-ring clock.</summary>
+    /// <summary>Sun-path clock — a half-dome sky over a horizon line. The sun rides an arc
+    /// from today's real sunrise (left) to sunset (right); the part of the arc it has already
+    /// travelled is lit in the accent, the rest is a dotted track. At night the moon, at its
+    /// true phase, rides the same track. v1.11 rebuild: the arc is an ellipse cut to the
+    /// dial so the sun — rays included — never leaves the face (it used to poke out of the
+    /// card at sunrise and sunset), the moon no longer skims low across the AM/PM marker,
+    /// and the heavy ground slab under the horizon is gone.</summary>
     public class SunPathClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-        readonly TextBlock _time, _ampm, _date, _hijri;
+        readonly TextBlock _time, _date, _hijri;
+        readonly AmPmBadge _ampm;
         readonly Canvas _sky;
-        readonly Path _dayArc;
+        readonly Path _track, _travelled;
+        readonly ArcSegment _travelArc;
         readonly Grid _sun;                 // layered real sun
         readonly MoonDisc _moon;            // phase-accurate night moon
-        const double W = 240, H = 120;      // wide landscape dome, twice as wide as tall
+        const double W = 252, H = 128;      // the dial box
+        const double HorizonY = 112;        // horizon line
+        const double Rx = 96, Ry = 82;      // the sky arc (ellipse) — clears the sun's rays
+        const double Cx = W / 2;
 
         public SunPathClock()
         {
-            double r = W / 2 - 8;
-
-            var fig = new PathFigure { StartPoint = new Point(8, H - 14) };               // left horizon
-            var arc = new ArcSegment
-            {
-                Size = new Size(r, r),
-                SweepDirection = SweepDirection.Clockwise,
-                IsLargeArc = false,                        // exactly the top half
-                Point = new Point(W - 8, H - 14),          // right horizon
-            };
-            fig.Segments.Add(arc);
-            var geo = new PathGeometry(); geo.Figures.Add(fig); geo.Freeze();
-            _dayArc = new Path
-            {
-                Stroke = Theme.Accent, StrokeThickness = 4,
-                StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round,
-                Data = geo,
-            };
-
-            _sun = MakeSun(15);
-
-            // night moon — drawn at its real astronomical phase
-            _moon = new MoonDisc(13);
-
-            // ground: a filled band under the horizon line so the dome reads as "outdoors"
-            var ground = new System.Windows.Controls.Border
-            {
-                Height = 12,
-                Background = Theme.InputBg,
-                CornerRadius = new CornerRadius(10),
-                VerticalAlignment = VerticalAlignment.Bottom,
-            };
-
             _sky = new Canvas { Width = W, Height = H };
-            _sky.Children.Add(_dayArc);
+
+            // horizon: a hairline that fades out at both ends instead of a hard slab
+            var hz = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+            var hc = Theme.IsLight ? Color.FromRgb(0x16, 0x1E, 0x2A) : Colors.White;
+            hz.GradientStops.Add(new GradientStop(Color.FromArgb(0, hc.R, hc.G, hc.B), 0));
+            hz.GradientStops.Add(new GradientStop(Color.FromArgb(Theme.IsLight ? (byte)0x50 : (byte)0x60, hc.R, hc.G, hc.B), 0.5));
+            hz.GradientStops.Add(new GradientStop(Color.FromArgb(0, hc.R, hc.G, hc.B), 1));
+            hz.Freeze();
+            var horizon = new Rectangle { Width = W - 16, Height = 1.5, Fill = hz };
+            Canvas.SetLeft(horizon, 8);
+            Canvas.SetTop(horizon, HorizonY - 0.75);
+            _sky.Children.Add(horizon);
+
+            // the whole path as a dotted track
+            var fig = new PathFigure { StartPoint = new Point(Cx - Rx, HorizonY) };
+            fig.Segments.Add(new ArcSegment
+            {
+                Size = new Size(Rx, Ry), SweepDirection = SweepDirection.Clockwise,
+                IsLargeArc = false, Point = new Point(Cx + Rx, HorizonY),
+            });
+            var geo = new PathGeometry(); geo.Figures.Add(fig); geo.Freeze();
+            _track = new Path
+            {
+                Data = geo, Stroke = Theme.TextFaint, StrokeThickness = 2,
+                StrokeDashArray = new DoubleCollection { 0.1, 3.2 },
+                StrokeDashCap = PenLineCap.Round,
+                Opacity = 0.75,
+            };
+            _sky.Children.Add(_track);
+
+            // the travelled part, lit
+            var tf = new PathFigure { StartPoint = new Point(Cx - Rx, HorizonY) };
+            _travelArc = new ArcSegment { Size = new Size(Rx, Ry), SweepDirection = SweepDirection.Clockwise, IsLargeArc = false, Point = new Point(Cx - Rx, HorizonY) };
+            tf.Segments.Add(_travelArc);
+            var tg = new PathGeometry(); tg.Figures.Add(tf);
+            _travelled = new Path
+            {
+                Data = tg, Stroke = Theme.Accent, StrokeThickness = 3,
+                StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round,
+            };
+            _sky.Children.Add(_travelled);
+
+            _sun = SkyBodies.BuildSun(10, true);
             Canvas.SetZIndex(_sun, 5);
             _sky.Children.Add(_sun);
+            _moon = new MoonDisc(11);
             Canvas.SetZIndex(_moon, 4);
             _sky.Children.Add(_moon);
 
-            var dial = new Grid { Width = W, Height = H, FlowDirection = FlowDirection.LeftToRight };
+            var dial = new Grid { Width = W, Height = H, FlowDirection = FlowDirection.LeftToRight, Tag = Footprint.Dome };
             dial.Children.Add(_sky);
-            dial.Children.Add(ground);
 
-            var centre = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -14, 0, 0) };
-            _time = Theme.MakeText("", 30, Theme.Text, Theme.LightFont);
-            _time.HorizontalAlignment = HorizontalAlignment.Center;
+            // time + AM/PM, sitting on the horizon under the apex of the arc
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, H - HorizonY + 6),
+                FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+            };
+            _time = Theme.MakeText("", 38, Theme.Text, Theme.LightFont);
             _time.FlowDirection = FlowDirection.LeftToRight;
-            centre.Children.Add(_time);
-            _ampm = Theme.MakeText("", 12, Theme.Accent);
-            _ampm.FontWeight = FontWeights.SemiBold;
-            _ampm.HorizontalAlignment = HorizontalAlignment.Center;
-            _ampm.FlowDirection = FlowDirection.LeftToRight;
-            centre.Children.Add(_ampm);
-            dial.Children.Add(centre);
+            _time.VerticalAlignment = VerticalAlignment.Bottom;
+            row.Children.Add(_time);
+            _ampm = new AmPmBadge(38);
+            row.Children.Add(_ampm.Root);
+            dial.Children.Add(row);
 
             _root.Children.Add(dial);
-            _date = Theme.MakeText("", 12.5, Theme.TextDim);
+            _date = Theme.MakeText("", 14.5, Theme.TextDim);
             _date.HorizontalAlignment = HorizontalAlignment.Center;
-            _date.Margin = new Thickness(0, 4, 0, 0);
+            _date.Margin = new Thickness(0, 2, 0, 0);
             _root.Children.Add(_date);
-            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri = Theme.MakeText("", 12.5, Theme.TextFaint);
             _hijri.HorizontalAlignment = HorizontalAlignment.Center;
             _root.Children.Add(_hijri);
         }
 
-        Grid MakeSun(double radius)
-        {
-            return SkyBodies.BuildSun(radius, true);
-        }
-
         public FrameworkElement Root { get { return _root; } }
+
+        /// <summary>Point on the sky arc at fraction f (0 = left horizon, 1 = right).</summary>
+        static Point OnArc(double f)
+        {
+            double ang = Math.PI * (1 - f);
+            return new Point(Cx + Rx * Math.Cos(ang), HorizonY - Ry * Math.Sin(ang));
+        }
 
         public void Tick(DateTime now)
         {
@@ -1271,59 +1251,89 @@ namespace DeskMate.UI
                 sunrise = times[1];
                 sunset = times[4];
             }
-
             double h = now.TimeOfDay.TotalHours;
-
-            // map today's real daylight onto the fixed left→right dome: fraction of daylight
-            // picks the angle along the half-circle (π at sunrise → 0 at sunset, over the top)
             double frac = (h - sunrise) / Math.Max(0.001, sunset - sunrise);
             bool day = frac >= 0 && frac <= 1;
             if (day)
             {
+                var p = OnArc(frac);
                 _sun.Visibility = Visibility.Visible;
                 _moon.Visibility = Visibility.Collapsed;
-                _dayArc.Stroke = Theme.Accent;
-                double ang = Math.PI * (1 - frac);         // π → 0 across the day
-                double rr = W / 2 - 8;
-                double cx = W / 2 + rr * Math.Cos(ang);
-                double cy = (H - 14) - rr * Math.Sin(ang); // up from the horizon line
-                Canvas.SetLeft(_sun, cx - _sun.Width / 2);
-                Canvas.SetTop(_sun, cy - _sun.Height / 2);
+                Canvas.SetLeft(_sun, p.X - _sun.Width / 2);
+                Canvas.SetTop(_sun, p.Y - _sun.Height / 2);
+                _travelArc.Point = p;
+                _travelled.Visibility = frac > 0.004 ? Visibility.Visible : Visibility.Hidden;
             }
             else
             {
                 _sun.Visibility = Visibility.Hidden;
-                _moon.Visibility = Visibility.Visible;     // moon rides the same dome at night
-                _dayArc.Stroke = Theme.CardBorder;         // dim arc: the sun is down there
-
-                // night fraction: from sunset to tomorrow's sunrise mapped over the dome.
-                // Before midnight use tonight's sunset; after midnight approximate the night
-                // as [sunset−24h → sunrise] so pre-dawn hours still move along the arc.
+                _moon.Visibility = Visibility.Visible;
+                _travelled.Visibility = Visibility.Hidden;
+                // night fraction: sunset → next sunrise mapped onto the same track
                 double nightStart = h >= sunrise ? sunset : sunset - 24;
                 double nightEnd = nightStart + (24 - (sunset - sunrise));
-                double nf = (h - nightStart) / Math.Max(0.001, nightEnd - nightStart);
-                nf = Math.Max(0, Math.Min(1, nf));
-                double ang = Math.PI * (1 - nf);
-                // the moon skims LOW above the horizon instead of arcing through the apex:
-                // it never crosses the centred time text, whatever the hour
-                double cx = W / 2 + Math.Cos(ang) * (W / 2 - 28);
-                double cy = (H - 28) - Math.Sin(ang) * 6;
-                Canvas.SetLeft(_moon, cx - _moon.Radius);
-                Canvas.SetTop(_moon, cy - _moon.Radius);
+                double nf = Math.Max(0, Math.Min(1, (h - nightStart) / Math.Max(0.001, nightEnd - nightStart)));
+                var p = OnArc(nf);
+                Canvas.SetLeft(_moon, p.X - _moon.Radius);
+                Canvas.SetTop(_moon, p.Y - _moon.Radius);
                 _moon.UpdatePhase(now);
             }
 
             string fmt = s.Use24h ? "HH:mm" : "h:mm";
             if (s.ShowSeconds) fmt += ":ss";
             _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
-            bool ar = L.IsAr;
-            bool showAmPm = !s.Use24h && s.Scale >= 0.85;
-            _ampm.Visibility = showAmPm ? Visibility.Visible : Visibility.Collapsed;
-            if (showAmPm) _ampm.Text = ar ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
+            _ampm.Update(now);
+            ClockDates.Paint(_date, _hijri, now);
+        }
+    }
 
-            _date.Text = DateText.Gregorian(now);
-            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
-            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+    /// <summary>AM/PM marker shared by the dial faces: an accent pill holding the vector
+    /// ص/م outline in Arabic (immune to the isolated-letter shaping defect that mirrored
+    /// the meem in the layered window) or AM/PM text in English. Hidden in 24-hour mode
+    /// and on very small widgets.</summary>
+    sealed class AmPmBadge
+    {
+        public readonly Border Root;
+        readonly TextBlock _text;
+        readonly Path _glyph = new Path { Stretch = Stretch.Uniform };
+        readonly Viewbox _glyphHost;
+
+        /// <param name="timeSize">Font size of the time it sits beside, to align baselines.</param>
+        public AmPmBadge(double timeSize)
+        {
+            _text = Theme.MakeText("", 12, Theme.Accent);
+            _text.FontWeight = FontWeights.Bold;
+            _text.FlowDirection = FlowDirection.LeftToRight;
+            _glyph.Fill = Theme.Accent;
+            _glyphHost = new Viewbox { Child = _glyph, Height = 12, FlowDirection = FlowDirection.LeftToRight };
+            var content = new Grid();
+            content.Children.Add(_text);
+            content.Children.Add(_glyphHost);
+            var pill = new SolidColorBrush(Color.FromArgb(Theme.IsLight ? (byte)0x22 : (byte)0x2A,
+                Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
+            pill.Freeze();
+            Root = new Border
+            {
+                Background = pill,
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(7, 3, 7, 3),
+                Child = content,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(8, 0, 8, Math.Round(timeSize * 0.2)),
+            };
+        }
+
+        public void Update(DateTime now)
+        {
+            var s = Settings.I;
+            bool show = !s.Use24h && s.Scale >= 0.85;
+            Root.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            if (!show) return;
+            bool ar = L.IsAr;
+            _text.Visibility = ar ? Visibility.Collapsed : Visibility.Visible;
+            _glyphHost.Visibility = ar ? Visibility.Visible : Visibility.Collapsed;
+            if (ar) _glyph.Data = now.Hour < 12 ? AmPmGlyph.Sad : AmPmGlyph.Meem;
+            else _text.Text = now.Hour < 12 ? "AM" : "PM";
         }
     }
 
@@ -1522,7 +1532,8 @@ namespace DeskMate.UI
     public class MoonPhaseClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-        readonly TextBlock _time, _ampm, _date, _hijri, _phaseName;
+        readonly TextBlock _time, _date, _hijri, _phaseName;
+        readonly AmPmBadge _ampm;
         readonly MoonDisc _moon;
         const double W = 240, H = 118;
         readonly Canvas _sky;
@@ -1537,30 +1548,36 @@ namespace DeskMate.UI
             _moon = new MoonDisc(17);
             moonLayer.Children.Add(_moon);
 
-            var dial = new Grid { Width = W, Height = H, FlowDirection = FlowDirection.LeftToRight };
+            var dial = new Grid { Width = W, Height = H, FlowDirection = FlowDirection.LeftToRight, Tag = Footprint.Dome };
             dial.Children.Add(_sky);
             dial.Children.Add(moonLayer);
 
-            var centre = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, -10, 0, 0) };
-            _time = Theme.MakeText("", 30, Theme.Text, Theme.LightFont);
-            _time.HorizontalAlignment = HorizontalAlignment.Center;
+            var centre = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 16),
+                FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+            };
+            _time = Theme.MakeText("", 36, Theme.Text, Theme.LightFont);
+            _time.VerticalAlignment = VerticalAlignment.Bottom;
             _time.FlowDirection = FlowDirection.LeftToRight;
             centre.Children.Add(_time);
-            _ampm = Theme.MakeText("", 12, Theme.Accent);
-            _ampm.FontWeight = FontWeights.SemiBold;
-            _ampm.HorizontalAlignment = HorizontalAlignment.Center;
-            _ampm.FlowDirection = FlowDirection.LeftToRight;
-            centre.Children.Add(_ampm);
+            _ampm = new AmPmBadge(36);
+            centre.Children.Add(_ampm.Root);
             dial.Children.Add(centre);
 
             _root.Children.Add(dial);
-            _phaseName = Theme.MakeText("", 12, Theme.Accent);
+            _phaseName = Theme.MakeText("", 13, Theme.Accent);
+            _phaseName.FontWeight = FontWeights.Medium;
             _phaseName.HorizontalAlignment = HorizontalAlignment.Center;
+            _phaseName.Margin = new Thickness(0, 4, 0, 0);
             _root.Children.Add(_phaseName);
-            _date = Theme.MakeText("", 12.5, Theme.TextDim);
+            _date = Theme.MakeText("", 14.5, Theme.TextDim);
             _date.HorizontalAlignment = HorizontalAlignment.Center;
             _root.Children.Add(_date);
-            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri = Theme.MakeText("", 12.5, Theme.TextFaint);
             _hijri.HorizontalAlignment = HorizontalAlignment.Center;
             _root.Children.Add(_hijri);
         }
@@ -1574,11 +1591,13 @@ namespace DeskMate.UI
             var sky = new Canvas { Width = w, Height = h };
 
             var dome = new System.Windows.Shapes.Path { Stretch = Stretch.None };
-            double r = w / 2 - 6;
+            // an ellipse cut to the box: the old circular dome (radius = half the width) rose
+            // above the top of its own frame
+            double r = w / 2 - 6, ry = h - 12;
             var fig = new PathFigure { StartPoint = new Point(6, h - 10) };
             fig.Segments.Add(new ArcSegment
             {
-                Size = new Size(r, r), SweepDirection = SweepDirection.Clockwise,
+                Size = new Size(r, ry), SweepDirection = SweepDirection.Clockwise,
                 IsLargeArc = false, Point = new Point(w - 6, h - 10),
             });
             var domeGeo = new PathGeometry(); domeGeo.Figures.Add(fig); domeGeo.Freeze();
@@ -1605,7 +1624,7 @@ namespace DeskMate.UI
                 double yTop = h - 18;
                 double y = 8 + fy * (yTop - 14);
                 double dx = x - w / 2, dy = y - (h - 10);
-                if (dx * dx / (r * r) + dy * dy / (r * r) > 0.82) continue;   // outside dome → skip
+                if (dx * dx / (r * r) + dy * dy / (ry * ry) > 0.82) continue;   // outside dome → skip
                 bool big = i % 6 == 0;
                 var s = new System.Windows.Shapes.Rectangle
                 {
@@ -1641,8 +1660,8 @@ namespace DeskMate.UI
 
             // moon parked in the dome's upper-right sky: clear of the centred time text at
             // any hour, and the phase repaint is the live element here — not a position race
-            double mx = W - 44;
-            double my = 20;
+            double mx = W - 50;
+            double my = 33;
             Canvas.SetLeft(_moon, mx - _moon.Radius);
             Canvas.SetTop(_moon, my - _moon.Radius);
             _moon.UpdatePhase(now);
@@ -1651,15 +1670,11 @@ namespace DeskMate.UI
             if (s.ShowSeconds) fmt += ":ss";
             _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
             bool ar = L.IsAr;
-            bool showAmPm = !s.Use24h && s.Scale >= 0.85;
-            _ampm.Visibility = showAmPm ? Visibility.Visible : Visibility.Collapsed;
-            if (showAmPm) _ampm.Text = ar ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
+            _ampm.Update(now);
 
             _phaseName.Text = ar ? DeskMate.Logic.MoonPhase.NameAr(now)
                                  : "☾ " + DeskMate.Logic.MoonPhase.NameEn(now);
-            _date.Text = DateText.Gregorian(now);
-            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
-            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+            ClockDates.Paint(_date, _hijri, now);
         }
     }
 
@@ -1671,22 +1686,26 @@ namespace DeskMate.UI
     public class DayStripesClock : IClockView
     {
         readonly StackPanel _root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-        readonly TextBlock _time, _ampm, _date, _hijri;
+        readonly TextBlock _time, _date, _hijri;
+        readonly AmPmBadge _ampm;
         readonly StackPanel _stripesRow;
         readonly Border[] _bars = new Border[24];
 
         public DayStripesClock()
         {
-            _time = Theme.MakeText("", 40, Theme.Text, Theme.LightFont);
-            _time.HorizontalAlignment = HorizontalAlignment.Center;
+            var timeRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+            };
+            _time = Theme.MakeText("", 42, Theme.Text, Theme.LightFont);
             _time.FlowDirection = FlowDirection.LeftToRight;
-            _root.Children.Add(_time);
-
-            _ampm = Theme.MakeText("", 12.5, Theme.Accent);
-            _ampm.FontWeight = FontWeights.SemiBold;
-            _ampm.HorizontalAlignment = HorizontalAlignment.Center;
-            _ampm.FlowDirection = FlowDirection.LeftToRight;
-            _root.Children.Add(_ampm);
+            _time.VerticalAlignment = VerticalAlignment.Bottom;
+            timeRow.Children.Add(_time);
+            _ampm = new AmPmBadge(42);
+            timeRow.Children.Add(_ampm.Root);
+            _root.Children.Add(timeRow);
 
             var stripesHost = new Grid { Width = 312, Height = 34, Margin = new Thickness(0, 8, 0, 2), FlowDirection = FlowDirection.LeftToRight };
             _stripesRow = new StackPanel { Orientation = Orientation.Horizontal };
@@ -1709,10 +1728,10 @@ namespace DeskMate.UI
             }
             _root.Children.Add(stripesHost);
 
-            _date = Theme.MakeText("", 12.5, Theme.TextDim);
+            _date = Theme.MakeText("", 14.5, Theme.TextDim);
             _date.HorizontalAlignment = HorizontalAlignment.Center;
             _root.Children.Add(_date);
-            _hijri = Theme.MakeText("", 12, Theme.TextFaint);
+            _hijri = Theme.MakeText("", 12.5, Theme.TextFaint);
             _hijri.HorizontalAlignment = HorizontalAlignment.Center;
             _root.Children.Add(_hijri);
         }
@@ -1725,10 +1744,7 @@ namespace DeskMate.UI
             string fmt = s.Use24h ? "HH:mm" : "h:mm";
             if (s.ShowSeconds) fmt += ":ss";
             _time.Text = now.ToString(fmt, CultureInfo.InvariantCulture);
-            bool ar = L.IsAr;
-            bool showAmPm = !s.Use24h && s.Scale >= 0.85;
-            _ampm.Visibility = showAmPm ? Visibility.Visible : Visibility.Collapsed;
-            if (showAmPm) _ampm.Text = ar ? (now.Hour < 12 ? "ص" : "م") : (now.Hour < 12 ? "AM" : "PM");
+            _ampm.Update(now);
 
             int hr = now.Hour;
             for (int i = 0; i < 24; i++)
@@ -1753,9 +1769,7 @@ namespace DeskMate.UI
                 }
             }
 
-            _date.Text = DateText.Gregorian(now);
-            _hijri.Visibility = s.ShowHijri ? Visibility.Visible : Visibility.Collapsed;
-            if (s.ShowHijri) _hijri.Text = DateText.Hijri(now);
+            ClockDates.Paint(_date, _hijri, now);
         }
     }
 
@@ -1776,6 +1790,55 @@ public static readonly StreamGeometry Sad = (StreamGeometry)Geometry.Parse("F1 M
     /// white-hot core — no flat accent dot anywhere.</summary>
     static class SkyBodies
     {
+        /// <summary>Every sun's ray layer currently on screen.
+        ///
+        /// The rays used to turn on a <c>RepeatBehavior.Forever</c> animation. A never-ending
+        /// WPF animation keeps the composition loop running at the monitor's refresh rate for
+        /// the life of the process, and because the widget is a layered window that loop is
+        /// driven by the CPU — roughly sixty full repaints a second, for ever, whether the
+        /// widget was on screen or buried under a maximised browser. It was by a wide margin
+        /// the most expensive thing DeskMate did.
+        ///
+        /// The rotation is now one degree per painted tick, driven by the widget's own timer.
+        /// It costs nothing beyond a repaint that was happening anyway, keeps the same
+        /// six-minutes-per-revolution drift, and stops dead the moment the widget is hidden,
+        /// covered or power-saving.</summary>
+        /// <summary>The ray layers themselves rather than their transforms, so both answers
+        /// below can be gated on <c>IsVisible</c>: a sun that is below the horizon is Hidden,
+        /// and turning a sun nobody can see is exactly the kind of work this whole change is
+        /// about removing.</summary>
+        static readonly System.Collections.Generic.List<Canvas> _rayLayers =
+            new System.Collections.Generic.List<Canvas>();
+
+        /// <summary>Called from BuildUI: the previous visual tree is gone and so are its
+        /// transforms, so the list must not keep them alive.</summary>
+        public static void Reset() { _rayLayers.Clear(); }
+
+        /// <summary>True when a sun is actually on screen right now. The widget asks before
+        /// deciding whether a per-second repaint cadence still buys anything — at night, on a
+        /// sun-path face, it does not.</summary>
+        public static bool HasSpin
+        {
+            get
+            {
+                for (int i = 0; i < _rayLayers.Count; i++)
+                    if (_rayLayers[i].IsVisible) return true;
+                return false;
+            }
+        }
+
+        /// <summary>Advances every visible sun by one degree. Called once per painted tick.</summary>
+        public static void Advance()
+        {
+            for (int i = 0; i < _rayLayers.Count; i++)
+            {
+                var layer = _rayLayers[i];
+                if (!layer.IsVisible) continue;
+                var rt = layer.RenderTransform as RotateTransform;
+                if (rt != null) rt.Angle = (rt.Angle + 1.0) % 360.0;
+            }
+        }
+
         /// <summary>Builds the sun. The returned grid starts Hidden; callers toggle its
         /// Visibility and place it with Canvas.SetLeft/Top using its Width/Height.</summary>
         public static Grid BuildSun(double radius, bool hidden)
@@ -1818,11 +1881,7 @@ public static readonly StreamGeometry Sad = (StreamGeometry)Geometry.Parse("F1 M
                 rays.Children.Add(ray);
             }
             rays.RenderTransform = new RotateTransform(0, c, c);
-            rays.RenderTransform.BeginAnimation(RotateTransform.AngleProperty,
-                new System.Windows.Media.Animation.DoubleAnimation(0, 360, TimeSpan.FromSeconds(90))
-                {
-                    RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever,
-                });
+            _rayLayers.Add(rays);   // advanced one degree per painted tick — see Advance()
             g.Children.Add(rays);
 
             // body: white-hot heart → amber limb

@@ -27,11 +27,14 @@ $csc = $cscCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $csc) {
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     if (Test-Path $vswhere) {
-        $csc = & $vswhere -latest -find "MSBuild\**\Bin\Roslyn\csc.exe" | Select-Object -First 1
+        # -products * : without it vswhere skips Build Tools installs (it only lists the IDEs),
+        # which is exactly the edition this script recommends; also covers VS 2026 and later.
+        $csc = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild `
+                   -find "MSBuild\**\Bin\Roslyn\csc.exe" | Select-Object -First 1
     }
 }
 $fw   = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319"
-if (-not $csc -or -not (Test-Path $csc)) { throw "csc (Roslyn) not found - install VS 2022 BuildTools" }
+if (-not $csc -or -not (Test-Path $csc)) { throw "csc (Roslyn) not found - install Visual Studio Build Tools (2022 or newer) with the '.NET desktop build tools' workload" }
 Write-Host "csc: $csc"
 
 $dist = Join-Path $root "dist"
@@ -184,7 +187,11 @@ Write-Host "Building DeskMate.exe ..."
 $appSources = @(Get-ChildItem (Join-Path $root "src") -Recurse -Filter *.cs | ForEach-Object { $_.FullName })
 $appExe   = Join-Path $dist "DeskMate.exe"
 $manifest = Join-Path $root "src\app.manifest"
-$appExtra = @("/win32icon:$ico")
+# v1.11: the interface font (Tajawal, SIL OFL — assets\fonts\OFL.txt) travels inside the exe;
+# UI\AppFonts.cs unpacks it to %LocalAppData%\DeskMate\fonts on first run
+$fontRes = @(Get-ChildItem (Join-Path $root "assets\fonts") -Filter *.ttf -ErrorAction SilentlyContinue |
+    ForEach-Object { "/resource:$($_.FullName),DeskMate.Fonts.$($_.Name)" })
+$appExtra = @("/win32icon:$ico") + $fontRes
 if (Test-Path $manifest) { $appExtra += "/win32manifest:$manifest" }
 Invoke-Csc $appExe "winexe" $appSources $refsApp $appExtra
 # sign before embedding: the installer carries this exact file as its payload
@@ -214,7 +221,7 @@ $uiSmokeSrc = Join-Path $root "tests\UiSmoke.cs"
 if ($UiSmoke -and (Test-Path $uiSmokeSrc)) {
     Write-Host "Building UiSmoke ..."
     $smokeExe = Join-Path $obj "UiSmoke.exe"
-    Invoke-Csc $smokeExe "winexe" ($appSources + @($uiSmokeSrc)) $refsApp @("/main:UiSmoke", "/win32icon:$ico")
+    Invoke-Csc $smokeExe "winexe" ($appSources + @($uiSmokeSrc)) $refsApp (@("/main:UiSmoke", "/win32icon:$ico") + $fontRes)
     $shots = Join-Path $obj "uishots"
     Write-Host "Capturing UI screenshots -> $shots"
     & $smokeExe $shots | Out-Host

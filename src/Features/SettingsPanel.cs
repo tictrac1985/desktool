@@ -79,9 +79,53 @@ namespace DeskMate.Features
             layoutRow.Children.Add(layoutLbl);
             stack.Children.Add(layoutRow);
 
+            // ---- icon look (v1.11) ----
+            var iconRow = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+            var iconCombo = Theme.MakeCombo();
+            iconCombo.Items.Add(L.T("st_icons_tiles"));
+            iconCombo.Items.Add(L.T("st_icons_glass"));
+            iconCombo.Items.Add(L.T("st_icons_objects"));
+            iconCombo.SelectedIndex = Math.Max(0, Math.Min(2, Settings.I.IconStyle));
+            iconCombo.SelectionChanged += (s, e) =>
+            {
+                Settings.I.IconStyle = iconCombo.SelectedIndex;
+                SaveAndReload();
+            };
+            DockPanel.SetDock(iconCombo, Dock.Right);
+            iconRow.Children.Add(iconCombo);
+            var iconLbl = Theme.MakeText(L.T("st_icons"), 13, Theme.TextDim);
+            iconLbl.VerticalAlignment = VerticalAlignment.Center;
+            iconRow.Children.Add(iconLbl);
+            stack.Children.Add(iconRow);
+
+            // ---- interface font (v1.11) ----
+            var fontRow = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+            var fontCombo = Theme.MakeCombo();
+            fontCombo.Items.Add(L.T("st_font_tajawal"));
+            fontCombo.Items.Add(L.T("st_font_system"));
+            fontCombo.SelectedIndex = Math.Max(0, Math.Min(1, Settings.I.FontChoice));
+            fontCombo.SelectionChanged += (s, e) =>
+            {
+                Settings.I.FontChoice = fontCombo.SelectedIndex;
+                // the font is read when the palette is applied, which also rebuilds the widget
+                Theme.Apply(Theme.AppliedIndex);
+                SaveAndReload();
+                PanelWindow.CloseCurrent();
+                Open(MainWindow.Instance);
+            };
+            DockPanel.SetDock(fontCombo, Dock.Right);
+            fontRow.Children.Add(fontCombo);
+            var fontLbl = Theme.MakeText(L.T("st_font"), 13, Theme.TextDim);
+            fontLbl.VerticalAlignment = VerticalAlignment.Center;
+            fontRow.Children.Add(fontLbl);
+            stack.Children.Add(fontRow);
+
             // ---- theme picker ----
             stack.Children.Add(Theme.SectionTitle(L.T("st_theme")));
-            var themeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 8) };
+            // a wrapping row: thirteen swatches do not fit one line of this panel, and the
+            // old single-line row silently pushed the last four themes (Copper, Sand, Ruby,
+            // Daylight) out of the panel where they could not be clicked at all
+            var themeRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 8) };
             for (int i = 0; i < Theme.Palettes.Length; i++)
             {
                 int idx = i;
@@ -94,7 +138,7 @@ namespace DeskMate.Features
                     Background = new System.Windows.Media.LinearGradientBrush(pal.CardTop, pal.CardBottom, 90),
                     BorderBrush = selected ? Theme.Accent : Theme.CardBorder,
                     BorderThickness = new Thickness(selected ? 2.5 : 1),
-                    Margin = new Thickness(3, 0, 3, 0),
+                    Margin = new Thickness(3, 3, 3, 3),
                     Cursor = System.Windows.Input.Cursors.Hand,
                     ToolTip = L.IsAr ? pal.KeyAr : pal.KeyEn,
                     Child = new System.Windows.Shapes.Ellipse
@@ -110,7 +154,7 @@ namespace DeskMate.Features
                 {
                     e.Handled = true;
                     Settings.I.ThemeIndex = idx;
-                    Theme.Apply(Logic.AutoThemeCore.EffectiveIndex(idx, Settings.I.AutoTheme, DateTime.Now.Hour));
+                    Theme.Apply(Logic.AutoThemeCore.EffectiveIndex(idx, Settings.I.LightThemeIndex, Settings.I.AutoTheme, DateTime.Now.Hour));
                     SaveAndReload();
                     PanelWindow.CloseCurrent();
                     Open(MainWindow.Instance);
@@ -141,7 +185,7 @@ namespace DeskMate.Features
             if (Settings.I.AutoTheme)
             {
                 stack.Children.Add(Theme.SectionTitle(L.T("st_day_palette")));
-                var dayRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 8) };
+                var dayRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 8) };
                 for (int i = 0; i < Theme.Palettes.Length; i++)
                 {
                     int idx = i;
@@ -154,7 +198,7 @@ namespace DeskMate.Features
                         Background = new System.Windows.Media.LinearGradientBrush(pal.CardTop, pal.CardBottom, 90),
                         BorderBrush = selected ? Theme.Accent : Theme.CardBorder,
                         BorderThickness = new Thickness(selected ? 2.5 : 1),
-                        Margin = new Thickness(2, 0, 2, 0),
+                        Margin = new Thickness(2, 2, 2, 2),
                         Cursor = System.Windows.Input.Cursors.Hand,
                         ToolTip = L.IsAr ? pal.KeyAr : pal.KeyEn,
                         Child = new System.Windows.Shapes.Ellipse
@@ -236,6 +280,19 @@ namespace DeskMate.Features
                 Win32.SetAutoStart(v);
                 Settings.I.Save();
             }));
+
+            // ---- power saving ----
+            // Both switches change the shadow ramp, which is baked into the visual tree, so
+            // each one drops the cached effects before the rebuild.
+            stack.Children.Add(Theme.SectionTitle(L.T("st_power")));
+            stack.Children.Add(Theme.MakeCheck(L.T("st_power_saver"), Settings.I.PowerSaver,
+                v => { Settings.I.PowerSaver = v; Theme.InvalidateEffects(); SaveAndReload(); }));
+            stack.Children.Add(Theme.MakeCheck(L.T("st_power_battery"), Settings.I.PowerSaverOnBattery,
+                v => { Settings.I.PowerSaverOnBattery = v; Theme.InvalidateEffects(); SaveAndReload(); }));
+            var powerNote = Theme.MakeText(L.T("st_power_note"), 11, Theme.TextFaint);
+            powerNote.TextWrapping = TextWrapping.Wrap;
+            powerNote.Margin = new Thickness(0, 2, 0, 6);
+            stack.Children.Add(powerNote);
 
             // ---- visible tools ----
             stack.Children.Add(Theme.SectionTitle(L.T("st_features")));

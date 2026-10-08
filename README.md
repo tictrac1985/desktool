@@ -39,7 +39,9 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 | 🧊 | 8 أشكال للأداة — منها «مجسم» بعمق ثلاثي الأبعاد و«هالة» بحلقة دوّارة | 8 widget shapes — incl. the 3D «Monolith» slab and the revolving-ring «Halo» |
 | ✦ | سطر موسمي تحت الساعة: اقتراب المناسبات، وعدّاد إفطار حي في رمضان، وتهانئ العيد — يظهر ويختفي مع حجم الأداة تلقائياً | Seasonal line under the clock: occasion countdowns, live Ramadan iftar timer, Eid greetings — appears/hides with widget size automatically |
 | 📌 | اللوحات مثبّتة افتراضياً: تبقى مفتوحة أثناء عملك ولا تُغلق إلا أنت — أو أعد السلوك القديم من الإعدادات | Panels are pinned by default: they stay open while you work and only you close them — or restore the old behaviour in Settings |
-| 🗂 | تجميع الأدوات قابل للطي: «يومية» و«نظام» برأسين ينقران للطي، والإعدادات مثبّتة دائماً — مع إيقونات مرسومة بالكود مجسّمة ترتفع وتتوهج عند التحويم | Collapsible tool grouping: «Daily» and «System» sections with click-to-collapse headers, Settings always pinned — plus hand-drawn 3D icons that lift and glow on hover |
+| 🗂 | تجميع الأدوات قابل للطي: «يومية» و«نظام» برأسين ينقران للطي، والإعدادات مثبّتة دائماً | Collapsible tool grouping: «Daily» and «System» sections with click-to-collapse headers, Settings always pinned |
+| 🔷 | أيقونات بثلاثة أشكال: مربعات ملوّنة موحّدة (الافتراضي) أو زجاجية بلون الثيم أو المجسّمات المرسومة — كلها ترتفع وتتوهج عند التحويم | Three icon looks: uniform colour tiles (default), theme-tinted glass, or the hand-drawn objects — all lift and glow on hover |
+| 🔤 | خط «تجوال» العربي مدمج داخل البرنامج (رخصة OFL) فيظهر على أي جهاز بلا تثبيت، مع خيار الرجوع لخط النظام | The Tajawal Arabic typeface ships inside the app (OFL licence), so it shows on any PC without installing anything — or switch back to the system font |
 | ⌨ | اختصار عام Win+Alt+D ينادي شريط الأوامر من أي مكان — حتى والأداة مخفية | Global Win+Alt+D hotkey summons the command bar from anywhere — even when the widget is hidden |
 
 كل أيقونة يظهر اسم أداتها تحتها دائماً — لا حاجة للتخمين. · Every icon shows its tool's name beneath it — no guessing.
@@ -50,7 +52,12 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 - اسحبها لأي مكان؛ موضعها يُحفظ.
 - أيقونة في منطقة الإشعارات (Tray): إظهار/إخفاء، الإعدادات، إغلاق.
 - تشغيل نسخة ثانية يُظهر الأداة فقط (نسخة واحدة دائماً).
+- **لا ترسم نفسها إلا حين تُرى:** الأداة مخفية أو مصغّرة أو تغطيها نافذة أمامية بالكامل = لا إعادة رسم إطلاقاً. ووجه بلا ثوانٍ ولا حركة يُعاد رسمه مرة في الدقيقة لا مرة في الثانية. التنبيهات (الصلاة، الملاحظات، التركيز) تعمل في كل الأحوال.
+- **وضع توفير الطاقة** في الإعدادات — يوقف الحركات ويخفّف الظلال ويثبّت الرسم على مرة كل دقيقة، ويشتغل تلقائياً على البطارية.
 - الإعدادات في `%AppData%\DeskMate\settings.json`.
+
+- **Draws only when it is seen:** hidden, minimised, or completely covered by the foreground window means no repaint at all — and a face with no seconds and no motion repaints once a minute, not once a second. Alerts (prayer, notes, focus) fire either way.
+- **Power saving** in Settings — stops the motion, softens the shadows and pins the repaint to once a minute; turns itself on when you unplug.
 
 ## البناء من المصدر · Build from source
 
@@ -58,9 +65,9 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل 316 اختباراً ذاتياً للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
+يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل 326 اختباراً ذاتياً للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
 
-Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs 316 logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
+Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs 326 logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
 
 ```powershell
 # لقطات معاينة لكل التخطيطات واللوحات في obj\uishots · render every layout & panel to obj\uishots
@@ -71,3 +78,8 @@ powershell -ExecutionPolicy Bypass -File build.ps1 -UiSmoke
 
 - `DeskMateSetup.exe --silent` — تثبيت صامت بالخيارات الافتراضية · silent install
 - `Uninstall.exe --uninstall` — إزالة (تُنشأ داخل مجلد التثبيت) · uninstall
+
+## مكونات خارجية · Third-party
+
+- خط **تجوال Tajawal** © Boutros International — مرخّص بـ SIL Open Font License 1.1، النص الكامل في `assets/fonts/OFL.txt`. يُضمَّن داخل `DeskMate.exe` ويُفك عند أول تشغيل إلى `%LocalAppData%\DeskMate\fonts`.
+- **Tajawal** typeface © Boutros International — SIL Open Font License 1.1, full text in `assets/fonts/OFL.txt`. Embedded in `DeskMate.exe` and unpacked on first run to `%LocalAppData%\DeskMate\fonts`.

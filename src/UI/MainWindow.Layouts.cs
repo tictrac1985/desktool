@@ -15,46 +15,56 @@ namespace DeskMate.UI
         {
             FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
             _cards.Clear();
+            _plates.Clear();
             _floatIcons.Clear();
             _clockCard = null;
             _connectors = null;
             _gregText = null;
             _hijriText = null;
             _dateKey = null;
+            // The previous visual tree is about to be thrown away. Its decorations live in
+            // statics, so clear them here — otherwise a layout change leaves the tick nudging
+            // transforms that are no longer on screen, and NeedsSecondCadence keeps paying for
+            // a rotation nobody can see.
+            HaloBrushes.Halo = null;
+            SkyBodies.Reset();
+            ClockDates.Hidden = false;   // only Tri-panel moves the dates out of the clock
 
-            _prayerLine = Theme.MakeText("", 12.5, Theme.Accent);
+            _prayerLine = Theme.MakeText("", 13.5, Theme.Accent);
+            _prayerLine.FontWeight = FontWeights.Medium;
             _prayerLine.HorizontalAlignment = HorizontalAlignment.Center;
-            _prayerLine.Margin = new Thickness(0, 5, 0, 0);
+            _prayerLine.Margin = new Thickness(0, 6, 0, 0);
             _prayerLine.Visibility = Visibility.Collapsed;
 
-            _weatherGlyph = Theme.MakeText("", 13, Theme.Accent, Theme.SymbolFont);
+            _weatherGlyph = Theme.MakeText("", 14, Theme.Accent, Theme.SymbolFont);
             _weatherGlyph.VerticalAlignment = VerticalAlignment.Center;
-            _weatherGlyph.Margin = new Thickness(0, 0, 5, 0);
-            _weatherText = Theme.MakeText("", 12.5, Theme.TextDim);
+            _weatherGlyph.Margin = new Thickness(5, 0, 5, 0);
+            _weatherText = Theme.MakeText("", 13, Theme.TextDim);
             _weatherText.VerticalAlignment = VerticalAlignment.Center;
             _weatherLine = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 4, 0, 0),
+                Margin = new Thickness(0, 3, 0, 0),
                 Visibility = Visibility.Collapsed,
-                // the temperature reads left-to-right in both languages
-                FlowDirection = FlowDirection.LeftToRight,
+                // the line follows the interface direction: in Arabic the weather glyph leads
+                // on the right, then the temperature, then the city
+                FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
             };
             _weatherLine.Children.Add(_weatherGlyph);
             _weatherLine.Children.Add(_weatherText);
 
             // seasonal occasion line (Ramadan/Eid/nearest occasion) — same pattern as weather
-            _occasionGlyph = Theme.MakeText("", 13, Theme.Accent, Theme.SymbolFont);
+            _occasionGlyph = Theme.MakeText("", 14, Theme.Accent, Theme.SymbolFont);
             _occasionGlyph.VerticalAlignment = VerticalAlignment.Center;
-            _occasionGlyph.Margin = new Thickness(0, 0, 5, 0);
-            _occasionText = Theme.MakeText("", 12.5, Theme.TextDim);
+            _occasionGlyph.Margin = new Thickness(5, 0, 5, 0);
+            _occasionText = Theme.MakeText("", 13, Theme.TextDim);
             _occasionText.VerticalAlignment = VerticalAlignment.Center;
             _occasionLine = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 4, 0, 0),
+                Margin = new Thickness(0, 3, 0, 0),
                 Visibility = Visibility.Collapsed,
                 FlowDirection = FlowDirection.RightToLeft,   // Arabic-first reading for the text
             };
@@ -219,22 +229,28 @@ namespace DeskMate.UI
             // a compact pill makes the ray fan look intentional
             _clockCard.HorizontalAlignment = HorizontalAlignment.Center;
 
-            _connectors = new Canvas { Height = 28, IsHitTestVisible = false, ClipToBounds = false };
+            _connectors = new Canvas { Height = 26, IsHitTestVisible = false, ClipToBounds = false };
 
-            double cw = CellWidthFor(IconDefs().Count, RowBudget());
+            double cw = CellWidthFor(IconDefs().Count, RowBudget() - 40);
             var iconsRow = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(14, 0, 14, 12),
             };
             foreach (var ic in BuildIcons(true, cw)) { iconsRow.Children.Add(ic); _floatIcons.Add(ic); }
+            // v1.11: the row rides on a glass shelf instead of the bare wallpaper, so the
+            // names stay readable on any desktop and with light themes (they were dark text
+            // painted straight onto a dark wallpaper)
+            var shelf = MakeCardTracked(iconsRow, 26);
+            Theme.SetCardPadding(shelf, new Thickness(12, 10, 12, 10));
+            shelf.Margin = new Thickness(12, 0, 12, 12);
+            shelf.HorizontalAlignment = HorizontalAlignment.Center;
 
             var root = new StackPanel();
             root.Children.Add(_clockCard);
             root.Children.Add(_connectors);
-            // the icon row is the bottom-most, widest thing here — its corner is the widget's
-            root.Children.Add(WithGrip(iconsRow));
+            // the shelf is the bottom-most, widest thing here — its corner is the widget's
+            root.Children.Add(WithGrip(shelf));
             return root;
         }
 
@@ -247,6 +263,7 @@ namespace DeskMate.UI
             // Tri-panel is wide enough for a 120-px analog dial; Flip/Word/Neon and Digital
             // are drawn at the size their builders default to. Minimal stays Minimal.
             _clock = Settings.I.ClockStyle == 1 ? (IClockView)new AnalogClock(120) : MakeClock(false);
+            ClockDates.Hidden = true;   // the side cards carry both dates
             var centerInner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
             centerInner.Children.Add(_clock.Root);
             centerInner.Children.Add(StatusLines());
@@ -287,10 +304,11 @@ namespace DeskMate.UI
             var chip = Theme.MakeGlyphChip(glyph, 30);
             chip.Margin = new Thickness(0, 0, 0, 6);
             stack.Children.Add(chip);
-            text = Theme.MakeText("", 12, Theme.TextDim);
+            text = Theme.MakeText("", 13.5, Theme.TextDim);
+            text.FontWeight = FontWeights.Medium;
             text.TextWrapping = TextWrapping.Wrap;
             text.TextAlignment = TextAlignment.Center;
-            text.MaxWidth = 96;
+            text.MaxWidth = 112;
             stack.Children.Add(text);
             var card = MakeCardTracked(stack, 18);
             Theme.SetCardPadding(card, new Thickness(12, 10, 12, 10));
@@ -299,94 +317,262 @@ namespace DeskMate.UI
             return card;
         }
 
-        /// <summary>Layout 3 — circular clock card with icons orbiting around it.</summary>
+        /// <summary>Layout 3 — ORBIT: a round clock core inside a bezel ring that carries the
+        /// tools. v1.11 redesign: the tools used to float straight on the wallpaper (tiny
+        /// labels, unreadable on a busy or bright desktop, invisible with a light theme).
+        /// They now sit on a ring of the widget's own glass, so every label reads against
+        /// the theme it was coloured for, and the whole widget is one round object.</summary>
         FrameworkElement BuildOrbit()
         {
-            // slightly smaller digits so time + seconds + AM/PM pill sit comfortably in the circle
-            _clock = MakeClock(false, 46);
-            var inner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            _clock = MakeClock(false, 48);
+            var inner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top };
             inner.Children.Add(_clock.Root);
             inner.Children.Add(StatusLines());
-            var card = MakeCardTracked(inner);
-            card.Margin = new Thickness(0);
-            Theme.SetCardPadding(card, new Thickness(26));
 
-            // populate the clock text BEFORE measuring — an empty time string would
-            // undersize the circle and clip the seconds at the edge
-            _clock.Tick(DateTime.Now);
-            card.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            double mw = card.DesiredSize.Width, mh = card.DesiredSize.Height;
-            // diameter = diagonal of the measured content + breathing margin
-            double size = Math.Sqrt(mw * mw + mh * mh) + 14;
-            card.Width = size;
-            card.Height = size;
-            // through the helper: setting CornerRadius alone left the sheen, bevel and rim as
-            // rounded rectangles, drawing a visible square edge inside this circular card
-            Theme.SetCardRadius(card, size / 2);
-            card.FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+            double coreR;
+            var coreCard = MakeRoundCore(inner, 16, out coreR);
 
+            // ---- tool cells, measured so the ring can be cut to fit them ----
             var icons = BuildIcons(true);
-            double cellW = Theme.DefaultCellWidth;
-            // ring wide enough that neighbouring cells do not touch: the arc between two icons
-            // must be at least one cell plus a gap, otherwise wide labels collide on the circle
-            double minR = icons.Count > 2
-                ? (cellW + Theme.CellGap) / (2 * Math.Sin(Math.PI / icons.Count))
-                : 0;
-            double ringR = Math.Max(size / 2 + 48, minR);
-            double pad = cellW / 2 + 34; // room for icon cells + their labels outside the ring
-            double canvasSize = 2 * (ringR + pad);
+            int n = icons.Count;
+            double cellW = 0, cellH = 0;
+            foreach (var ic in icons)
+            {
+                ic.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                cellW = Math.Max(cellW, ic.DesiredSize.Width);
+                cellH = Math.Max(cellH, ic.DesiredSize.Height);
+            }
+
+            // ring radius: far enough out that the cells clear the core, and that the chord
+            // between two neighbours fits a whole cell (wide labels never touch)
+            const double gap = 5;          // seam between the core and the bezel
+            const double bandPad = 9;      // breathing room inside the bezel, both edges
+            double rOnCore = coreR + gap + bandPad + cellH / 2;
+            double rChord = n > 1 ? (Math.Max(cellW, cellH) + 2) / (2 * Math.Sin(Math.PI / n)) : 0;
+            double ringR = Math.Max(rOnCore, rChord);
+            double rIn = coreR + gap;
+            double rOut = ringR + cellH / 2 + bandPad;
+
+            const double shadowPad = 22;   // the bezel's shadow needs room inside the window
+            double canvasSize = 2 * (rOut + shadowPad);
+            double c = canvasSize / 2;
             var canvas = new Canvas
             {
                 Width = canvasSize,
                 Height = canvasSize,
-                Background = Brushes.Transparent,
                 FlowDirection = FlowDirection.LeftToRight,
-                Margin = new Thickness(4),
             };
-            double c = canvasSize / 2;
 
-            var ringStroke = new SolidColorBrush(Color.FromArgb(0x34,
+            // ---- the bezel: a ring of card glass with a lit outer rim ----
+            var ringGeo = new CombinedGeometry(GeometryCombineMode.Exclude,
+                new EllipseGeometry(new Point(c, c), rOut, rOut),
+                new EllipseGeometry(new Point(c, c), rIn, rIn));
+            ringGeo.Freeze();
+            var bezel = new Path
+            {
+                Data = ringGeo,
+                Fill = Theme.CardBg,
+                Stroke = Theme.CardBorder,
+                StrokeThickness = 1,
+                Effect = Theme.Elevation(3),
+            };
+            _plates.Add(bezel);
+            canvas.Children.Add(bezel);
+            var rim = new Ellipse
+            {
+                Width = 2 * rOut - 2, Height = 2 * rOut - 2,
+                Stroke = Theme.RimBrush, StrokeThickness = 1, IsHitTestVisible = false,
+            };
+            Canvas.SetLeft(rim, c - rOut + 1);
+            Canvas.SetTop(rim, c - rOut + 1);
+            canvas.Children.Add(rim);
+            // a faint accent track through the middle of the ring, behind the cells
+            var trackBrush = new SolidColorBrush(Color.FromArgb(Theme.IsLight ? (byte)0x30 : (byte)0x26,
                 Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B));
-            ringStroke.Freeze();
-            var ring = new Ellipse
+            trackBrush.Freeze();
+            var track = new Ellipse
             {
-                Width = 2 * ringR,
-                Height = 2 * ringR,
-                Stroke = ringStroke,
-                StrokeThickness = 1.2,
-                StrokeDashArray = new DoubleCollection { 3, 4 },
+                Width = 2 * ringR, Height = 2 * ringR,
+                Stroke = trackBrush, StrokeThickness = 1,
+                StrokeDashArray = new DoubleCollection { 2, 5 },
+                IsHitTestVisible = false,
             };
-            Canvas.SetLeft(ring, c - ringR);
-            Canvas.SetTop(ring, c - ringR);
-            canvas.Children.Add(ring);
+            Canvas.SetLeft(track, c - ringR);
+            Canvas.SetTop(track, c - ringR);
+            canvas.Children.Add(track);
 
-            Canvas.SetLeft(card, c - size / 2);
-            Canvas.SetTop(card, c - size / 2);
-            canvas.Children.Add(card);
+            // ---- the core ----
+            Canvas.SetLeft(coreCard, c - coreCard.Width / 2);
+            Canvas.SetTop(coreCard, c - coreCard.Height / 2);
+            canvas.Children.Add(coreCard);
 
-            for (int i = 0; i < icons.Count; i++)
+            // ---- tools around the ring, first one at 12 o'clock, clockwise ----
+            for (int i = 0; i < n; i++)
             {
-                double a = (-90 + i * 360.0 / icons.Count) * Math.PI / 180.0;
+                double a = (-90 + i * 360.0 / n) * Math.PI / 180.0;
                 double ix = c + ringR * Math.Cos(a);
                 double iy = c + ringR * Math.Sin(a);
-                // tool cell is 58 wide; its 40px circle center sits at (29, 20)
-                Canvas.SetLeft(icons[i], ix - cellW / 2);
-                Canvas.SetTop(icons[i], iy - 20);
+                var sz = icons[i].DesiredSize;
+                Canvas.SetLeft(icons[i], ix - sz.Width / 2);
+                Canvas.SetTop(icons[i], iy - sz.Height / 2);
                 canvas.Children.Add(icons[i]);
             }
 
-            // This layout is a circle inside a square canvas, so the square's bottom-right
-            // corner is empty sky — the grip would float there with nothing under it. Put it
-            // ON the ring at 45°, the nearest thing to "the widget's own corner" here.
+            // the scale grip sits on the bezel at 45°, the nearest thing to a corner here
             var grip = BuildScaleGrip();
             grip.HorizontalAlignment = HorizontalAlignment.Left;
             grip.VerticalAlignment = VerticalAlignment.Top;
             grip.Margin = new Thickness(0);
-            double d = ringR * Math.Sqrt(2) / 2;
+            double d = (rOut - 13) * Math.Sqrt(2) / 2;
             Canvas.SetLeft(grip, c + d - 11);
             Canvas.SetTop(grip, c + d - 11);
             canvas.Children.Add(grip);
             return canvas;
+        }
+
+        /// <summary>A circular clock card cut to its content. The old rule made the circle the
+        /// content's diagonal, which wastes a third of the disc on empty corners; here every
+        /// line is measured where it actually sits, round dials and sky domes count as the
+        /// shapes they are, and the content is slid up or down to the height where the circle
+        /// it needs is smallest. Status lines are primed with their real text first (they
+        /// normally fill on the first tick) so the circle is cut for what will be shown.</summary>
+        Border MakeRoundCore(StackPanel inner, double pad, out double radius)
+        {
+            _clock.Tick(DateTime.Now);
+            PrimeStatusLines(DateTime.Now);
+            var restore = ReserveStatusLines();
+
+            inner.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            inner.Arrange(new Rect(inner.DesiredSize));
+            double cy;
+            double r = FitCircle(inner, out cy);
+            restore();
+
+            double R = Math.Ceiling(r + pad);
+            var host = new Grid { Width = 2 * R, Height = 2 * R };
+            inner.Margin = new Thickness(0, Math.Max(0, R - cy), 0, 0);
+            inner.HorizontalAlignment = HorizontalAlignment.Center;
+            inner.VerticalAlignment = VerticalAlignment.Top;
+            host.Children.Add(inner);
+
+            var card = MakeCardTracked(host);
+            card.Margin = new Thickness(0);
+            Theme.SetCardPadding(card, new Thickness(0));
+            card.Width = 2 * R + 2;     // + the card's 1px border on each side
+            card.Height = 2 * R + 2;
+            Theme.SetCardRadius(card, R + 1);
+            card.FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+            radius = R + 1;
+            return card;
+        }
+
+        /// <summary>Lines that are switched on but have nothing to say yet (weather still
+        /// fetching, no occasion near) get a representative placeholder while the core is
+        /// measured, so the circle does not overflow the moment they appear. Returns the
+        /// action that puts them back.</summary>
+        Action ReserveStatusLines()
+        {
+            var undo = new List<Action>();
+            Action<FrameworkElement> reserve = el =>
+            {
+                if (el == null || el.Visibility == Visibility.Visible) return;
+                var prev = el.Visibility;
+                el.Visibility = Visibility.Visible;
+                undo.Add(() => el.Visibility = prev);
+            };
+            var s = Settings.I;
+            if (s.ShowPrayer && s.ShowNextPrayerLine && string.IsNullOrEmpty(_prayerLine.Text))
+            {
+                _prayerLine.Text = L.IsAr ? "الفجر بعد ٠:٠٠" : "Fajr in 0:00";
+                undo.Add(() => _prayerLine.Text = "");
+                reserve(_prayerLine);
+            }
+            if (s.ShowWeather && s.ShowWeatherLine && _weatherLine.Visibility != Visibility.Visible
+                && Settings.I.Scale >= 0.85)
+            {
+                string oldG = _weatherGlyph.Text, oldT = _weatherText.Text;
+                _weatherGlyph.Text = "☀";
+                _weatherText.Text = "00°  ·  " + (string.IsNullOrEmpty(s.City) ? "City" : s.City);
+                undo.Add(() => { _weatherGlyph.Text = oldG; _weatherText.Text = oldT; });
+                reserve(_weatherLine);
+            }
+            return () => { for (int i = undo.Count - 1; i >= 0; i--) undo[i](); };
+        }
+
+        /// <summary>Smallest circle (radius, and the content y it is centred on) that holds
+        /// every line of an arranged content stack. Each leaf row contributes its outline:
+        /// a rectangle by default, an inscribed ellipse for a round dial, an upper half
+        /// ellipse for a sky dome (see <see cref="Footprint"/>).</summary>
+        static double FitCircle(FrameworkElement content, out double bestCy)
+        {
+            var pts = new List<Point>();
+            CollectFootprint(content, content, pts);
+            double w = content.ActualWidth > 0 ? content.ActualWidth : content.DesiredSize.Width;
+            double h = content.ActualHeight > 0 ? content.ActualHeight : content.DesiredSize.Height;
+            double cx = w / 2;
+            double best = double.MaxValue;
+            bestCy = h / 2;
+            if (pts.Count == 0) { best = Math.Sqrt(w * w + h * h) / 2; return best; }
+            for (double cy = h * 0.25; cy <= h * 0.75; cy += 1)
+            {
+                double m = 0;
+                foreach (var p in pts)
+                {
+                    double dx = p.X - cx, dy = p.Y - cy;
+                    double dd = dx * dx + dy * dy;
+                    if (dd > m) m = dd;
+                }
+                m = Math.Sqrt(m);
+                if (m < best) { best = m; bestCy = cy; }
+            }
+            return best;
+        }
+
+        static void CollectFootprint(FrameworkElement root, FrameworkElement el, List<Point> pts)
+        {
+            if (el.Visibility != Visibility.Visible) return;
+            var tag = el.Tag as string;
+            var sp = el as StackPanel;
+            if (tag == null && sp != null && sp.Orientation == Orientation.Vertical)
+            {
+                foreach (var child in sp.Children)
+                {
+                    var fe = child as FrameworkElement;
+                    if (fe != null) CollectFootprint(root, fe, pts);
+                }
+                return;
+            }
+            if (el.ActualWidth <= 0 || el.ActualHeight <= 0) return;
+            // TransformBounds, not TranslatePoint(0,0): nearly every text line here is an RTL
+            // element inside an LTR stack, and an RTL element's local origin is its RIGHT edge —
+            // adding the width to it pushed every line's outline a full width off to one side
+            // and cut the circle a third too big
+            Rect b;
+            try { b = el.TransformToAncestor(root).TransformBounds(new Rect(0, 0, el.ActualWidth, el.ActualHeight)); }
+            catch { return; }
+            double w = b.Width, h = b.Height;
+            var o = new Point(b.X, b.Y);
+            if (tag == Footprint.Round || tag == Footprint.Dome)
+            {
+                double rx = w / 2, ry = tag == Footprint.Dome ? h : h / 2;
+                double ox = o.X + rx, oy = tag == Footprint.Dome ? o.Y + h : o.Y + h / 2;
+                int steps = 36;
+                for (int i = 0; i <= steps; i++)
+                {
+                    double t = (tag == Footprint.Dome ? Math.PI : 2 * Math.PI) * i / steps;
+                    pts.Add(new Point(ox + rx * Math.Cos(t), oy - ry * Math.Sin(t)));
+                }
+                if (tag == Footprint.Dome)
+                {
+                    pts.Add(new Point(o.X, o.Y + h));
+                    pts.Add(new Point(o.X + w, o.Y + h));
+                }
+                return;
+            }
+            pts.Add(o);
+            pts.Add(new Point(o.X + w, o.Y));
+            pts.Add(new Point(o.X, o.Y + h));
+            pts.Add(new Point(o.X + w, o.Y + h));
         }
 
         /// <summary>Layout 4 — vertical sidebar: compact clock on top, menu-style rows
@@ -406,7 +592,7 @@ namespace DeskMate.UI
                 : style == 9 ? (IClockView)new MinimalClock()
                 : style == 3 || style == 4 ? MakeClock(false, 26)   // Flip/Word too tall → Digital fallback
                 : MakeClock(false, 26);
-            var stack = new StackPanel { MinWidth = 176 };
+            var stack = new StackPanel { MinWidth = 196 };
             stack.Children.Add(_clock.Root);
             stack.Children.Add(StatusLines());
             stack.Children.Add(Hairline(10, 6));
@@ -440,7 +626,7 @@ namespace DeskMate.UI
             // v1.10: the drawn tangible icon; the MDL2 glyph only survives as a fallback
             // for a slot ToolIcons does not know yet
             FrameworkElement iconEl;
-            var icon = ToolIcons.Render(toolSlot, 27);
+            var icon = ToolIcons.Render(toolSlot, 32);
             if (icon != null)
             {
                 iconEl = icon.Root;
@@ -460,9 +646,10 @@ namespace DeskMate.UI
                     FlowDirection = FlowDirection.LeftToRight,   // glyph codepoint, not text
                 };
             }
-            var glyphHost = new Border { Width = 30, Height = 32, Child = iconEl };
+            var glyphHost = new Border { Width = 36, Height = 38, Child = iconEl };
             content.Children.Add(glyphHost);
-            var name = Theme.MakeText(L.T(titleKey), 12.5, Theme.TextDim);
+            var name = Theme.MakeText(L.T(titleKey), 13.5, Theme.TextDim);
+            name.FontWeight = FontWeights.Medium;
             name.VerticalAlignment = VerticalAlignment.Center;
             name.Margin = new Thickness(10, 0, 4, 0);
             content.Children.Add(name);
@@ -531,8 +718,8 @@ namespace DeskMate.UI
                 rowStack.Children.Add(ic);
             }
 
-            var pill = MakeCardTracked(rowStack, 40);
-            Theme.SetCardPadding(pill, new Thickness(18, 10, 18, 10));
+            var pill = MakeCardTracked(rowStack, 30);
+            Theme.SetCardPadding(pill, new Thickness(18, 16, 18, 16));
             return WithGrip(pill);
         }
 
@@ -572,7 +759,7 @@ namespace DeskMate.UI
             // icon chips on a floating shelf beneath the monolith. Cells are capped well
             // below the normal width AND the shelf gets generous side padding: eleven
             // two-line Arabic labels need real room or the end ones kiss the rounded edge.
-            double cw = Math.Min(CellWidthFor(IconDefs().Count, RowBudget()), 62);
+            double cw = Math.Min(CellWidthFor(IconDefs().Count, RowBudget()), Theme.DefaultCellWidth);
             FrameworkElement shelfContent;
             if (Settings.I.GroupTools)
             {
@@ -594,103 +781,82 @@ namespace DeskMate.UI
                 }
                 shelfContent = shelfRow;
             }
-            var shelf = new Border
-            {
-                Background = Theme.ButtonBg,
-                CornerRadius = new CornerRadius(18),
-                Padding = new Thickness(22, 5, 22, 4),
-                Effect = Theme.Elevation(2),
-                Child = shelfContent,
-            };
+            // the shelf is the same glass as the slab (it used to be a flat neutral grey
+            // that matched no theme), sitting just under the pedestal
+            var shelf = MakeCardTracked(shelfContent, 22);
+            Theme.SetCardPadding(shelf, new Thickness(16, 6, 16, 8));
+            shelf.Margin = new Thickness(18, 0, 18, 12);
 
             var root = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-            root.Children.Add(MakeCardTracked(body, 22));
+            var slab = MakeCardTracked(body, 22);
+            slab.Margin = new Thickness(12, 12, 12, 6);
+            root.Children.Add(slab);
             root.Children.Add(WithGrip(shelf));
             return root;
         }
 
-        /// <summary>Layout 7 — HALO: a glowing ring around a circular clock core with the
-        /// tools in two side columns (right column in RTL). The halo is a dashed accent
-        /// ellipse that slowly rotates via RenderTransform — alive without being loud.</summary>
+        /// <summary>Layout 7 — HALO: a round clock core wrapped in a slowly revolving dashed
+        /// halo, with the tools on a glass card beneath it. v1.11 rebuild: the old version
+        /// sized the core with a Grid that ignored its Canvas offsets, so the disc sat high and
+        /// was cut off at the top while the halo hung off-centre; the tool list floated on
+        /// the bare desktop, where light themes painted dark names on a dark wallpaper.</summary>
         FrameworkElement BuildHalo()
         {
-            _clock = MakeClock(false, 44);
-            var inner = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            _clock = MakeClock(false, 46);
+            var inner = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top };
             inner.Children.Add(_clock.Root);
             inner.Children.Add(StatusLines());
-            var coreCard = MakeCardTracked(inner);
-            coreCard.Margin = new Thickness(0);
-            Theme.SetCardPadding(coreCard, new Thickness(20));
 
-            // measure for a circular core like Orbit does
-            _clock.Tick(DateTime.Now);
-            coreCard.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            double mw = coreCard.DesiredSize.Width, mh = coreCard.DesiredSize.Height;
-            double size = Math.Sqrt(mw * mw + mh * mh) + 10;
-            coreCard.Width = size;
-            coreCard.Height = size;
-            Theme.SetCardRadius(coreCard, size / 2);
+            double coreR;
+            var coreCard = MakeRoundCore(inner, 14, out coreR);
 
-            // rotating dashed halo just outside the core
-            double haloR = size / 2 + 12;
+            // rotating dashed halo just outside the core, with a soft accent glow under it
+            double haloR = coreR + 11;
+            double box = 2 * (haloR + 4);
+            var stage = new Grid { Width = box, Height = box, Margin = new Thickness(10, 10, 10, 0) };
+            var glow = new RadialGradientBrush { Center = new Point(0.5, 0.5), GradientOrigin = new Point(0.5, 0.5) };
+            glow.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B), 0.80));
+            glow.GradientStops.Add(new GradientStop(Color.FromArgb(Theme.IsLight ? (byte)0x30 : (byte)0x40, Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B), 0.93));
+            glow.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B), 1.0));
+            glow.Freeze();
+            stage.Children.Add(new Ellipse { Width = box, Height = box, Fill = glow, IsHitTestVisible = false });
             var halo = new Ellipse
             {
                 Width = 2 * haloR, Height = 2 * haloR,
-                Stroke = new SolidColorBrush(Color.FromArgb(0x66,
+                Stroke = new SolidColorBrush(Color.FromArgb(0x8C,
                     Theme.AccentColor.R, Theme.AccentColor.G, Theme.AccentColor.B)),
-                StrokeThickness = 1.6,
-                StrokeDashArray = new DoubleCollection { 4, 7 },
+                StrokeThickness = 2,
+                StrokeDashArray = new DoubleCollection { 3, 6 },
+                StrokeDashCap = PenLineCap.Round,
                 IsHitTestVisible = false,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                RenderTransform = new RotateTransform(0),
             };
-            halo.RenderTransform = new RotateTransform(0);
             HaloBrushes.Halo = halo;
+            stage.Children.Add(halo);
+            coreCard.HorizontalAlignment = HorizontalAlignment.Center;
+            coreCard.VerticalAlignment = VerticalAlignment.Center;
+            stage.Children.Add(coreCard);
 
-            var defs = IconDefs();
-            int n = defs.Count;
-            // ONE column of tools under the clock core instead of two side columns:
-            // the two-column grid made the widget ~3× wider than its own window, so on a
-            // normal screen only one column survived at the screen edge and even Settings
-            // was off-screen. A vertical strip keeps everything inside one narrow window.
-            int perCol = n;
+            // tools: a compact glass card of tiles, four to a row
+            var cells = Settings.I.GroupTools ? null : BuildIcons(false);
+            FrameworkElement toolContent = cells != null
+                ? (FrameworkElement)BuildBalancedRows(cells, 4, new Thickness(0))
+                : BuildIconSections(false, 4);
+            var toolsCard = MakeCardTracked(toolContent, 26);
+            Theme.SetCardPadding(toolsCard, new Thickness(10, 10, 10, 12));
+            toolsCard.HorizontalAlignment = HorizontalAlignment.Center;
+            toolsCard.Margin = new Thickness(12, 2, 12, 12);
 
-            var colRight = BuildHaloColumn(defs, 0, perCol);
-
-            var canvas = new Grid { Width = size + 28, Height = size + 28 };
-            Canvas.SetZIndex(halo, 0);
-            canvas.Children.Add(halo);
-            Canvas.SetLeft(coreCard, 14);
-            Canvas.SetTop(coreCard, 14);
-            // CRITICAL: the core must actually be ADDED to the host — an earlier revision
-            // set its Canvas.Left/Top but never inserted it, so the layout shipped with a
-            // dashed ring and tool columns and NO clock at all (exactly what the user saw).
-            canvas.Children.Add(coreCard);
-
-            // single centered column: core on top, tool rows beneath it — one narrow
-            // window that always fits the screen and keeps Settings reachable
             var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
-            stack.Children.Add(canvas);
-            colRight.HorizontalAlignment = HorizontalAlignment.Stretch;
-            stack.Children.Add(colRight);
-
-            // The layout is mostly transparent around the circle, and WPF only hit-tests
-            // painted pixels, so dragging the "empty" middle did nothing. A transparent
-            // full-bleed background turns the whole thing into one grabbable surface.
+            stack.Children.Add(stage);
+            stack.Children.Add(WithGrip(toolsCard));
+            // mostly transparent around the circle, and WPF only hit-tests painted pixels —
+            // a transparent background makes the whole widget one grabbable surface
             stack.Background = Brushes.Transparent;
-            stack.MouseLeftButtonDown += (s, e) =>
-            {
-                if (e.OriginalSource is FrameworkElement) { try { DragMove(); SavePosition(); } catch { } }
-            };
-            return WithGrip(stack);
-        }
-
-        /// <summary>One vertical stack of compact tool rows for the Halo layout. Slots stay
-        /// aligned with the global registry so identity colours match every other layout.</summary>
-        StackPanel BuildHaloColumn(List<ToolDef> defs, int start, int count)
-        {
-            var col = new StackPanel { MinWidth = 132 };
-            for (int i = start; i < start + count && i < defs.Count; i++)
-                col.Children.Add(MakeSidebarRow(defs[i].Glyph, defs[i].Key, defs[i].Open, defs[i].Id));
-            return col;
+            return stack;
         }
 
         /// <summary>Build one crystal shard holding 1 or 2 tool glyphs. The shard is a 56px
