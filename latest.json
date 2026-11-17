@@ -1,0 +1,11 @@
+{
+    "version":  "1.12.0.35",
+    "published":  "2026-11-17T07:01:02Z",
+    "notes":  "build: read all of git\u0027s output before checking the exit code",
+    "file":  "DeskMate.exe",
+    "size":  687616,
+    "sha256":  "7ccf1787139f0dd9f257faea889d74c8de05385666b916bfec3b4faec93169ec",
+    "setupFile":  "DeskMateSetup.exe",
+    "setupSize":  724992,
+    "setupSha256":  "d55a13648df5357825088b35166487825cca0f17f91f5ad6f054ecf4be745cde"
+}
