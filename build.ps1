@@ -61,8 +61,11 @@ function Get-BuildRevision {
     $ErrorActionPreference = "Continue"     # git chatter on stderr must not abort the build
     try {
         if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $root ".git"))) {
-            $n = (& git -C $root rev-list --count HEAD 2>$null | Select-Object -First 1)
-            if ($LASTEXITCODE -eq 0 -and "$n" -match '^\d+$' -and [int]$n -le 65000) { return "$n".Trim() }
+            # read ALL of git's output before looking at the exit code: cutting the pipe short
+            # (Select-Object -First 1) can kill git mid-write, and the build then randomly
+            # stamped revision 0 - which made the update channel look older than every install
+            $n = "$(& git -C $root rev-list --count HEAD 2>$null)".Trim()
+            if ($LASTEXITCODE -eq 0 -and $n -match '^\d+$' -and [int]$n -le 65000) { return $n }
         }
     } catch { }
     finally { $ErrorActionPreference = $prev }
