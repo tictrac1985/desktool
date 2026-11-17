@@ -77,6 +77,10 @@ namespace DeskMate.Core
         public bool ShowSysMon = false;
         public bool ShowWorldClock = false;
         public bool ShowCommand = true;
+        // v1.12 tools
+        public bool ShowCalendar = true;
+        public bool ShowCapture = true;
+        public bool ShowMedia = true;
 
         // tool grouping on the widget face: when on, the icon row splits into two
         // collapsible sections (daily / system) so eleven-plus tools stop crowding one row
@@ -127,6 +131,41 @@ namespace DeskMate.Core
 
         // world clocks: Windows timezone ids chosen by the user
         public List<string> WorldClocks = new List<string>();
+
+        // ---- v1.12 ----
+
+        /// <summary>Look for a newer build on the project's update channel shortly after
+        /// start and every few hours. Only ever CHECKS — installing is always a click.</summary>
+        public bool AutoUpdateCheck = true;
+        /// <summary>UTC time of the last update check (ISO 8601), "" = never.</summary>
+        public string LastUpdateCheck = "";
+
+        /// <summary>How much the widget moves: 0 = still, 1 = calm (hover feedback only),
+        /// 2 = cinematic (entrance choreography, the light that follows the pointer, the
+        /// glint on the minute). Power saving always behaves as 0.</summary>
+        public int Motion = 2;
+
+        /// <summary>Global shortcut that summons the command bar: an index into
+        /// Logic.HotkeyCore.Choices. 0 = automatic (the first combination that is free).</summary>
+        public int Hotkey = 0;
+
+        // currency converter (calculator): ISO codes; CurTo "" = the currency of Country
+        public string CurFrom = "USD";
+        public string CurTo = "";
+
+        // month calendar
+        /// <summary>When true the grid is laid out by Hijri months with the Gregorian day
+        /// small in each cell; otherwise the other way round.</summary>
+        public bool CalHijriFirst = false;
+        /// <summary>First column of the month grid as a DayOfWeek number: 6 = Saturday,
+        /// 0 = Sunday, 1 = Monday.</summary>
+        public int WeekStart = 0;
+
+        // screen capture & colour picker
+        /// <summary>Also save every screenshot as a PNG under Pictures\DeskMate.</summary>
+        public bool ShotSave = true;
+        /// <summary>Recently picked colours, newest first, as #RRGGBB.</summary>
+        public List<string> RecentColors = new List<string>();
 
         // ---------------- power saving ----------------
 
@@ -328,6 +367,9 @@ namespace DeskMate.Core
             Bit("ShowSysMon",         s => s.ShowSysMon,         (s, v) => s.ShowSysMon = v),
             Bit("ShowWorldClock",     s => s.ShowWorldClock,     (s, v) => s.ShowWorldClock = v),
             Bit("ShowCommand",        s => s.ShowCommand,        (s, v) => s.ShowCommand = v),
+            Bit("ShowCalendar",       s => s.ShowCalendar,       (s, v) => s.ShowCalendar = v),
+            Bit("ShowCapture",        s => s.ShowCapture,        (s, v) => s.ShowCapture = v),
+            Bit("ShowMedia",          s => s.ShowMedia,          (s, v) => s.ShowMedia = v),
             Bit("GroupTools",         s => s.GroupTools,         (s, v) => s.GroupTools = v),
             Bit("GroupDailyCollapsed",    s => s.GroupDailyCollapsed,    (s, v) => s.GroupDailyCollapsed = v),
             Bit("GroupSystemCollapsed",   s => s.GroupSystemCollapsed,   (s, v) => s.GroupSystemCollapsed = v),
@@ -358,7 +400,43 @@ namespace DeskMate.Core
             Str("OccasionCustomName", s => s.OccasionCustomName, (s, v) => s.OccasionCustomName = v),
             Bit("OccasionCustomYearly", s => s.OccasionCustomYearly, (s, v) => s.OccasionCustomYearly = v),
             List("WorldClocks",       s => s.WorldClocks),
+
+            Bit("AutoUpdateCheck",    s => s.AutoUpdateCheck,    (s, v) => s.AutoUpdateCheck = v),
+            Str("LastUpdateCheck",    s => s.LastUpdateCheck,    (s, v) => s.LastUpdateCheck = v),
+            Int("Motion",             s => s.Motion,             (s, v) => s.Motion = v),
+            Int("Hotkey",             s => s.Hotkey,             (s, v) => s.Hotkey = v),
+            Str("CurFrom",            s => s.CurFrom,            (s, v) => s.CurFrom = v),
+            Str("CurTo",              s => s.CurTo,              (s, v) => s.CurTo = v),
+            Bit("CalHijriFirst",      s => s.CalHijriFirst,      (s, v) => s.CalHijriFirst = v),
+            Int("WeekStart",          s => s.WeekStart,          (s, v) => s.WeekStart = v),
+            Bit("ShotSave",           s => s.ShotSave,           (s, v) => s.ShotSave = v),
+            List("RecentColors",      s => s.RecentColors),
         };
+
+        /// <summary>Highest valid palette index. Keep equal to UI.Theme.Palettes.Length - 1
+        /// (UiSmoke asserts it) — an out-of-range value used to loop Theme.Apply → Reload →
+        /// tick → Apply until StackOverflow killed the process.</summary>
+        public const int MaxThemeIndex = 14;
+        public const int MaxRecentColors = 12;
+
+        static bool IsCurrencyCode(string c)
+        {
+            if (c == null || c.Length != 3) return false;
+            foreach (char ch in c) if (ch < 'A' || ch > 'Z') return false;
+            return true;
+        }
+
+        static bool IsHexColor(string c)
+        {
+            if (c == null || c.Length != 7 || c[0] != '#') return false;
+            for (int i = 1; i < 7; i++)
+            {
+                char ch = c[i];
+                bool hex = (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f');
+                if (!hex) return false;
+            }
+            return true;
+        }
 
         /// <summary>Forces values from a hand-edited or corrupted file back into usable ranges.
         /// Applied after every load; never trust the file to be sane.</summary>
@@ -368,10 +446,19 @@ namespace DeskMate.Core
             if (Scale < 0.6 || Scale > 1.8) Scale = 1.0;
             if (BgOpacity < 0.3 || BgOpacity > 1.0) BgOpacity = 1.0;
             if (AdhanSound < 0 || AdhanSound > 2) AdhanSound = 0;
-            // keep in sync with UI.Theme.Palettes.Length — an out-of-range value used to
-            // loop Theme.Apply → Reload → tick → Apply until StackOverflow killed the process
-            if (ThemeIndex < 0 || ThemeIndex > 12) ThemeIndex = 0;
-            if (LightThemeIndex < 0 || LightThemeIndex > 12) LightThemeIndex = 4;
+            if (ThemeIndex < 0 || ThemeIndex > MaxThemeIndex) ThemeIndex = 0;
+            if (LightThemeIndex < 0 || LightThemeIndex > MaxThemeIndex) LightThemeIndex = 4;
+            if (Motion < 0 || Motion > 2) Motion = 2;
+            if (Hotkey < 0 || Hotkey >= Logic.HotkeyCore.Choices.Length) Hotkey = 0;
+            if (WeekStart != 6 && WeekStart != 0 && WeekStart != 1) WeekStart = 0;
+            CurFrom = (CurFrom ?? "").Trim().ToUpperInvariant();
+            CurTo = (CurTo ?? "").Trim().ToUpperInvariant();
+            if (!IsCurrencyCode(CurFrom)) CurFrom = "USD";
+            if (CurTo.Length > 0 && !IsCurrencyCode(CurTo)) CurTo = "";
+            if (LastUpdateCheck == null || LastUpdateCheck.Length > 40) LastUpdateCheck = "";
+            if (RecentColors == null) RecentColors = new List<string>();
+            RecentColors.RemoveAll(c => !IsHexColor(c));
+            while (RecentColors.Count > MaxRecentColors) RecentColors.RemoveAt(RecentColors.Count - 1);
             if (ClockStyle < 0 || ClockStyle > 10) ClockStyle = 0;
             if (IconStyle < 0 || IconStyle > 2) IconStyle = 0;
             if (FontChoice < 0 || FontChoice > 1) FontChoice = 0;   // 0..10: digital, analog, minimal, flip, word, neon, binary, day-ring, sun-path, day-stripes, moon-phase

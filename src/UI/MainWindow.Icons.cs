@@ -52,6 +52,11 @@ namespace DeskMate.UI
             if (s.ShowSysMon) list.Add(new ToolDef(Glyphs.SysMon, "f_sysmon", ToolIcons.SysMon, () => SysMonFeature.Open(this)));
             if (s.ShowWorldClock) list.Add(new ToolDef(Glyphs.WorldClock, "f_worldclock", ToolIcons.WorldClock, () => WorldClocksFeature.Open(this)));
             if (s.ShowCommand) list.Add(new ToolDef(Glyphs.Command, "f_command", ToolIcons.Command, () => CommandBarFeature.Open(this)));
+            if (s.ShowCalendar) list.Add(new ToolDef(Glyphs.Calendar, "f_calendar", ToolIcons.Calendar, () => CalendarFeature.Open(this)));
+            if (s.ShowCapture) list.Add(new ToolDef(Glyphs.Capture, "f_capture", ToolIcons.Capture, () => CaptureFeature.Open(this)));
+            if (s.ShowMedia) list.Add(new ToolDef(Glyphs.Media, "f_media", ToolIcons.Media, () => MediaFeature.Open(this)));
+            // the update tile exists only while a newer build is waiting on the channel
+            if (UpdateFeature.IsAvailable) list.Add(new ToolDef(Glyphs.Update, "f_update", ToolIcons.Update, () => UpdateFeature.Open(this)));
             list.Add(new ToolDef(Glyphs.SettingsGear, "f_settings", ToolIcons.Settings, () => SettingsFeature.Open(this)));
             return list;
         }

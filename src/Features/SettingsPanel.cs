@@ -261,6 +261,10 @@ namespace DeskMate.Features
             clockRow.Children.Add(clockLbl);
             stack.Children.Add(clockRow);
 
+            stack.Children.Add(ComboRow(L.T("st_motion"),
+                new[] { L.T("mo_off"), L.T("mo_calm"), L.T("mo_cinema") },
+                Settings.I.Motion, i => { Settings.I.Motion = i; SaveAndReload(); }));
+
             stack.Children.Add(Theme.MakeCheck(L.T("st_24h"), Settings.I.Use24h, v => { Settings.I.Use24h = v; SaveAndReload(); }));
             stack.Children.Add(Theme.MakeCheck(L.T("st_seconds"), Settings.I.ShowSeconds, v => { Settings.I.ShowSeconds = v; SaveAndReload(); }));
             stack.Children.Add(Theme.MakeCheck(L.T("st_hijri"), Settings.I.ShowHijri, v => { Settings.I.ShowHijri = v; SaveAndReload(); }));
@@ -313,6 +317,9 @@ namespace DeskMate.Features
             AddFeatureCheck(grid, "f_sysmon", Settings.I.ShowSysMon, v => Settings.I.ShowSysMon = v);
             AddFeatureCheck(grid, "f_worldclock", Settings.I.ShowWorldClock, v => Settings.I.ShowWorldClock = v);
             AddFeatureCheck(grid, "f_command", Settings.I.ShowCommand, v => Settings.I.ShowCommand = v);
+            AddFeatureCheck(grid, "f_calendar", Settings.I.ShowCalendar, v => Settings.I.ShowCalendar = v);
+            AddFeatureCheck(grid, "f_capture", Settings.I.ShowCapture, v => Settings.I.ShowCapture = v);
+            AddFeatureCheck(grid, "f_media", Settings.I.ShowMedia, v => Settings.I.ShowMedia = v);
             stack.Children.Add(grid);
 
             // ---- location ----
@@ -401,6 +408,50 @@ namespace DeskMate.Features
             doSearchHolder = doSearch;
             cityBox.KeyDown += (s, e) => { if (e.Key == System.Windows.Input.Key.Enter) doSearch(); };
 
+            // ---- shortcut, calendar, updates ----
+            stack.Children.Add(Theme.SectionTitle(L.T("st_hotkey")));
+            var hkNames = new string[HotkeyCore.Choices.Length];
+            for (int i = 0; i < hkNames.Length; i++)
+                hkNames[i] = i == HotkeyCore.Auto ? L.T("hk_auto") : i == HotkeyCore.Off ? L.T("hk_off") : HotkeyCore.Choices[i].Label;
+            var hkStatus = Theme.MakeText("", 11, Theme.TextFaint);
+            hkStatus.TextWrapping = TextWrapping.Wrap;
+            hkStatus.FlowDirection = FlowDirection.LeftToRight;
+            hkStatus.HorizontalAlignment = HorizontalAlignment.Center;
+            Action paintHk = () =>
+                hkStatus.Text = Settings.I.Hotkey == HotkeyCore.Off ? ""
+                    : string.IsNullOrEmpty(MainWindow.ActiveHotkey) ? L.T("hk_taken")
+                    : string.Format(L.T("hk_active"), MainWindow.ActiveHotkey);
+            stack.Children.Add(ComboRow(L.T("st_hotkey"), hkNames, Settings.I.Hotkey, i =>
+            {
+                Settings.I.Hotkey = i;
+                Settings.I.Save();
+                if (MainWindow.Instance != null) MainWindow.Instance.RegisterSummonHotkey();
+                paintHk();
+            }, false));
+            paintHk();
+            stack.Children.Add(hkStatus);
+
+            stack.Children.Add(ComboRow(L.T("st_week_start"),
+                new[] { L.T("wk_sun"), L.T("wk_mon"), L.T("wk_sat") },
+                Settings.I.WeekStart == 1 ? 1 : Settings.I.WeekStart == 6 ? 2 : 0,
+                i => { Settings.I.WeekStart = i == 1 ? 1 : i == 2 ? 6 : 0; Settings.I.Save(); }, false));
+
+            stack.Children.Add(Theme.SectionTitle(L.T("f_update")));
+            stack.Children.Add(Theme.MakeCheck(L.T("st_auto_update"), Settings.I.AutoUpdateCheck,
+                v => { Settings.I.AutoUpdateCheck = v; Settings.I.Save(); }));
+            var verLine = Theme.MakeText("DeskMate " + UpdateCore.Display(AppVersion.FourPart), 11.5, Theme.TextFaint);
+            verLine.FlowDirection = FlowDirection.LeftToRight;
+            verLine.HorizontalAlignment = HorizontalAlignment.Center;
+            stack.Children.Add(verLine);
+            var updBtn = Theme.MakeButton(L.T("st_check_update"), () =>
+            {
+                UpdateFeature.Check(true);
+                PanelWindow.CloseCurrent();
+                UpdateFeature.Open(MainWindow.Instance);
+            }, false, new Thickness(12, 6, 12, 6));
+            updBtn.HorizontalAlignment = HorizontalAlignment.Center;
+            stack.Children.Add(updBtn);
+
             // ---- backup: export / import the whole settings file ----
             stack.Children.Add(Theme.SectionTitle(L.T("st_backup")));
             // the file carries tasks/notes/pinned clips too (DPAPI-encrypted) — say so,
@@ -476,6 +527,24 @@ namespace DeskMate.Features
             stack.Children.Add(backupStatus);
 
             return scroll;
+        }
+
+        /// <summary>A label with a combo on the far side — the shape every simple choice takes.</summary>
+        static FrameworkElement ComboRow(string label, string[] items, int selected, Action<int> onChange, bool mirror = false)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 2, 0, 4) };
+            var combo = Theme.MakeCombo();
+            foreach (string it in items) combo.Items.Add(it);
+            combo.SelectedIndex = Math.Max(0, Math.Min(items.Length - 1, selected));
+            bool ready = false;
+            combo.SelectionChanged += (s, e) => { if (ready && combo.SelectedIndex >= 0) onChange(combo.SelectedIndex); };
+            ready = true;
+            DockPanel.SetDock(combo, Dock.Right);
+            row.Children.Add(combo);
+            var lbl = Theme.MakeText(label, 13, Theme.TextDim);
+            lbl.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(lbl);
+            return row;
         }
 
         static void AddFeatureCheck(Panel panel, string key, bool current, Action<bool> set)

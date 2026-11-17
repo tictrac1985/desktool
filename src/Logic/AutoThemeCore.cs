@@ -12,11 +12,11 @@ namespace DeskMate.Logic
         /// palette. Out-of-range choices clamp to 0 so a corrupt setting can never make the
         /// effective index differ from the applied one forever (that mismatch used to spin
         /// Reload until the process died). Bounds mirror Settings.Normalize: palettes now
-        /// run 0..12.</summary>
+        /// run 0..Settings.MaxThemeIndex.</summary>
         public static int EffectiveIndex(int chosen, int light, bool auto, int hour)
         {
-            if (chosen < 0 || chosen > 12) chosen = 0;
-            if (light < 0 || light > 12) light = 4;
+            if (chosen < 0 || chosen > Core.Settings.MaxThemeIndex) chosen = 0;
+            if (light < 0 || light > Core.Settings.MaxThemeIndex) light = 4;
             if (!auto) return chosen;
             return hour >= DayStartHour && hour < DayEndHour ? light : chosen;
         }

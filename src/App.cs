@@ -10,11 +10,20 @@ namespace DeskMate
         static EventWaitHandle _showEvent;
 
         [STAThread]
-        public static int Main()
+        public static int Main(string[] args)
         {
+            bool afterUpdate = args != null && Array.IndexOf(args, "--updated") >= 0;
             bool createdNew;
             using (var mutex = new Mutex(true, "DeskMate.SingleInstance", out createdNew))
             {
+                if (!createdNew && afterUpdate)
+                {
+                    // This launch is the restart after a self-update: the previous version
+                    // started us and is on its way out. Wait for it to let go of the
+                    // single-instance mutex instead of bowing out as a "second launch".
+                    try { createdNew = mutex.WaitOne(TimeSpan.FromSeconds(15)); }
+                    catch (AbandonedMutexException) { createdNew = true; }
+                }
                 if (!createdNew)
                 {
                     // second launch (e.g. desktop icon): tell the running instance to show itself
@@ -61,6 +70,7 @@ namespace DeskMate
                 var win = new UI.MainWindow();
                 StartShowListener(app);
                 win.Show();
+                Features.UpdateFeature.OnStartup(args);
                 app.Run();
                 return 0;
             }

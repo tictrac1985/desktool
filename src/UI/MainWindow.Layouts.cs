@@ -93,10 +93,12 @@ namespace DeskMate.UI
                 if (e.OriginalSource is FrameworkElement) { try { DragMove(); SavePosition(); } catch { } }
             };
             Content = host;
+            Cinema.AttachPointerLight(host, _cards);
 
             ApplyCardOpacity();
             if (_clock != null) _clock.Tick(DateTime.Now);
             ScheduleConnectorDraw();
+            Cinema.Entrance(_cards);
         }
 
         /// <summary>The optional lines under the clock (next prayer, current weather, the

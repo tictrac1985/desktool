@@ -97,6 +97,10 @@ namespace DeskMate.UI
                 case "sysmon": return Glyphs.SysMon;
                 case "worldclock": return Glyphs.WorldClock;
                 case "command": return Glyphs.Command;
+                case "calendar": return Glyphs.Calendar;
+                case "capture": return Glyphs.Capture;
+                case "media": return Glyphs.Media;
+                case "update": return Glyphs.Update;
                 default: return "";
             }
         }
@@ -123,6 +127,10 @@ namespace DeskMate.UI
                 case "worldclock": return ToolIcons.WorldClock;
                 case "command": return ToolIcons.Command;
                 case "settings": return ToolIcons.Settings;
+                case "calendar": return ToolIcons.Calendar;
+                case "capture": return ToolIcons.Capture;
+                case "media": return ToolIcons.Media;
+                case "update": return ToolIcons.Update;
                 default: return -1;
             }
         }

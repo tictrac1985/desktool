@@ -24,8 +24,11 @@ namespace DeskMate.Logic
                 case "f_apps":
                 case "f_sysmon":
                 case "f_worldclock":
+                case "f_capture":
+                case "f_media":
                     return System;
                 case "f_settings":
+                case "f_update":      // a waiting update must never hide inside a collapsed section
                     return Ungrouped;
                 default:
                     return Daily;   // f_prayer, f_weather, f_occasions, f_focus, f_note,

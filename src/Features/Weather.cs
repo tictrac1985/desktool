@@ -1,6 +1,4 @@
 using System;
-using System.IO;
-using System.Net;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -16,56 +14,11 @@ namespace DeskMate.Features
         static WeatherData _cache;
         static double _cacheLat, _cacheLon; // coords the cache belongs to — a city change invalidates it
 
-        /// <summary>Largest response we will read. These endpoints answer with a couple of KB;
-        /// anything bigger is a hostile or broken server and must not be buffered.</summary>
-        const int MaxResponseBytes = 256 * 1024;
-
-        static bool _tlsReady;
-
-        /// <summary>SystemDefault (the .NET 4.8 default) is the right choice in principle —
-        /// Windows then picks the best protocol, future versions included. In the field it
-        /// fails on some machines ("Could not create SSL/TLS secure channel" against
-        /// open-meteo.com), so 1.2 and 1.3 are enabled explicitly as a floor.
-        /// The two are enabled in separate attempts on purpose: TLS 1.3 (12288) is not a
-        /// defined value on every patch level, and a single combined assignment that threw
-        /// left the process with neither — the exact failure this works around.</summary>
-        static void EnsureTls()
-        {
-            if (_tlsReady) return;
-            _tlsReady = true;
-            try { ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12; }
-            catch (Exception ex) { Log.Error("tls12", ex); }
-            try { ServicePointManager.SecurityProtocol |= (SecurityProtocolType)12288; }
-            catch { /* TLS 1.3 unknown to this OS/runtime — 1.2 above is enough */ }
-        }
-
+        /// <summary>Kept as the weather-facing name; the transport itself (TLS floor, size
+        /// cap, timeouts) lives in <see cref="Http"/> so every feature shares one hardened path.</summary>
         public static string HttpGet(string url, int timeoutMs = 8000)
         {
-            EnsureTls();
-            var req = (HttpWebRequest)WebRequest.Create(url);
-            req.Timeout = timeoutMs;
-            req.ReadWriteTimeout = timeoutMs;
-            req.UserAgent = "DeskMate/" + AppVersion.Text;   // one version source, not a literal
-            req.AllowAutoRedirect = true;
-            req.MaximumAutomaticRedirections = 3;
-            using (var resp = (HttpWebResponse)req.GetResponse())
-            using (var stream = resp.GetResponseStream())
-            {
-                if (stream == null) return "";
-                var buffer = new char[8192];
-                var sb = new System.Text.StringBuilder();
-                using (var reader = new StreamReader(stream))
-                {
-                    int read;
-                    while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
-                    {
-                        sb.Append(buffer, 0, read);
-                        if (sb.Length > MaxResponseBytes)
-                            throw new InvalidOperationException("response exceeds " + MaxResponseBytes + " bytes");
-                    }
-                }
-                return sb.ToString();
-            }
+            return Http.Get(url, timeoutMs);
         }
 
         /// <summary>Detect location by IP; fills Settings and returns it (null on failure).</summary>
@@ -132,6 +85,13 @@ namespace DeskMate.Features
 
         static int _refreshing;
 
+        // ---- quiet failure handling for the widget line ----
+        // A laptop that is offline used to retry every minute and write a stack trace to the
+        // log each time — 384 of them in one user's log. Failures now back off (2, 4, 8 …
+        // capped at 30 minutes) and an outage is logged once, when it starts.
+        static int _lineFailures;
+        static DateTime _lineRetryAt = DateTime.MinValue;
+
         /// <summary>Refreshes the cache in the background if it is stale. Deliberately returns
         /// without doing anything when no location is known: the widget line must never be the
         /// thing that first sends the user's IP to a geolocation service — that stays an
@@ -140,11 +100,24 @@ namespace DeskMate.Features
         {
             if (!Settings.I.ShowWeather || !Settings.I.ShowWeatherLine) return;
             if (!HasLocation || IsCacheFresh()) return;
+            if (DateTime.Now < _lineRetryAt) return;          // backing off after a failure
             if (System.Threading.Interlocked.CompareExchange(ref _refreshing, 1, 0) != 0) return;
             Task.Run(() =>
             {
-                try { GetWeather(false); }
-                catch (Exception ex) { Log.Error("weather line", ex); }
+                try
+                {
+                    GetWeather(false);
+                    if (_lineFailures > 0) Log.Write("weather line: back online");
+                    _lineFailures = 0;
+                    _lineRetryAt = DateTime.MinValue;
+                }
+                catch (Exception ex)
+                {
+                    _lineFailures++;
+                    _lineRetryAt = DateTime.Now.AddMinutes(Http.BackoffMinutes(_lineFailures));
+                    // one line per outage, not one stack trace per minute
+                    if (_lineFailures == 1) Log.Write("weather line: " + ex.Message + " (retrying with backoff)");
+                }
                 finally { System.Threading.Interlocked.Exchange(ref _refreshing, 0); }
             });
         }

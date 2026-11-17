@@ -43,6 +43,12 @@ static class UiSmoke
         Settings.I.MaterialYou = false;
         Theme.Apply(DeskMate.Logic.AutoThemeCore.EffectiveIndex(Settings.I.ThemeIndex, Settings.I.LightThemeIndex, Settings.I.AutoTheme, DateTime.Now.Hour));
         _app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        if (Settings.MaxThemeIndex != Theme.Palettes.Length - 1)
+        {
+            _failures.Add("Settings.MaxThemeIndex (" + Settings.MaxThemeIndex + ") != Palettes.Length - 1 (" + (Theme.Palettes.Length - 1) + ")");
+            Console.WriteLine("FAIL " + _failures[_failures.Count - 1]);
+        }
+        Settings.I.Motion = 0;   // captures must be of the settled picture, never mid-entrance
         _win = new MainWindow();
         _win.Show();
         // keep everything off the user's screen while capturing
@@ -62,7 +68,7 @@ static class UiSmoke
             int l = ly;
             step("layout" + l, () => Look(l, 8, 0, 0, 0), 800);
         }
-        foreach (int th in new[] { 12, 10, 4, 8, 6, 1 })
+        foreach (int th in new[] { 12, 10, 4, 8, 6, 1, 13, 14 })
         {
             int t = th;
             step("orbit_theme" + t, () => Look(3, 8, t, 0, 0), 800);
@@ -96,6 +102,11 @@ static class UiSmoke
         step("weather", () => WeatherFeature.Open(_win), 6000);
         step("apps", () => AppsFeature.Open(_win), 2000);
         step("prayer", () => PrayerFeature.Open(_win), 6000);
+        step("calendar", () => CalendarFeature.Open(_win), 900);
+        step("calendar_hijri", () => { PanelWindow.CloseCurrent(); Settings.I.CalHijriFirst = true; CalendarFeature.Open(_win); }, 900);
+        step("capture", () => { Settings.I.RecentColors.Clear(); foreach (var c in new[] { "#FF6BD6", "#5EEAD4", "#E6C06A", "#6EC1FF" }) Settings.I.RecentColors.Add(c); CaptureFeature.Open(_win); }, 900);
+        step("media", () => MediaFeature.Open(_win), 900);
+        step("update", () => UpdateFeature.Open(_win), 900);
         step("settings", () => SettingsFeature.Open(_win), 1200);
         step("settings_light", () => { Look(3, 8, 12, 0, 0); SettingsFeature.Open(_win); }, 1200);
 
@@ -212,7 +223,8 @@ static class UiSmoke
                 // a panel still opening under load gets ONE extra beat before it counts as failed
                 bool widgetStep = !(prev == "cleaner" || prev == "calc" || prev == "clipboard" || prev == "focus"
                     || prev == "occasions" || prev == "note" || prev == "worldclock" || prev == "weather"
-                    || prev == "apps" || prev == "prayer" || prev.StartsWith("settings"));
+                    || prev == "apps" || prev == "prayer" || prev.StartsWith("calendar") || prev == "capture" || prev == "media"
+                    || prev == "update" || prev.StartsWith("settings"));
                 bool panelMissing = !widgetStep && PanelWindow.Current == null;
                 if (panelMissing && _retried != prev)
                 {

@@ -55,13 +55,41 @@ namespace DeskMate.Features
 
             // the global hotkey is invisible UI — a bar that answers to Win+Alt+D has to
             // say so somewhere or nobody discovers it
-            var hotkeyHint = Theme.MakeText(L.T("cb_hotkey_hint"), 10.5, Theme.TextFaint);
+            var hotkeyHint = Theme.MakeText(string.Format(L.T("cb_hotkey_hint"), MainWindow.ActiveHotkey), 10.5, Theme.TextFaint);
+            hotkeyHint.Visibility = string.IsNullOrEmpty(MainWindow.ActiveHotkey) ? Visibility.Collapsed : Visibility.Visible;
+            hotkeyHint.FlowDirection = FlowDirection.LeftToRight;
             hotkeyHint.HorizontalAlignment = HorizontalAlignment.Center;
             hotkeyHint.Margin = new Thickness(0, 10, 0, 0);
             stack.Children.Add(hotkeyHint);
 
+            // "100 دولار كم ريال" — recognised before the task parser sees it. The answer is
+            // shown in the preview; Enter copies it.
+            CurrencyRates rates = CurrencyFeature.Cached;
+            Func<string, string> convertLine = text =>
+            {
+                double amount; string from, to;
+                if (!CurrencyCore.TryParsePhrase(text, CurrencyFeature.HomeCurrency, out amount, out from, out to))
+                    return null;
+                if (rates == null) return "…";
+                return CurrencyCore.Format(amount) + " " + from + "  =  "
+                     + CurrencyCore.Format(CurrencyCore.Convert(rates, amount, from, to)) + " " + to
+                     + (string.IsNullOrEmpty(rates.Date) ? "" : "   ·   " + rates.Date);
+            };
+            Action refreshHolder = null;
+            bool ratesAsked = false;
+
             Action execute = () =>
             {
+                string money = convertLine(box.Text);
+                if (money != null)
+                {
+                    if (money != "…")
+                    {
+                        try { Clipboard.SetText(money.Split(new[] { "   ·   " }, StringSplitOptions.None)[0]); preview.Text = money + "   ✓"; }
+                        catch (Exception ex) { Log.Error("cb copy", ex); }
+                    }
+                    return;   // stay open: the next question is usually another amount
+                }
                 var cmd = CommandParse.Parse(box.Text, DateTime.Now);
                 switch (cmd.Kind)
                 {
@@ -99,6 +127,22 @@ namespace DeskMate.Features
                 placeholder.Visibility = box.Text.Length > 0 ? Visibility.Collapsed : Visibility.Visible;
                 string t = box.Text.Trim();
                 if (t.Length == 0) { preview.Text = ""; return; }
+                string money = convertLine(t);
+                if (money != null)
+                {
+                    preview.Text = money;
+                    if (!ratesAsked && !CurrencyCore.IsFresh(rates, DateTime.UtcNow))
+                    {
+                        // first conversion of the session: fetch once, then repaint the line
+                        ratesAsked = true;
+                        CurrencyFeature.Ensure(host.Dispatcher, (r, pending) =>
+                        {
+                            if (r != null) rates = r;
+                            if (refreshHolder != null && host.IsVisible) refreshHolder();
+                        });
+                    }
+                    return;
+                }
                 var cmd = CommandParse.Parse(t, DateTime.Now);
                 switch (cmd.Kind)
                 {
@@ -124,6 +168,7 @@ namespace DeskMate.Features
                 }
             };
 
+            refreshHolder = refresh;
             box.TextChanged += (s, e) => refresh();
             box.KeyDown += (s, e) =>
             {

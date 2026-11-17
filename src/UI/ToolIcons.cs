@@ -37,7 +37,8 @@ namespace DeskMate.UI
         // Tool ids — the registry order in MainWindow.IconDefs and Theme.ToolHues.
         public const int Cleaner = 0, Calc = 1, Wallpaper = 2, Power = 3, Clipboard = 4,
                          Weather = 5, Apps = 6, Prayer = 7, Focus = 8, Occasions = 9,
-                         Note = 10, SysMon = 11, WorldClock = 12, Command = 13, Settings = 14;
+                         Note = 10, SysMon = 11, WorldClock = 12, Command = 13, Settings = 14,
+                         Calendar = 15, Capture = 16, Media = 17, Update = 18;
 
         /// <summary>Tile gradient per tool: light top → deep bottom. Neighbours on the default
         /// ring alternate warm and cool so no two adjacent tiles blur together.</summary>
@@ -58,6 +59,10 @@ namespace DeskMate.UI
             { "#5FE3F0", "#0FA4C0" },   // WorldClock — cyan
             { "#66718C", "#2B3245" },   // Command    — slate
             { "#A9B1BF", "#66707F" },   // Settings   — steel
+            { "#FF7189", "#DB2F55" },   // Calendar   — crimson
+            { "#E88BFF", "#B343E2" },   // Capture    — fuchsia
+            { "#FFAA5C", "#F27A1A" },   // Media      — orange
+            { "#5EE38A", "#16A34A" },   // Update     — green (only shown while an update waits)
         };
 
         const string Gear = "M12.50 5.12 L13.70 3.26 L16.97 4.62 L16.51 6.78 A6.9 6.9 0 0 1 17.22 7.49 L19.38 7.03 L20.74 10.30 L18.88 11.50 A6.9 6.9 0 0 1 18.88 12.50 L20.74 13.70 L19.38 16.97 L17.22 16.51 A6.9 6.9 0 0 1 16.51 17.22 L16.97 19.38 L13.70 20.74 L12.50 18.88 A6.9 6.9 0 0 1 11.50 18.88 L10.30 20.74 L7.03 19.38 L7.49 17.22 A6.9 6.9 0 0 1 6.78 16.51 L4.62 16.97 L3.26 13.70 L5.12 12.50 A6.9 6.9 0 0 1 5.12 11.50 L3.26 10.30 L4.62 7.03 L6.78 7.49 A6.9 6.9 0 0 1 7.49 6.78 L7.03 4.62 L10.30 3.26 L11.50 5.12 A6.9 6.9 0 0 1 12.50 5.12 Z";
@@ -115,6 +120,20 @@ namespace DeskMate.UI
                     "s:M7.2 9.6 L10.2 12 L7.2 14.4", "s:M12.4 15 H16.6" },
             // 14 Settings — gear
             new[] { "s:" + Gear, "c:12,12,2.9" },
+            // 15 Calendar — a month page: binding rings, header rule, day dots
+            new[] { "s:M6.5 5 H17.5 A2.5 2.5 0 0 1 20 7.5 V18 A2.5 2.5 0 0 1 17.5 20.5 H6.5 A2.5 2.5 0 0 1 4 18 V7.5 A2.5 2.5 0 0 1 6.5 5 Z",
+                    "s:M4.4 10 H19.6", "s:M8.5 3 V6.6 M15.5 3 V6.6",
+                    "d:8.5,13.7,1.2", "d:12,13.7,1.2", "d:15.5,13.7,1.2", "d:8.5,17.1,1.2", "d:12,17.1,1.2" },
+            // 16 Capture — viewfinder corners around a lens
+            new[] { "s:M4 8.6 V6.5 A2.5 2.5 0 0 1 6.5 4 H8.6", "s:M15.4 4 H17.5 A2.5 2.5 0 0 1 20 6.5 V8.6",
+                    "s:M20 15.4 V17.5 A2.5 2.5 0 0 1 17.5 20 H15.4", "s:M8.6 20 H6.5 A2.5 2.5 0 0 1 4 17.5 V15.4",
+                    "c:12,12,3.3", "d:12,12,1.1" },
+            // 17 Media — speaker with two sound waves
+            new[] { "s:M4.5 9.6 H7.6 L12 5.6 V18.4 L7.6 14.4 H4.5 Z",
+                    "s:M15.2 9.2 A4 4 0 0 1 15.2 14.8", "s:M17.7 6.6 A7.6 7.6 0 0 1 17.7 17.4" },
+            // 18 Update — an arrow dropping into a tray
+            new[] { "s:M12 3.6 V14.6", "s:M7.6 10.4 L12 14.8 L16.4 10.4",
+                    "s:M4.5 16 V18 A2.5 2.5 0 0 0 7 20.5 H17 A2.5 2.5 0 0 0 19.5 18 V16" },
         };
 
         static Color Hex(string hex)
@@ -139,8 +158,11 @@ namespace DeskMate.UI
         {
             if (!Known(id)) return null;
             int style = Core.Settings.I.IconStyle;
-            FrameworkElement body = style == 2 ? ClassicBody(id, size) : TileBody(id, size, style == 1);
-            if (body == null) return null;
+            // the hand-drawn objects exist for the original fifteen tools only; a newer tool
+            // shows its tile there rather than dropping back to a bare font glyph
+            bool tile = style != 2;
+            FrameworkElement body = tile ? null : ClassicBody(id, size);
+            if (body == null) { tile = true; body = TileBody(id, size, style == 1); }
 
             // contact shadow: an oval of soft dark light pooled under the object. On light
             // themes a desktop already reflects light upward, so the shadow is gentler.
@@ -150,7 +172,6 @@ namespace DeskMate.UI
             sh.GradientStops.Add(new GradientStop(Color.FromArgb((byte)(255 * sa * 0.45), 0, 0, 0), 0.55));
             sh.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
             sh.Freeze();
-            bool tile = style != 2;
             var shadow = new Ellipse
             {
                 Width = size * (tile ? 0.78 : 0.62), Height = size * (tile ? 0.17 : 0.13),

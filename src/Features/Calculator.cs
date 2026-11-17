@@ -20,6 +20,7 @@ namespace DeskMate.Features
     {
         static bool _pro;
         static bool _units;
+        static bool _currency;
 
         /// <summary>Recent "expression = result" pairs, newest first. A calculator without any
         /// memory of what you just worked out forces you to retype the number you are building
@@ -384,6 +385,124 @@ namespace DeskMate.Features
             }
             stack.Children.Add(unitsGrid);
 
+            // ---------------- currency ribbon ----------------
+            // The number on the display, in another currency, live as you type. The rates
+            // are fetched the first time the ribbon is opened (never before), cached on
+            // disk, and their date is always printed under the answer.
+            var curHost = new StackPanel
+            {
+                Visibility = _currency ? Visibility.Visible : Visibility.Collapsed,
+                Margin = new Thickness(3, 4, 3, 2),
+                FlowDirection = L.IsAr ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
+            };
+            var fromCombo = Theme.MakeCombo();
+            var toCombo = Theme.MakeCombo();
+            fromCombo.MinWidth = toCombo.MinWidth = 0;
+            foreach (var c in CurrencyCore.All)
+            {
+                string label = c.Code + "  ·  " + (L.IsAr ? c.NameAr : c.NameEn);
+                fromCombo.Items.Add(label);
+                toCombo.Items.Add(label);
+            }
+            fromCombo.SelectedIndex = Math.Max(0, CurrencyCore.IndexOf(Settings.I.CurFrom));
+            toCombo.SelectedIndex = Math.Max(0, CurrencyCore.IndexOf(CurrencyFeature.HomeCurrency));
+            if (fromCombo.SelectedIndex == toCombo.SelectedIndex)
+                fromCombo.SelectedIndex = CurrencyCore.IndexOf(toCombo.SelectedIndex == CurrencyCore.IndexOf("USD") ? "EUR" : "USD");
+
+            var curResult = new TextBlock
+            {
+                FontSize = 19,
+                FontFamily = Theme.UiFont,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Theme.Accent,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                TextAlignment = TextAlignment.Center,
+                FlowDirection = FlowDirection.LeftToRight,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 9, 0, 0),
+                Cursor = Cursors.Hand,
+                ToolTip = L.T("cur_use"),
+                Background = Brushes.Transparent,
+            };
+            var curNote = Theme.MakeText("", 11.5, Theme.TextFaint);
+            curNote.HorizontalAlignment = HorizontalAlignment.Center;
+            curNote.TextAlignment = TextAlignment.Center;
+            curNote.FlowDirection = FlowDirection.LeftToRight;
+            curNote.Margin = new Thickness(0, 2, 0, 0);
+
+            CurrencyRates rates = CurrencyFeature.Cached;
+            bool ratesPending = false;
+            double curValue = double.NaN;      // the converted figure currently shown
+            Action recalc = () =>
+            {
+                if (curHost.Visibility != Visibility.Visible) return;
+                string from = CurrencyCore.All[Math.Max(0, fromCombo.SelectedIndex)].Code;
+                string to = CurrencyCore.All[Math.Max(0, toCombo.SelectedIndex)].Code;
+                double amount = 1;
+                string t = display.Text;
+                if (t.Length > 0 && t != L.T("calc_error"))
+                {
+                    try { amount = ExpressionEvaluator.Eval(ExpressionEvaluator.NormalizePercentPhrase(t)); }
+                    catch { amount = 1; }
+                }
+                if (rates == null)
+                {
+                    curValue = double.NaN;
+                    curResult.Text = ratesPending ? "…" : "—";
+                    curNote.Text = L.T(ratesPending ? "cur_loading" : "cur_offline");
+                    return;
+                }
+                curValue = CurrencyCore.Convert(rates, amount, from, to);
+                curResult.Text = CurrencyCore.Format(amount) + " " + from + "  =  " + CurrencyCore.Format(curValue) + " " + to;
+                string unit = "1 " + from + " = " + CurrencyCore.Format(CurrencyCore.Convert(rates, 1, from, to)) + " " + to;
+                curNote.Text = string.IsNullOrEmpty(rates.Date) ? unit : unit + "   ·   " + rates.Date;
+            };
+            Action loadRates = () => CurrencyFeature.Ensure(host.Dispatcher, (r, pending) =>
+            {
+                if (r != null) rates = r;
+                ratesPending = pending;
+                recalc();
+            });
+            Action savePair = () =>
+            {
+                Settings.I.CurFrom = CurrencyCore.All[Math.Max(0, fromCombo.SelectedIndex)].Code;
+                Settings.I.CurTo = CurrencyCore.All[Math.Max(0, toCombo.SelectedIndex)].Code;
+                Settings.I.Save();
+                recalc();
+            };
+            fromCombo.SelectionChanged += (s, e) => savePair();
+            toCombo.SelectionChanged += (s, e) => savePair();
+            var swapBtn = Theme.MakeIconButton("\uE8AB", L.T("cur_swap"), () =>
+            {
+                int a = fromCombo.SelectedIndex;
+                fromCombo.SelectedIndex = toCombo.SelectedIndex;
+                toCombo.SelectedIndex = a;
+            }, 30, 12);
+            var pickRow = new Grid();
+            pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            pickRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(fromCombo, 0); Grid.SetColumn(swapBtn, 1); Grid.SetColumn(toCombo, 2);
+            pickRow.Children.Add(fromCombo);
+            pickRow.Children.Add(swapBtn);
+            pickRow.Children.Add(toCombo);
+            curHost.Children.Add(pickRow);
+            curHost.Children.Add(curResult);
+            curHost.Children.Add(curNote);
+            // the answer is a button: a tap moves it onto the display to keep calculating
+            curResult.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
+            curResult.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                if (double.IsNaN(curValue) || double.IsInfinity(curValue)) return;
+                preview.Text = curResult.Text;
+                display.Text = Math.Round(curValue, 4).ToString("G12", CultureInfo.InvariantCulture);
+                display.CaretIndex = display.Text.Length;
+            };
+            display.TextChanged += (s, e) => recalc();
+            stack.Children.Add(curHost);
+            if (_currency) host.Loaded += (s, e) => loadRates();
+
             // ---------------- scientific toggle (ghost pill) ----------------
             var toggleFx = Theme.MakeText("fx", 11.5, Theme.Accent);
             toggleFx.FontWeight = FontWeights.Bold;
@@ -453,9 +572,41 @@ namespace DeskMate.Features
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
             };
+            // currency pill: third of the same family
+            var curFx = Theme.MakeText("$", 11.5, Theme.Accent);
+            curFx.FontWeight = FontWeights.Bold;
+            curFx.VerticalAlignment = VerticalAlignment.Center;
+            var curLabel = Theme.MakeText(L.T("calc_currency"), 11.5, Theme.TextDim);
+            curLabel.VerticalAlignment = VerticalAlignment.Center;
+            curLabel.Margin = new Thickness(5, 0, 0, 0);
+            var curContent = new StackPanel { Orientation = Orientation.Horizontal };
+            curContent.Children.Add(curFx);
+            curContent.Children.Add(curLabel);
+            var curToggle = new Border
+            {
+                Background = Theme.AccentSoft,
+                BorderBrush = Theme.ButtonBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(11, 3.5, 11, 3.5),
+                Margin = new Thickness(8, 7, 0, 0),
+                Cursor = Cursors.Hand,
+                Child = curContent,
+            };
+            Theme.AttachHover(curToggle, Theme.AccentSoft, Theme.HoverBg);
+            curToggle.MouseLeftButtonDown += (s, e) => { e.Handled = true; };
+            curToggle.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                _currency = !_currency;
+                curHost.Visibility = _currency ? Visibility.Visible : Visibility.Collapsed;
+                if (_currency) loadRates();
+            };
+
             toggle.Margin = new Thickness(0, 7, 8, 0);
             togglesRow.Children.Add(toggle);
             togglesRow.Children.Add(unitsToggle);
+            togglesRow.Children.Add(curToggle);
             stack.Children.Add(togglesRow);
 
             // ---------------- history strip ----------------

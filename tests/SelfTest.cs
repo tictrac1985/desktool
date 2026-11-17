@@ -58,6 +58,13 @@ static class SelfTest
         TestOccasionsSeasonal();
         TestMoonPhase();
         TestToolGroups();
+        TestUpdateCore();
+        TestCurrencyCore();
+        TestCurrencyPhrases();
+        TestCalendarCore();
+        TestColorCore();
+        TestHotkeyCore();
+        TestV112Settings();
         Console.WriteLine();
         Console.WriteLine("Passed: " + _pass + "   Failed: " + _fail);
         return _fail == 0 ? 0 : 1;
@@ -656,7 +663,8 @@ static class SelfTest
         Check(AutoThemeCore.EffectiveIndex(11, 8, true, 10) == 8, "auto theme day → violet (8)");
         // v1.10: palette table grew to 13 (0..12) — Daylight (12) is a valid light palette
         Check(AutoThemeCore.EffectiveIndex(12, false, 10) == 12, "daylight (12) accepted");
-        Check(AutoThemeCore.EffectiveIndex(13, false, 10) == 0, "index 13 clamps to 0");
+        Check(AutoThemeCore.EffectiveIndex(14, false, 10) == 14, "v1.12: index 14 (the newest palette) accepted");
+        Check(AutoThemeCore.EffectiveIndex(Settings.MaxThemeIndex + 1, false, 10) == 0, "first index past the last palette clamps to 0");
         Check(AutoThemeCore.EffectiveIndex(-1, false, 10) == 0, "index -1 clamps to 0");
     }
 
@@ -1033,5 +1041,249 @@ static class SelfTest
         Check(system.Count == 2 && system[0] == 1 && system[1] == 3,
               "split: system keeps registry order");
         Check(pinned.Count == 1 && pinned[0] == 5, "split: settings stays pinned last");
+    }
+
+    // ---------------- v1.12 ----------------
+
+    static void TestUpdateCore()
+    {
+        Version v;
+        Check(UpdateCore.TryParseVersion("1.12.0", out v) && v == new Version(1, 12, 0, 0), "version: three parts");
+        Check(UpdateCore.TryParseVersion("v1.12.0.34", out v) && v.Revision == 34, "version: v prefix + four parts");
+        Check(!UpdateCore.TryParseVersion("1.x.0", out v), "version: non-numeric rejected");
+        Check(!UpdateCore.TryParseVersion("", out v) && !UpdateCore.TryParseVersion("1", out v), "version: empty / single part rejected");
+        Check(!UpdateCore.TryParseVersion("1.2.3.4.5", out v), "version: five parts rejected");
+        Check(UpdateCore.IsNewer("1.12.0.5", "1.12.0.4"), "newer: higher revision");
+        Check(UpdateCore.IsNewer("1.13.0", "1.12.9.99"), "newer: higher minor beats any revision");
+        Check(!UpdateCore.IsNewer("1.12.0.4", "1.12.0.4"), "newer: equal is not newer");
+        Check(!UpdateCore.IsNewer("1.11.0", "1.12.0"), "newer: never a downgrade");
+        Check(!UpdateCore.IsNewer("garbage", "1.12.0") && !UpdateCore.IsNewer("1.12.1", "garbage"), "newer: unreadable is never newer");
+        Check(UpdateCore.Display("1.12.0.34") == "1.12.0 (34)" && UpdateCore.Display("1.12.0.0") == "1.12.0", "display form");
+
+        Check(UpdateCore.IsSafeFileName("DeskMate.exe") && UpdateCore.IsSafeFileName("DeskMateSetup.exe"), "file name: normal names pass");
+        Check(!UpdateCore.IsSafeFileName("..\\evil.exe") && !UpdateCore.IsSafeFileName("a/b.exe") && !UpdateCore.IsSafeFileName("x.dll")
+              && !UpdateCore.IsSafeFileName("") && !UpdateCore.IsSafeFileName("a..b.exe") && !UpdateCore.IsSafeFileName("http://x/y.exe"),
+              "file name: traversal, paths, urls and non-exe rejected");
+        Check(UpdateCore.FileUrl("DeskMate.exe") == UpdateCore.ChannelBase + "DeskMate.exe" && UpdateCore.FileUrl("../x.exe") == null, "file url only from safe names");
+        Check(UpdateCore.IsTrustedHost("raw.githubusercontent.com") && UpdateCore.IsTrustedHost("GitHub.com")
+              && !UpdateCore.IsTrustedHost("evil.example.com") && !UpdateCore.IsTrustedHost("raw.githubusercontent.com.evil.io") && !UpdateCore.IsTrustedHost(null),
+              "trusted hosts are an exact allow-list");
+
+        byte[] payload = new byte[256];
+        payload[0] = (byte)'M'; payload[1] = (byte)'Z';
+        for (int i = 2; i < payload.Length; i++) payload[i] = (byte)(i * 7);
+        string good = UpdateCore.Sha256Hex(payload);
+        Check(good.Length == 64, "sha256 is 64 hex chars");
+        var m = new UpdateManifest { Version = "1.12.0.40", Published = "2026-11-17T10:00:00Z", Notes = "note", File = "DeskMate.exe", Size = payload.Length, Sha256 = good,
+                                     SetupFile = "DeskMateSetup.exe", SetupSize = 4096, SetupSha256 = good };
+        var back = UpdateCore.ParseManifest(UpdateCore.WriteManifest(m));
+        Check(back != null && back.Version == m.Version && back.File == m.File && back.Size == m.Size && back.Sha256 == m.Sha256 && back.SetupFile == m.SetupFile,
+              "manifest round-trips");
+        Check(UpdateCore.ParseManifest("not json") == null && UpdateCore.ParseManifest("{}") == null, "manifest: garbage rejected");
+        var evil = UpdateCore.WriteManifest(new UpdateManifest { Version = "1.12.0.40", File = "..\\x.exe", Size = 10, Sha256 = good });
+        Check(UpdateCore.ParseManifest(evil) == null, "manifest: unsafe file name rejected");
+        var huge = UpdateCore.WriteManifest(new UpdateManifest { Version = "1.12.0.40", File = "DeskMate.exe", Size = UpdateCore.MaxPackageBytes + 1, Sha256 = good });
+        Check(UpdateCore.ParseManifest(huge) == null, "manifest: oversized package rejected");
+        var shortHash = UpdateCore.WriteManifest(new UpdateManifest { Version = "1.12.0.40", File = "DeskMate.exe", Size = 10, Sha256 = "abc" });
+        Check(UpdateCore.ParseManifest(shortHash) == null, "manifest: malformed hash rejected");
+        var noSetup = UpdateCore.WriteManifest(new UpdateManifest { Version = "1.12.0.40", File = "DeskMate.exe", Size = 10, Sha256 = good, SetupFile = "bad name", SetupSize = 1, SetupSha256 = "zz" });
+        var ns = UpdateCore.ParseManifest(noSetup);
+        Check(ns != null && ns.SetupFile == "", "manifest: a broken installer entry is dropped, the portable build still works");
+
+        string tmp = Path.Combine(Path.GetTempPath(), "deskmate_pkg_" + Guid.NewGuid().ToString("N") + ".bin");
+        try
+        {
+            File.WriteAllBytes(tmp, payload);
+            Check(UpdateCore.VerifyPackage(tmp, payload.Length, good) == null, "verify: exact file passes");
+            Check(UpdateCore.VerifyPackage(tmp, payload.Length + 1, good) != null, "verify: wrong size fails");
+            Check(UpdateCore.VerifyPackage(tmp, payload.Length, new string('0', 64)) != null, "verify: wrong hash fails");
+            payload[0] = (byte)'X';
+            File.WriteAllBytes(tmp, payload);
+            Check(UpdateCore.VerifyPackage(tmp, payload.Length, UpdateCore.Sha256Hex(payload)) != null, "verify: not an executable fails even with a matching hash");
+            Check(UpdateCore.VerifyPackage(tmp + ".missing", 1, good) != null, "verify: missing file fails");
+        }
+        finally { try { File.Delete(tmp); } catch { } }
+
+        var now = new DateTime(2026, 11, 17, 12, 0, 0, DateTimeKind.Utc);
+        Check(UpdateCore.DueForCheck("", now, 4), "due: never checked");
+        Check(!UpdateCore.DueForCheck(UpdateCore.Stamp(now.AddHours(-1)), now, 4), "due: checked an hour ago");
+        Check(UpdateCore.DueForCheck(UpdateCore.Stamp(now.AddHours(-5)), now, 4), "due: checked five hours ago");
+        Check(UpdateCore.DueForCheck(UpdateCore.Stamp(now.AddDays(3)), now, 4), "due: a future stamp does not postpone checks forever");
+        Check(UpdateCore.DueForCheck("not a date", now, 4), "due: unreadable stamp counts as due");
+        Check(Http.BackoffMinutes(0) == 0 && Http.BackoffMinutes(1) == 2 && Http.BackoffMinutes(2) == 4 && Http.BackoffMinutes(3) == 8
+              && Http.BackoffMinutes(4) == 16 && Http.BackoffMinutes(5) == 30 && Http.BackoffMinutes(40) == 30, "backoff: 2, 4, 8, 16, then 30");
+    }
+
+    static string RatesJson(string key)
+    {
+        return "{\"date\":\"2026-11-17\",\"" + key + "\":{\"usd\":1,\"sar\":3.75,\"egp\":48.5,\"eur\":0.92,\"gbp\":0.79,\"aed\":3.6725,\"kwd\":0.307,"
+             + "\"jpy\":150,\"try\":34,\"inr\":83,\"cad\":1.37,\"doge9\":0.00001}}";
+    }
+
+    static void TestCurrencyCore()
+    {
+        var fetched = new DateTime(2026, 11, 17, 8, 0, 0, DateTimeKind.Utc);
+        var r = CurrencyCore.Parse(RatesJson("usd"), fetched);
+        Check(r != null && r.PerUsd.ContainsKey("SAR") && !r.PerUsd.ContainsKey("DOGE9"), "rates: parsed; non-3-letter tickers skipped");
+        Check(r != null && r.Date == "2026-11-17", "rates: date kept");
+        CheckNear(CurrencyCore.Convert(r, 100, "USD", "SAR"), 375, 1e-9, "convert usd → sar");
+        CheckNear(CurrencyCore.Convert(r, 375, "SAR", "USD"), 100, 1e-9, "convert sar → usd");
+        CheckNear(CurrencyCore.Convert(r, 10, "EUR", "EUR"), 10, 1e-9, "convert same currency");
+        Check(double.IsNaN(CurrencyCore.Convert(r, 1, "USD", "XXX")) && double.IsNaN(CurrencyCore.Convert(null, 1, "USD", "SAR")), "convert unknown → NaN");
+        var er = CurrencyCore.Parse("{\"result\":\"success\",\"time_last_update_unix\":1795000000,\"rates\":{\"USD\":1,\"SAR\":3.75,\"EGP\":48.5,\"EUR\":0.92,\"GBP\":0.79,\"AED\":3.6725,\"KWD\":0.307,\"JPY\":150,\"TRY\":34,\"INR\":83,\"CAD\":1.37}}", fetched);
+        Check(er != null && er.PerUsd.ContainsKey("EGP") && er.Date.Length == 10, "rates: fallback feed shape parsed");
+        Check(CurrencyCore.Parse("{\"usd\":{\"usd\":1,\"sar\":3.75}}", fetched) == null, "rates: too few currencies rejected");
+        Check(CurrencyCore.Parse("{\"usd\":{\"usd\":2,\"sar\":3.75,\"egp\":48.5,\"eur\":0.92,\"gbp\":0.79,\"aed\":3.6,\"kwd\":0.3,\"jpy\":150,\"try\":34,\"inr\":83}}", fetched) == null, "rates: wrong USD base rejected");
+        Check(CurrencyCore.Parse("junk", fetched) == null, "rates: junk rejected");
+        Check(CurrencyCore.IsFresh(r, fetched.AddHours(3)) && !CurrencyCore.IsFresh(r, fetched.AddHours(13)) && !CurrencyCore.IsFresh(null, fetched), "rates: freshness window");
+        var cached = CurrencyCore.FromCache(CurrencyCore.ToCache(r));
+        Check(cached != null && cached.FetchedUtc == fetched && cached.PerUsd["SAR"] == r.PerUsd["SAR"] && cached.PerUsd.Count >= 10 && cached.Date == r.Date, "rates: cache round-trips");
+        Check(CurrencyCore.Format(1234.5) == "1,234.5" && CurrencyCore.Format(0.0186) == "0.0186" && CurrencyCore.Format(double.NaN) == "—", "money formatting");
+        Check(CurrencyCore.ForCountry("EG") == "EGP" && CurrencyCore.ForCountry("sa") == "SAR" && CurrencyCore.ForCountry("") == "SAR", "home currency by country");
+        Check(CurrencyCore.IndexOf("usd") >= 0 && CurrencyCore.IndexOf("zzz") < 0, "currency list lookup");
+    }
+
+    static void TestCurrencyPhrases()
+    {
+        double a; string f, t;
+        Check(CurrencyCore.TryParsePhrase("100 usd sar", "EGP", out a, out f, out t) && a == 100 && f == "USD" && t == "SAR", "phrase: codes");
+        Check(CurrencyCore.TryParsePhrase("20 eur to egp", "SAR", out a, out f, out t) && f == "EUR" && t == "EGP", "phrase: 'to' filler");
+        Check(CurrencyCore.TryParsePhrase("50 دولار", "SAR", out a, out f, out t) && a == 50 && f == "USD" && t == "SAR", "phrase: one currency converts to the default");
+        Check(CurrencyCore.TryParsePhrase("٥٠ دولار كم جنيه؟", "SAR", out a, out f, out t) && a == 50 && f == "USD" && t == "EGP", "phrase: arabic digits, 'كم', question mark");
+        Check(CurrencyCore.TryParsePhrase("250 ريال بالجنيه", "SAR", out a, out f, out t) && f == "SAR" && t == "EGP", "phrase: attached prefix");
+        Check(CurrencyCore.TryParsePhrase("1,500 usd", "SAR", out a, out f, out t) && a == 1500, "phrase: thousands separator");
+        Check(!CurrencyCore.TryParsePhrase("اشترِ بـ 100 ريال خبز", "SAR", out a, out f, out t), "phrase: a task that mentions money stays a task");
+        Check(!CurrencyCore.TryParsePhrase("meeting at 5 with bob", "SAR", out a, out f, out t), "phrase: ordinary text ignored");
+        Check(!CurrencyCore.TryParsePhrase("", "SAR", out a, out f, out t) && !CurrencyCore.TryParsePhrase("usd", "SAR", out a, out f, out t), "phrase: empty / no amount ignored");
+        Check(!CurrencyCore.TryParsePhrase("100 usd usd", "SAR", out a, out f, out t) || f != t, "phrase: never converts a currency to itself");
+    }
+
+    static void TestCalendarCore()
+    {
+        var today = new DateTime(2026, 11, 17);
+        var g = CalendarCore.BuildGregorian(2026, 11, DayOfWeek.Sunday, today, "SA", true);
+        Check(g.Cells.Length == 42 && g.Cells[0] != null && g.Cells[41] != null, "calendar: 6 × 7 cells");
+        Check(g.Cells[0].Date.DayOfWeek == DayOfWeek.Sunday, "calendar: grid starts on the chosen week start");
+        int inMonth = 0; foreach (var c in g.Cells) if (c.InMonth) inMonth++;
+        Check(inMonth == 30, "calendar: november has 30 days in the grid");
+        int todays = 0; foreach (var c in g.Cells) if (c.IsToday) todays++;
+        Check(todays == 1, "calendar: exactly one 'today'");
+        var sat = CalendarCore.BuildGregorian(2026, 11, DayOfWeek.Saturday, today, "SA", false);
+        Check(sat.Cells[0].Date.DayOfWeek == DayOfWeek.Saturday, "calendar: saturday week start");
+        var mon = CalendarCore.BuildGregorian(2026, 2, DayOfWeek.Monday, today, "", true);
+        int feb = 0; foreach (var c in mon.Cells) if (c.InMonth) feb++;
+        Check(feb == 28 && mon.Cells[0].Date.DayOfWeek == DayOfWeek.Monday, "calendar: february 2026 has 28 days");
+
+        int hy, hm, hd;
+        Check(CalendarCore.TryHijri(today, out hy, out hm, out hd) && hy == 1448 && (hm == 5 || hm == 6), "hijri: 17 Nov 2026 falls in 1448 (Jumada)");
+        DateTime back;
+        Check(CalendarCore.TryFromHijri(hy, hm, hd, out back) && back.Date == today, "hijri: round trip");
+        var h = CalendarCore.BuildHijri(1448, 9, DayOfWeek.Sunday, today, "SA", true);
+        Check(h != null && h.Hijri && h.Title.Contains("1448"), "hijri: ramadan 1448 builds");
+        int hin = 0; foreach (var c in h.Cells) if (c.InMonth) hin++;
+        Check(hin == 29 || hin == 30, "hijri: a month has 29 or 30 days");
+        Check(AutoThemeCore.EffectiveIndex(Settings.MaxThemeIndex, false, 10) == Settings.MaxThemeIndex, "auto theme: the newest palette is selectable");
+        Check(CalendarCore.BuildHijri(5000, 1, DayOfWeek.Sunday, today, "SA", true) == null, "hijri: out of range → null");
+
+        int y = 2026, m = 12;
+        CalendarCore.Step(ref y, ref m, 1);
+        Check(y == 2027 && m == 1, "step: december → january");
+        CalendarCore.Step(ref y, ref m, -1); CalendarCore.Step(ref y, ref m, -12);
+        Check(y == 2025 && m == 12, "step: back a year");
+        var cols = CalendarCore.Columns(DayOfWeek.Saturday);
+        Check(cols[0] == DayOfWeek.Saturday && cols[1] == DayOfWeek.Sunday && cols[6] == DayOfWeek.Friday, "columns follow the week start");
+        Check(CalendarCore.IsWeekend(DayOfWeek.Friday, "SA", true) && !CalendarCore.IsWeekend(DayOfWeek.Sunday, "SA", true), "weekend: friday–saturday in Saudi Arabia");
+        Check(CalendarCore.IsWeekend(DayOfWeek.Sunday, "US", false) && !CalendarCore.IsWeekend(DayOfWeek.Friday, "US", false), "weekend: saturday–sunday in the US");
+        Check(CalendarCore.OccasionFor(today, 9, 1, "SA", true) == "أول رمضان" && CalendarCore.OccasionFor(today, 3, 3, "SA", true) == null, "occasions by hijri date");
+        Check(CalendarCore.OccasionFor(new DateTime(2026, 9, 23), 3, 3, "SA", true) != null && CalendarCore.OccasionFor(new DateTime(2026, 9, 23), 3, 3, "EG", true) == null, "occasions: Saudi National Day only for SA");
+        Check(CalendarCore.Relative(today, today, true) == "اليوم" && CalendarCore.Relative(today.AddDays(1), today, true) == "غداً"
+              && CalendarCore.Relative(today.AddDays(5), today, true) == "بعد 5 أيام" && CalendarCore.Relative(today.AddDays(-3), today, false) == "3 days ago", "relative day phrases");
+        Check(CalendarCore.Describe(g.Cells[0], false).Length > 10, "describe is not empty");
+    }
+
+    static void TestColorCore()
+    {
+        Check(ColorCore.ToHex(255, 128, 0) == "#FF8000", "color: hex");
+        byte r, g, b;
+        Check(ColorCore.TryParseHex("#ff8000", out r, out g, out b) && r == 255 && g == 128 && b == 0, "color: parse long hex");
+        Check(ColorCore.TryParseHex("fa0", out r, out g, out b) && r == 0xFF && g == 0xAA && b == 0, "color: parse short hex");
+        Check(!ColorCore.TryParseHex("#12345", out r, out g, out b) && !ColorCore.TryParseHex("zzzzzz", out r, out g, out b) && !ColorCore.TryParseHex(null, out r, out g, out b), "color: bad hex rejected");
+        Check(ColorCore.ToRgbText(1, 2, 3) == "rgb(1, 2, 3)", "color: rgb text");
+        int h, s, l;
+        ColorCore.ToHsl(255, 0, 0, out h, out s, out l);
+        Check(h == 0 && s == 100 && l == 50, "color: red in HSL");
+        ColorCore.ToHsl(0, 0, 255, out h, out s, out l);
+        Check(h == 240 && s == 100 && l == 50, "color: blue in HSL");
+        ColorCore.ToHsl(128, 128, 128, out h, out s, out l);
+        Check(s == 0 && l == 50, "color: grey has no saturation");
+        Check(ColorCore.PrefersDarkText(255, 255, 255) && !ColorCore.PrefersDarkText(0, 0, 0) && ColorCore.PrefersDarkText(255, 255, 0), "color: label contrast choice");
+        var recent = new List<string>();
+        for (int i = 0; i < 20; i++) ColorCore.PushRecent(recent, ColorCore.ToHex((byte)i, 0, 0), 12);
+        Check(recent.Count == 12 && recent[0] == "#130000", "color: recent list is capped, newest first");
+        ColorCore.PushRecent(recent, "#0d0000", 12);
+        Check(recent.Count == 12 && recent[0] == "#0D0000" && recent.FindAll(c => c == "#0D0000").Count == 1, "color: recent list has no duplicates");
+        ColorCore.PushRecent(recent, "nonsense", 12);
+        Check(recent[0] == "#0D0000", "color: junk is not added");
+    }
+
+    static void TestHotkeyCore()
+    {
+        Check(HotkeyCore.Candidates(HotkeyCore.Auto).Length == HotkeyCore.AutoOrder.Length && HotkeyCore.AutoOrder.Length >= 3, "hotkey: auto tries several combinations");
+        Check(HotkeyCore.Candidates(HotkeyCore.Off).Length == 0 && HotkeyCore.Candidates(-1).Length == 0 && HotkeyCore.Candidates(99).Length == 0, "hotkey: off / invalid → none");
+        var one = HotkeyCore.Candidates(2);
+        Check(one.Length == 1 && one[0] == 2, "hotkey: an explicit pick is tried alone");
+        foreach (int idx in HotkeyCore.AutoOrder)
+        {
+            var c = HotkeyCore.Choices[idx];
+            Check(c.Key != 0 && c.Modifiers != 0, "hotkey: auto candidate " + c.Label + " is a real combination");
+            Check(!(c.Modifiers == (HotkeyCore.ModWin | HotkeyCore.ModAlt) && c.Key == 0x44), "hotkey: auto never includes the reserved Win+Alt+D");
+        }
+        var seen = new HashSet<string>();
+        for (int i = 1; i < HotkeyCore.Off; i++)
+            Check(seen.Add(HotkeyCore.Choices[i].Modifiers + ":" + HotkeyCore.Choices[i].Key), "hotkey: choice " + i + " is unique");
+        Check(HotkeyCore.Choices[HotkeyCore.Off].Key == 0, "hotkey: the last choice is 'off'");
+    }
+
+    static void TestV112Settings()
+    {
+        string tmp = Path.Combine(Path.GetTempPath(), "deskmate_v112_" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            Settings.OverridePath = tmp;
+            var s = new Settings
+            {
+                ShowCalendar = false, ShowCapture = false, ShowMedia = false, AutoUpdateCheck = false, Motion = 1, Hotkey = 3,
+                CurFrom = "EUR", CurTo = "EGP", CalHijriFirst = true, WeekStart = 6, ShotSave = false,
+            };
+            s.RecentColors.Add("#112233");
+            Settings.I = s;
+            Settings.I.Save();
+            Settings.I = new Settings();
+            Settings.Load();
+            var l = Settings.I;
+            Check(!l.ShowCalendar && !l.ShowCapture && !l.ShowMedia && !l.AutoUpdateCheck && l.Motion == 1 && l.Hotkey == 3, "v1.12 settings persist");
+            Check(l.CurFrom == "EUR" && l.CurTo == "EGP" && l.CalHijriFirst && l.WeekStart == 6 && !l.ShotSave, "v1.12 settings persist (currency, calendar, capture)");
+            Check(l.RecentColors.Count == 1 && l.RecentColors[0] == "#112233", "recent colours persist");
+
+            File.WriteAllText(tmp, "{\"Motion\":9,\"Hotkey\":77,\"WeekStart\":4,\"CurFrom\":\"dollars\",\"CurTo\":\"x\",\"ThemeIndex\":" + (Settings.MaxThemeIndex + 1)
+                                  + ",\"RecentColors\":[\"#GGGGGG\",\"#abcdef\",\"red\"],\"LastUpdateCheck\":\"" + new string('x', 200) + "\"}");
+            Settings.I = new Settings();
+            Settings.Load();
+            l = Settings.I;
+            Check(l.Motion == 2 && l.Hotkey == 0 && l.WeekStart == 0, "v1.12 clamps: motion, hotkey, week start");
+            Check(l.CurFrom == "USD" && l.CurTo == "", "v1.12 clamps: currency codes");
+            Check(l.ThemeIndex == 0, "v1.12 clamps: theme index beyond the last palette");
+            Check(l.RecentColors.Count == 1 && l.RecentColors[0] == "#abcdef", "v1.12 clamps: only real hex colours survive");
+            Check(l.LastUpdateCheck == "", "v1.12 clamps: absurd stamp dropped");
+            Check(new Settings().Motion == 2 && new Settings().AutoUpdateCheck && new Settings().Hotkey == 0, "v1.12 defaults: cinematic motion, auto-check on, automatic shortcut");
+        }
+        finally
+        {
+            Settings.OverridePath = null;
+            try { File.Delete(tmp); } catch { }
+        }
+        Check(ToolGroups.GroupOf("f_capture") == ToolGroups.System && ToolGroups.GroupOf("f_media") == ToolGroups.System, "capture + media are system tools");
+        Check(ToolGroups.GroupOf("f_calendar") == ToolGroups.Daily, "calendar is a daily tool");
+        Check(ToolGroups.GroupOf("f_update") == ToolGroups.Ungrouped, "update tile is never grouped away");
     }
 }

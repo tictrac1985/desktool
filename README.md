@@ -35,14 +35,20 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 | ⊞ | مراقب موارد: معالج وذاكرة وبطارية بأشرطة حية | System monitor: live CPU / memory / battery bars |
 | ◎ | ساعات عالمية لمدن تختارها مع فرق اليوم | World clocks for your cities, with day-offset badges |
 | ⚙ | إعدادات: اللغة، شكل الساعة، إظهار/إخفاء كل أداة، التشغيل مع ويندوز | Settings: language, clock style, show/hide any tool, autostart |
-| 🎨 | 13 ثيماً + ثيم تلقائي اختياري (فاتح نهاراً والمختار ليلاً) + ثيم من خلفية الشاشة + شفافية قابلة للضبط + تكبير/تصغير بمقبض الزاوية | 13 themes + optional auto theme (light by day) + wallpaper theme + adjustable transparency + corner-grip resizing |
+| 🎨 | 15 ثيماً + ثيم تلقائي اختياري (فاتح نهاراً والمختار ليلاً) + ثيم من خلفية الشاشة + شفافية قابلة للضبط + تكبير/تصغير بمقبض الزاوية | 15 themes + optional auto theme (light by day) + wallpaper theme + adjustable transparency + corner-grip resizing |
 | 🧊 | 8 أشكال للأداة — منها «مجسم» بعمق ثلاثي الأبعاد و«هالة» بحلقة دوّارة | 8 widget shapes — incl. the 3D «Monolith» slab and the revolving-ring «Halo» |
 | ✦ | سطر موسمي تحت الساعة: اقتراب المناسبات، وعدّاد إفطار حي في رمضان، وتهانئ العيد — يظهر ويختفي مع حجم الأداة تلقائياً | Seasonal line under the clock: occasion countdowns, live Ramadan iftar timer, Eid greetings — appears/hides with widget size automatically |
 | 📌 | اللوحات مثبّتة افتراضياً: تبقى مفتوحة أثناء عملك ولا تُغلق إلا أنت — أو أعد السلوك القديم من الإعدادات | Panels are pinned by default: they stay open while you work and only you close them — or restore the old behaviour in Settings |
 | 🗂 | تجميع الأدوات قابل للطي: «يومية» و«نظام» برأسين ينقران للطي، والإعدادات مثبّتة دائماً | Collapsible tool grouping: «Daily» and «System» sections with click-to-collapse headers, Settings always pinned |
 | 🔷 | أيقونات بثلاثة أشكال: مربعات ملوّنة موحّدة (الافتراضي) أو زجاجية بلون الثيم أو المجسّمات المرسومة — كلها ترتفع وتتوهج عند التحويم | Three icon looks: uniform colour tiles (default), theme-tinted glass, or the hand-drawn objects — all lift and glow on hover |
 | 🔤 | خط «تجوال» العربي مدمج داخل البرنامج (رخصة OFL) فيظهر على أي جهاز بلا تثبيت، مع خيار الرجوع لخط النظام | The Tajawal Arabic typeface ships inside the app (OFL licence), so it shows on any PC without installing anything — or switch back to the system font |
-| ⌨ | اختصار عام Win+Alt+D ينادي شريط الأوامر من أي مكان — حتى والأداة مخفية | Global Win+Alt+D hotkey summons the command bar from anywhere — even when the widget is hidden |
+| ⌨ | اختصار عام ينادي شريط الأوامر من أي مكان — حتى والأداة مخفية. الافتراضي «تلقائي» (Ctrl+Alt+Space أو أول اختصار حرّ) وقابل للتغيير من الإعدادات | A global shortcut summons the command bar from anywhere — even when the widget is hidden. Default «automatic» (Ctrl+Alt+Space or the first free one), changeable in Settings |
+| ⟳ | **زر التحديث من GitHub:** يفحص الأداة تلقائياً ويظهر مربع «التحديث» حين يوجد إصدار أحدث؛ التثبيت بضغطة منك بعد التحقق من الحجم والبصمة | **Update from GitHub:** checks automatically and shows an «Update» tile when a newer build exists; installing is your click, after size + SHA-256 verification |
+| 💱 | تحويل العملات (31 عملة) في الحاسبة وشريط الأوامر: «100 دولار كم ريال» | Currency conversion (31 currencies) in the calculator and command bar: «100 usd to sar» |
+| 📅 | تقويم هجري/ميلادي جنباً إلى جنب مع المناسبات | Hijri / Gregorian month calendar side by side, with occasions |
+| 📸 | لقطة شاشة (منطقة أو كاملة) ومنتقي ألوان بعدسة مكبّرة | Screenshot (region or full) and a magnifier colour picker |
+| 🔊 | مستوى الصوت والكتم وكتم الميكروفون وأزرار الوسائط | Volume, mute, microphone mute and media keys |
+| 🎬 | حركة سينمائية: دخول متتابع، ضوء يتبع المؤشر، ولمعة كل دقيقة (تُعطَّل في توفير الطاقة) | Cinematic motion: staggered entrance, pointer light, a glint each minute (off in power saving) |
 
 كل أيقونة يظهر اسم أداتها تحتها دائماً — لا حاجة للتخمين. · Every icon shows its tool's name beneath it — no guessing.
 
@@ -59,15 +65,23 @@ No prerequisites — runs on Windows 10/11 as-is (.NET Framework 4.8 is built in
 - **Draws only when it is seen:** hidden, minimised, or completely covered by the foreground window means no repaint at all — and a face with no seconds and no motion repaints once a minute, not once a second. Alerts (prayer, notes, focus) fire either way.
 - **Power saving** in Settings — stops the motion, softens the shadows and pins the repaint to once a minute; turns itself on when you unplug.
 
+## التحديث بين جهازين · Updating between two PCs
+
+1. على أي جهاز: عدّل الكود ثم `git push` إلى `main`.
+2. يبني GitHub Actions الإصدار ويحدّث فرع `updates` تلقائياً (`latest.json` + الملفان التنفيذيان).
+3. على الجهاز الآخر: يظهر مربع **التحديث** (أو الإعدادات ← «التحقق الآن») ← **تحديث الآن**.
+
+يتطلب أن يكون المستودع عاماً (القراءة بلا حساب). · Requires the repository to be public (read access without an account).
+
 ## البناء من المصدر · Build from source
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل 326 اختباراً ذاتياً للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
+يتطلب VS 2022 Build Tools (مترجم Roslyn) فقط — بدون ‎.NET SDK وبدون NuGet. يقوم السكربت بتوليد الأيقونة، تشغيل اختبارات ذاتية للمنطق، بناء `DeskMate.exe` ثم `DeskMateSetup.exe`.
 
-Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs 326 logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
+Requires only VS 2022 Build Tools (Roslyn csc) — no .NET SDK, no NuGet. The script generates the icon, runs logic self-tests, builds `DeskMate.exe` then `DeskMateSetup.exe`.
 
 ```powershell
 # لقطات معاينة لكل التخطيطات واللوحات في obj\uishots · render every layout & panel to obj\uishots

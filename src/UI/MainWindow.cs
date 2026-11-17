@@ -30,6 +30,9 @@ namespace DeskMate.UI
         public const string SysMon = "\uE772";
         public const string WorldClock = "\uE774";
         public const string Command = "\uE721";
+        public const string Capture = "\uE722";
+        public const string Media = "\uE767";
+        public const string Update = "\uE896";
     }
 
     /// <summary>The desktop widget shell. Split across:
@@ -139,10 +142,30 @@ namespace DeskMate.UI
             src.AddHook(WndProc);
             Win32.SendToBottom(_hwnd);
             Win32.ListenClipboard(_hwnd);
-            // Win+Alt+D summons the command bar from anywhere. If another app owns the combo
-            // the registration just fails — the icon keeps working, no startup crash.
-            if (!Win32.RegisterSummonHotKey(_hwnd, HotkeyIdCommand))
-                Log.Write("Win+Alt+D already taken by another app; command bar stays icon-only");
+            // The command bar's global shortcut. Win+Alt+D (the old fixed choice) is reserved by
+            // Windows for the taskbar clock, so the setting now walks a list of free combinations.
+            RegisterSummonHotkey();
+        }
+
+        /// <summary>Label of the shortcut that actually got registered ("" = none).</summary>
+        public static string ActiveHotkey = "";
+
+        public void RegisterSummonHotkey()
+        {
+            ActiveHotkey = "";
+            Win32.UnregisterSummonHotKey(_hwnd, HotkeyIdCommand);
+            foreach (int idx in HotkeyCore.Candidates(Settings.I.Hotkey))
+            {
+                var c = HotkeyCore.Choices[idx];
+                if (Win32.RegisterSummonHotKey(_hwnd, HotkeyIdCommand, c.Modifiers, c.Key))
+                {
+                    ActiveHotkey = c.Label;
+                    Log.Write("command-bar shortcut: " + c.Label);
+                    return;
+                }
+            }
+            if (Settings.I.Hotkey != HotkeyCore.Off)
+                Log.Write("command-bar shortcut: every candidate is taken; the bar stays icon-only");
         }
 
         const int HotkeyIdCommand = 0x444D;   // 'DM'
@@ -176,6 +199,7 @@ namespace DeskMate.UI
             ForceRepaint();
             BuildUI();
             SetupTray();
+            if (_hwnd != IntPtr.Zero) RegisterSummonHotkey();
             // the tree was just built for the current power-saving state, so the tick below
             // must not read a stale flag and immediately rebuild it again
             _saverApplied = Settings.SaverActive;
@@ -329,6 +353,8 @@ namespace DeskMate.UI
             PrayerFeature.MinuteTick(now);
             FocusFeature.BackgroundTick(now);
             StickyNoteFeature.BackgroundTick(now);   // note reminders fire whether the panel is open or not
+            UpdateFeature.BackgroundTick();          // cheap gate; one tiny request every few hours
+            Cinema.OnMinute(_cards, now);            // the minute glint (cinematic motion only)
             if (now.Minute != _lastWeatherFetchMin)
             {
                 _lastWeatherFetchMin = now.Minute;

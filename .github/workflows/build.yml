@@ -6,12 +6,20 @@ on:
   pull_request:
   workflow_dispatch:
 
+# The update channel is the `updates` branch of this repository; publishing it needs write
+# access to contents (and nothing else).
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # the build number is the commit count (build.ps1) — a shallow clone would stamp 1
+          fetch-depth: 0
 
       - name: Build, self-test, and package
         shell: powershell
@@ -23,3 +31,54 @@ jobs:
           name: DeskMate-dist
           path: dist/
           retention-days: 14
+
+      # Push-to-main is the whole release process: this step rebuilds the `updates` branch
+      # (one commit: latest.json + the two executables) that every installed copy reads.
+      # Runs only for pushes to the default branch, never for pull requests.
+      - name: Publish update channel
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe   = "dist\DeskMate.exe"
+          $setup = "dist\DeskMateSetup.exe"
+          if (-not (Test-Path $exe)) { throw "dist\DeskMate.exe was not built" }
+
+          $version = (Get-Item $exe).VersionInfo.FileVersion
+          $notes   = (git log -1 --pretty=%s).Trim()
+          if ($notes.Length -gt 300) { $notes = $notes.Substring(0, 300) }
+
+          $manifest = [ordered]@{
+            version   = $version
+            published = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            notes     = $notes
+            file      = "DeskMate.exe"
+            size      = (Get-Item $exe).Length
+            sha256    = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          }
+          if (Test-Path $setup) {
+            $manifest["setupFile"]   = "DeskMateSetup.exe"
+            $manifest["setupSize"]   = (Get-Item $setup).Length
+            $manifest["setupSha256"] = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          }
+
+          $chan = Join-Path $env:RUNNER_TEMP "channel"
+          New-Item -ItemType Directory -Force $chan | Out-Null
+          Copy-Item $exe $chan
+          if (Test-Path $setup) { Copy-Item $setup $chan }
+          # UTF-8 without BOM: the app's JSON reader must see "{" as the first character
+          [IO.File]::WriteAllText((Join-Path $chan "latest.json"), ($manifest | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+          Set-Content (Join-Path $chan "README.md") "Automatically generated update channel for DeskMate - do not edit. Source: the main branch." -Encoding ASCII
+
+          Push-Location $chan
+          git init -q
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q -b updates
+          git add -A
+          git commit -q -m "update channel: $version"
+          git push --force "https://x-access-token:$($env:GH_TOKEN)@github.com/$($env:GITHUB_REPOSITORY).git" updates
+          Pop-Location
+          Write-Host "published $version to the updates branch"

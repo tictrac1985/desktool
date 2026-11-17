@@ -17,19 +17,39 @@ namespace DeskMate.Core
         static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
         const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOACTIVATE = 0x0010, SWP_NOZORDER = 0x0004;
 
-        // global hotkey modifiers (Win+Alt+D summons the command bar)
-        public const uint MOD_ALT = 0x0001, MOD_WIN = 0x0008, MOD_NOREPEAT = 0x4000;
+        public const uint MOD_NOREPEAT = 0x4000;
 
         [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
         [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-        /// <summary>Registers Win+Alt+D (VK_D = 0x44) on the widget window. False when the
-        /// combo is already claimed by another app — the bar then stays reachable by icon,
-        /// and the failure is logged rather than thrown at startup.</summary>
-        public static bool RegisterSummonHotKey(IntPtr hwnd, int id)
+        /// <summary>Registers a global shortcut on the widget window. False when the
+        /// combination is already claimed (by Windows or another app) — the caller then
+        /// tries its next candidate; nothing is thrown at startup.</summary>
+        public static bool RegisterSummonHotKey(IntPtr hwnd, int id, uint modifiers, uint key)
         {
-            try { return RegisterHotKey(hwnd, id, MOD_WIN | MOD_ALT | MOD_NOREPEAT, 0x44); }
+            try { return RegisterHotKey(hwnd, id, modifiers | MOD_NOREPEAT, key); }
             catch (Exception ex) { Log.Error("RegisterHotKey", ex); return false; }
+        }
+
+        // ---------------- media keys ----------------
+
+        public const byte VK_VOLUME_MUTE = 0xAD, VK_VOLUME_DOWN = 0xAE, VK_VOLUME_UP = 0xAF,
+                          VK_MEDIA_NEXT = 0xB0, VK_MEDIA_PREV = 0xB1, VK_MEDIA_STOP = 0xB2, VK_MEDIA_PLAY_PAUSE = 0xB3;
+
+        [DllImport("user32.dll")] static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+        /// <summary>Presses and releases one of the keyboard's media keys. Whatever player is
+        /// listening for them (Spotify, a browser tab, the system mixer) answers exactly as it
+        /// would to a real keyboard — DeskMate needs no knowledge of the player.</summary>
+        public static void TapMediaKey(byte vk)
+        {
+            const uint KEYEVENTF_EXTENDEDKEY = 0x0001, KEYEVENTF_KEYUP = 0x0002;
+            try
+            {
+                keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY, UIntPtr.Zero);
+                keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, UIntPtr.Zero);
+            }
+            catch (Exception ex) { Log.Error("media key", ex); }
         }
 
         public static void UnregisterSummonHotKey(IntPtr hwnd, int id)

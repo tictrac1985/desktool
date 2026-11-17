@@ -83,6 +83,17 @@ namespace DeskMate.UI
             new Palette { KeyAr = "نهاري", KeyEn = "Daylight", Light = true,
                 Accent = Color.FromRgb(0x00, 0x78, 0xD4),
                 CardTop = Color.FromArgb(0xEE, 0xF3, 0xFA, 0xFF), CardBottom = Color.FromArgb(0xF2, 0xD3, 0xE6, 0xF6) },
+            // --- v1.12 (indices 13..14): two cinematic dark palettes with a real colour
+            //     journey — the glow colour is set explicitly, so the face drifts from one
+            //     hue into another instead of fading to black.
+            new Palette { KeyAr = "نيون", KeyEn = "Neon Noir",
+                Accent = Color.FromRgb(0xFF, 0x6B, 0xD6),
+                CardTop = Color.FromArgb(0xD6, 0x22, 0x12, 0x3A), CardBottom = Color.FromArgb(0xDE, 0x07, 0x05, 0x12),
+                GlowTop = Color.FromRgb(0x0E, 0x3C, 0x52) },
+            new Palette { KeyAr = "فيروزي", KeyEn = "Lagoon",
+                Accent = Color.FromRgb(0x5E, 0xEA, 0xD4),
+                CardTop = Color.FromArgb(0xD6, 0x0F, 0x2E, 0x33), CardBottom = Color.FromArgb(0xDE, 0x04, 0x10, 0x16),
+                GlowTop = Color.FromRgb(0x23, 0x2B, 0x63) },
         };
 
         /// <summary>Index of the palette that was actually applied (differs from the chosen
@@ -610,6 +621,14 @@ namespace DeskMate.UI
 
             var rim = RimLight(radius);
             layers.Children.Add(rim);
+
+            // two empty light layers the motion system (Cinema) drives: a pointer light that
+            // follows the mouse over the card, and a glint that sweeps across once a minute.
+            // Both are transparent and click-through until used, so they cost nothing at rest.
+            var light = new Border { CornerRadius = new CornerRadius(inner), IsHitTestVisible = false, Margin = new Thickness(1) };
+            var glint = new Border { CornerRadius = new CornerRadius(inner), IsHitTestVisible = false, Margin = new Thickness(1), Opacity = 0, ClipToBounds = true };
+            layers.Children.Add(light);
+            layers.Children.Add(glint);
             // padding belongs to the content layer, not the card: the sheen, bevel and rim
             // have to reach the card's own edge, and an outer Padding would inset them all
             var pad = new Border
@@ -630,7 +649,7 @@ namespace DeskMate.UI
                 Margin = new Thickness(12), // room for the shadow inside the transparent window
                 // callers reshape the card through SetCardPadding / SetCardRadius — touching
                 // Padding or CornerRadius directly leaves these light layers behind
-                Tag = new CardParts { Pad = pad, Sheen = sheen, Bevel = bevel, Rim = rim, Edge = edge },
+                Tag = new CardParts { Pad = pad, Sheen = sheen, Bevel = bevel, Rim = rim, Edge = edge, Light = light, Glint = glint },
             };
         }
 
@@ -640,8 +659,13 @@ namespace DeskMate.UI
         /// orbit layout's circular clock card.</summary>
         class CardParts
         {
-            public Border Pad, Sheen, Bevel, Rim, Edge;
+            public Border Pad, Sheen, Bevel, Rim, Edge, Light, Glint;
         }
+
+        /// <summary>The pointer-light layer of a card made by <see cref="MakeCard"/> (null otherwise).</summary>
+        public static Border LightLayer(Border card) { var p = card.Tag as CardParts; return p != null ? p.Light : null; }
+        /// <summary>The minute-glint layer of a card made by <see cref="MakeCard"/> (null otherwise).</summary>
+        public static Border GlintLayer(Border card) { var p = card.Tag as CardParts; return p != null ? p.Glint : null; }
 
         /// <summary>Adjusts the inner spacing of a card made by <see cref="MakeCard"/>.
         /// Use instead of <c>card.Padding</c>, which would inset the card's own light layers.</summary>
@@ -662,6 +686,8 @@ namespace DeskMate.UI
             p.Sheen.CornerRadius = new CornerRadius(inner);
             p.Bevel.CornerRadius = new CornerRadius(inner);
             p.Rim.CornerRadius = new CornerRadius(radius);
+            if (p.Light != null) p.Light.CornerRadius = new CornerRadius(inner);
+            if (p.Glint != null) p.Glint.CornerRadius = new CornerRadius(inner);
             // The edge streak is a straight 1.6px line inset by the corner radius. On a
             // rounded rectangle that is the flat top edge; on a circle (Orbit / Halo cores)
             // there is no flat edge at all, so a line inset by the OLD radius ran straight
@@ -848,6 +874,10 @@ namespace DeskMate.UI
             (190, 0.65, 0.66),   // WorldClock — cyan
             (256, 0.65, 0.72),   // Command  — periwinkle
             (220, 0.20, 0.78),   // Settings — neutral silver-blue
+            (348, 0.75, 0.66),   // Calendar — crimson
+            (288, 0.70, 0.72),   // Capture  — fuchsia
+            (28,  0.90, 0.66),   // Media    — orange
+            (140, 0.65, 0.60),   // Update   — green
         };
 
         /// <summary>Builds the tint for tool slot i from the CURRENT palette: the tool's own
